@@ -1,0 +1,86 @@
+{
+  "description": "Fingerprints of user-approved native playback before donor pipeline removal; no PCM or ROM is stored here.",
+  "tracks": {
+    "reimu": {
+      "sha256": "98c36f891c98be9ba30163f3a1b02623875a2d981d7fb7a96ced566132b94743",
+      "first_pass_attacks": 5150,
+      "source_sha256": "3569dea86dab503318a1b3884c0933d4a7b5280be08b2e278a789c5de0a735bf"
+    },
+    "st0": {
+      "sha256": "9ab931eff83f15cb72cf22395de89e41e1d893ecb78f5e3bec22cf03c80ac064",
+      "first_pass_attacks": 2517,
+      "source_sha256": "f4aebd594ae5d73e8dad283e960b920f5fcea092bce363ffab5380516286035d"
+    },
+    "st1": {
+      "sha256": "af778a68caae268d63540ade6c5783e8fd43753f30d016a5a27a424a0894aaef",
+      "first_pass_attacks": 4203,
+      "source_sha256": "db7c8dfe50ebc46eef2dda381cb1d49059698631458d8b824e9ad423622e0ff7"
+    },
+    "st2": {
+      "sha256": "219c8eb0603499545cf0e02f9808a960a86a74167318adb0f5473b1f0809279e",
+      "first_pass_attacks": 3387,
+      "source_sha256": "ccdf655d8a2735fe5106708507bd787c3f70dfda20f8b3711afceff7e1ca916b"
+    },
+    "st3": {
+      "sha256": "71a99b28e750b3ab261cfcad8bcde5c02cb5c60e53b41e0a32c25c5a5dc6c348",
+      "first_pass_attacks": 6615,
+      "source_sha256": "42d939ca43ef63fc7deb19e5915fb80703b83d57bdc66e0745b1a012a14033a5"
+    },
+    "st4": {
+      "sha256": "f2abbf5989b71dc3e164ec4cbeed6af33ffa4fd782115eb37221c93821128275",
+      "first_pass_attacks": 1980,
+      "source_sha256": "bda42916748b2d3f4900e8d8c2384c1ed0ee3f5fe40cb523ddde5c4f5721be5b"
+    },
+    "st5": {
+      "sha256": "8c257506740fc492982225751fc8fce10c275973d5a545ecdb4b0e58792daa19",
+      "first_pass_attacks": 2388,
+      "source_sha256": "88968bb8d7f897c65c6273718c9c65b1f3e72de284e96ac1f85f3fb8b5347bcf"
+    },
+    "st7": {
+      "sha256": "02e8e17686c2cdb158166d70dfa5fdcb13b7d76a96e69e9fe2e5e4ee0ba8d328",
+      "first_pass_attacks": 2012,
+      "source_sha256": "bf606f8a2d652af3436cc78cf45ad86c123e873a0fdb57dadfecf969000ec781"
+    },
+    "positive": {
+      "sha256": "88b9b2e8c270a0298f00c663bb3e62dec90deff29a3b9a7026072067b5d710d0",
+      "first_pass_attacks": 1569,
+      "source_sha256": "28c34063dee5ca2add99416080fb11674c6355de2b2df1ef0bddcdab162a41fe"
+    },
+    "legend": {
+      "sha256": "cd1f9f9f6defdf0ed00df4298d897dd57f043c8f5364bfd3a661ffb902f22a67",
+      "first_pass_attacks": 4773,
+      "source_sha256": "bca3493c1f3dbccaf394296bbc722a4d5c3dec2408d1a3b24cd86166845dd475"
+    },
+    "kami": {
+      "sha256": "880a73912704ea9c224c0335294441a176f267c9e8dc45ce77ed4b90ed13eb3b",
+      "first_pass_attacks": 1984,
+      "source_sha256": "c370dba160a4d7d95f616abc2121dbbaf89c568720bf7f4b3b1dced41a155778"
+    },
+    "kami2": {
+      "sha256": "7d6e9107433c7065f46e1ed791e7dcf18abe5da45a6b900315d4ad6d7265445f",
+      "first_pass_attacks": 2048,
+      "source_sha256": "7e6a665ff13975608ce8220f1cd26ee7cbffd66f48193195291daa9ce24eea44"
+    },
+    "tensi": {
+      "sha256": "aa0b31af8fb8c74bd2a3e288aa342c187626e9895f349e10322ea3c553c251b6",
+      "first_pass_attacks": 2152,
+      "source_sha256": "fd4416395c1402ca560196be980d6a43659738a8ebb7abf71eb1cbda21ab0ba6"
+    },
+    "alice": {
+      "sha256": "616a5cf4fc500351afbe92790d23baad1d1371a56771c190d17a1b6e72794b45",
+      "first_pass_attacks": 2894,
+      "source_sha256": "707cdfd907929a7f0088675861c612c4e199fd565013a6d888a6fd06796503c4"
+    },
+    "shugen": {
+      "sha256": "f749cc4e6daeb4b82f9ab608d575d564210976b7a17c89e4aa242eb4f141f9bb",
+      "first_pass_attacks": 3744,
+      "source_sha256": "d20c475ea3d79725460ce883a06fb12672504bfe5a6a5454d8e1857f26980842"
+    },
+    "iris": {
+      "sha256": "7b40c8debf6aabc3a0fbcba2915e3d8a5418eaab2e94540cea6946c75647c3ee",
+      "first_pass_attacks": 560,
+      "source_sha256": "c0f4b32efc498161b25a4d35b4a35e8f81c4f0805dca9abeea27965704eb2bb3"
+    }
+  },
+  "sfx_sha256": "69e1e446ab947d549b3674454505dcde5145c4638cf1ee2fa6cdfa92250472c0"
+}

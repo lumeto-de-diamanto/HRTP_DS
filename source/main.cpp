@@ -1,0 +1,392 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <filesystem.h>
+#include <main/random.hpp>
+
+#include <nds.h>
+
+#include "background.hpp"
+#include "video.hpp"
+#include "tiles.hpp"
+#include "stage_render.hpp"
+#include "pellet_render.hpp"
+#include "subscreen.hpp"
+#include "hud_render.hpp"
+#include "palette_fx.hpp"
+#include "music.hpp"
+#include "sound_effects.hpp"
+
+#include <main/player/player.hpp>
+#include <main/player/shot.hpp>
+#include <main/player/orb.hpp>
+#include <main/bullet/pellet.hpp>
+#include <main/stage/stageobj.hpp>
+#include <main/stage/card.hpp>
+#include <main/stage/item.hpp>
+#include <main/stage/timer.hpp>
+#include <main/bonus.hpp>
+
+#include "player_render.hpp"
+#include "shot_render.hpp"
+#include "orb_render.hpp"
+#include "item_render.hpp"
+#include "popup.hpp"
+#include "menu_render.hpp"
+#include "text_layer.hpp"
+#include "boss_render.hpp"
+#include "canvas.hpp"
+#include <main/boss/singyoku.hpp>
+#include <main/progression.hpp>
+#include "camera.hpp"
+#include "upper_hud.hpp"
+#include "konngara_intro_render.hpp"
+
+#include "stagedat/stagedat0.h"
+#include "stagedat/stagedat1.h"
+#include "stagedat/stagedat2.h"
+#include "stagedat/stagedat3.h"
+#include "stagedat/stagedat4.h"
+#include "stagedat/stagedat5.h"
+#include "stagedat/stagedat6.h"
+#include "stagedat/stagedat7.h"
+
+// --- M3: HUD, bullets, turrets ---------------------------------------------
+// SELECT + d-pad: dev stage navigator (jump scenes/stages for testing).
+
+static const int SCENES = 7; // navigable scenes 0-6 (scene 7 = unused
+                             // leftover content, not part of the game)
+static const int START_LIVES = 3;
+
+static int current_scene;
+static int current_stage;
+static int lives;
+static int frame;
+static bool wait_for_shot; // ReC98 stage_wait_for_shot_to_begin
+
+static void check_music()
+{
+    if (!music_error()[0])
+        return;
+    consoleDemoInit();
+    printf("Native audio error:\n%s\n", music_error());
+    while (true)
+        swiWaitForVBlank();
+}
+
+// The game's own 1-based stage number (Shrine = 1-5, then route stages
+// 6-20). Makai and Jigoku are *parallel* routes: scenes 1/2 are both
+// stages 6-10, 3/4 are 11-15, 5/6 are 16-20.
+static int global_stage_num()
+{
+    return stage_number(current_scene, current_stage);
+}
+
+static void render_frame()
+{
+    const bool boss = stage_has_singyoku(current_scene, current_stage);
+    video_apply_camera();
+    stage_render_frame();
+    // Erase only previous effects; the background scrolls in hardware and
+    // BG0/OAM HUD elements never go through the software canvas.
+    canvas_begin_frame();
+    canvas_playfield_clip(true);
+    player_render_frame();
+    shots_render_frame();
+    orb_render_frame();
+    pellet_render_frame();
+    item_render_frame();
+    item_rings_frame();
+    popup_render_frame();
+    orb_indicator_render();
+    if (boss) boss_render_frame();
+    canvas_playfield_clip(false);
+    upper_hud_render(lives, rem_bombs, stage_timer, boss ? UpperHudMode::Boss : UpperHudMode::Regular);
+    if (boss) {
+        const auto &s = singyoku_state();
+        upper_hud_boss(s.health.hp, s.hp_displayed);
+    } else upper_hud_boss_hide();
+    hud_render(lives, global_stage_num());
+    oamUpdate(&oamMain);
+}
+
+static const ds_stage_layout_t *scene_layout(int scene, int stage)
+{
+    switch (scene) {
+    case 0: return &ds_stagedat0[stage];
+    case 1: return &ds_stagedat1[stage];
+    case 2: return &ds_stagedat2[stage];
+    case 3: return &ds_stagedat3[stage];
+    case 4: return &ds_stagedat4[stage];
+    case 5: return &ds_stagedat5[stage];
+    case 6: return &ds_stagedat6[stage];
+    default: return &ds_stagedat7[stage];
+    }
+}
+
+static void stage_load(int scene, int stage, bool preserve_sfx = false)
+{
+    if (scene < 0 || scene >= SCENES) scene = 0;
+    if (stage < 0 || stage >= scene_stage_count(scene)) stage = 0;
+    const bool boss = stage_has_singyoku(scene, stage);
+    const bool previous_boss = stage_has_singyoku(current_scene, current_stage);
+    // Route confirmation must survive into the new scene's title glyphs.
+    // Other boundaries cancel stale effects; music never owns SFX channels.
+    if (!preserve_sfx) sfx_stop();
+    // A scene change eventually selects a different native song. Stop the previous
+    // scene before its entrance rather than letting it bleed into missing BGM.
+    if (scene != current_scene || boss != previous_boss)
+        music_stop();
+    boss_render_hide();
+    // Snap before loading/displaying scenery or drawing any stage text. A
+    // previous life/scene's camera must never leak into the entrance.
+    camera.snap_center();
+    current_scene = scene;
+    current_stage = stage;
+
+    // Per-scene background: its palette becomes the round palette that
+    // cards/items render through (the original's ptn_load "retains the
+    // current hardware palette").
+    if (boss) load_boss_background(); else load_background(scene);
+    palette_apply_round();
+
+    if (boss) {
+        static const uint8_t empty[STAGE_ROWS][STAGE_COLS] = {};
+        stage_init(empty, empty);
+    } else {
+        const ds_stage_layout_t *layout = scene_layout(scene, stage);
+        stage_init(layout->obstacle, layout->card);
+    }
+    stage_reset();
+    stage_render_clear();
+    Pellets.init();
+    Items.init();
+    timer_init_for(scene, stage);
+    orb_initialize();
+    player_initialize();
+    shots_initialize();
+    canvas_clear();
+    popup_clear();
+    if (boss) singyoku_init();
+    render_frame();
+
+    // ReC98 stage_entrance: giant stage number, then the wait-for-shot
+    // serve; SinGyoku instead gets its 200-frame rotation entrance.
+    stage_num_animate(global_stage_num(), current_stage == 0 || boss);
+    wait_for_shot = !boss;
+
+    // ReC98 starts regular-stage BGM after the entrance and keeps it running
+    // across the scene's non-boss stages. music_play_scene() is idempotent for
+    // an already-playing scene.
+    if (boss) {
+        music_play_track(NATIVE_POSITIVE);
+    } else
+        music_play_scene(scene);
+    check_music();
+}
+
+int main(int argc, char **argv)
+{
+    if (!nitroFSInit(NULL))
+    {
+        consoleDemoInit();
+        perror("NitroFS init error!");
+        while (1)
+            swiWaitForVBlank();
+    }
+
+    initialize_irand(time(NULL));
+
+    video_init();
+    oamInit(&oamMain, SpriteMapping_1D_32, false);
+    subscreen_init();
+    text_layer_init();
+    music_init();
+    check_music();
+    sfx_init();
+    check_music();
+
+    // Backgrounds load per stage (stage_load); tiles only need the atlas.
+    tiles_init();
+
+    player_render_init();
+    shots_render_init();
+    orb_render_init();
+    item_render_init();
+    if (!boss_render_init()) {
+        consoleDemoInit();
+        printf("Boss sprite VRAM allocation failed");
+        while (true) swiWaitForVBlank();
+    }
+    if (!upper_hud_init()) {
+        consoleDemoInit();
+        printf("HUD sprite VRAM allocation failed");
+        while (true) swiWaitForVBlank();
+    }
+
+    // ReC98's starting bullet-speed offset (to_pellet_speed(-0.1)).
+    pellet_speed = -4;
+    rem_bombs = 2;
+
+    lives = START_LIVES;
+    stage_load(0, 0);
+
+    while (1)
+    {
+        swiWaitForVBlank();
+
+        scanKeys();
+        uint16_t keys_held = keysHeld();
+        uint16_t keys_down = keysDown();
+
+        // Dev stage navigator (SELECT + d-pad).
+        if (keys_held & KEY_SELECT) {
+            // Intro-first M5 review slice. Do not expose a dummy stage20 boss
+            // or advance progression until Konngara's combat is implemented.
+            if (keys_down & KEY_X) {
+                if (!konngara_intro_preview()) {
+                    consoleDemoInit();
+                    printf("Konngara intro asset/audio error\n%s", music_error());
+                    while (true) swiWaitForVBlank();
+                }
+                music_stop(); // ALICE must not bleed into the restored STAGE banner
+                stage_load(current_scene, current_stage);
+                continue;
+            }
+            if (keys_down & KEY_LEFT) {
+                int s = current_stage - 1;
+                if (s < 0)
+                    s = scene_stage_count(current_scene) - 1;
+                stage_load(current_scene, s);
+                continue;
+            }
+            if (keys_down & KEY_RIGHT) {
+                stage_load(current_scene, (current_stage + 1) % scene_stage_count(current_scene));
+                continue;
+            }
+            if (keys_down & KEY_UP) {
+                const int scene = (current_scene + SCENES - 1) % SCENES;
+                stage_load(scene, current_stage < scene_stage_count(scene) ? current_stage : scene_stage_count(scene) - 1);
+                continue;
+            }
+            if (keys_down & KEY_DOWN) {
+                const int scene = (current_scene + 1) % SCENES;
+                stage_load(scene, current_stage < scene_stage_count(scene) ? current_stage : scene_stage_count(scene) - 1);
+                continue;
+            }
+        }
+
+        // START = Esc (pause). QUIT restarts at the first stage -- there is
+        // deliberately no exit from the game loop (project head's call);
+        // the title screen (M6) becomes QUIT's destination later.
+        if (keys_down & KEY_START) {
+            music_pause();
+            if (pause_menu_run()) {
+                music_stop();
+                lives = START_LIVES;
+                stage_load(0, 0);
+            } else
+                music_resume();
+            continue;
+        }
+
+        // Stage serve (ReC98's wait-for-shot gate): Reimu moves freely
+        // while the orb rests at its start position; pressing shot (B)
+        // starts the action. Only the first life of a stage waits.
+        bool serving = wait_for_shot;
+        if (serving && (keys_held & KEY_B)) {
+            wait_for_shot = false;
+            serving = false;
+        }
+
+        const bool boss = stage_has_singyoku(current_scene, current_stage);
+        const bool entrance = boss && singyoku_state().phase == SG_ENTRANCE;
+        if (entrance)
+            singyoku_update(); // gameplay/timer are frozen during the source entrance
+        else
+            player_update(keys_held, keys_down);
+        if (!serving && !entrance) {
+            // Boss logic sees the previous orb point, before this frame's
+            // orb movement, as in CBossEntity::hittest_orb().
+            if (boss) {
+                singyoku_update();
+                if (singyoku_state().phase == SG_DEFEATED) {
+                    player_is_hit = false; // victory wins a simultaneous hit
+                    music_stop(); // original nonblocking fade is still M5 follow-up
+                    Pellets.init(); shots_initialize(); Items.init();
+                    render_frame();
+                    const RouteChoice route = boss_defeat_and_select_route();
+                    stage_load(route_first_scene(route), 0, true);
+                    continue;
+                }
+            }
+            shots_update();
+            orb_update();
+
+            if (!boss) {
+                cards_hittest();
+                stage_obstacles_update();
+                cards_update();
+            }
+            Items.update();
+
+            // ReC98 ticks the stage timer every 4th frame (TIMER_TICK = 2).
+            frame++;
+            if ((frame & 3) == 0) {
+                if (timer_tick() == TIMER_EVENT_HARRYUP)
+                    harryup_animate();
+            }
+
+            if (Pellets.update())
+                player_is_hit = true;
+        }
+
+        // Deadly orb contact (ReC98 checks this every frame outside of
+        // attacks; player_update handles the repel cases during swings).
+        if (!entrance && !player_is_hit &&
+            orb_hits_player(player_get_state().x_position,
+                            player_get_state().y_position,
+                            OR_NONE,
+                            player_is_invincible(),
+                            player_is_invincible_to_orb())) {
+            player_is_hit = true;
+        }
+
+        if (player_is_hit) {
+            player_is_hit = false;
+            lives--;
+            if (lives < 0) {
+                // The placeholder game-over flow restarts this stage, so also
+                // restart its BGM from the intro rather than retaining position.
+                music_stop();
+                lives = START_LIVES;
+                stage_load(current_scene, current_stage);
+            } else {
+                // ReC98's life loop respawns both the player and the orb.
+                mdrv2_se_play(SFX_MISS);
+                player_miss();
+                orb_initialize();
+                shots_initialize();
+                Pellets.init();
+                stage_reset();
+            }
+        }
+
+        if (!boss && stage_is_cleared()) {
+            stagebonus_run(stagebonus_compute(global_stage_num(), lives),
+                           global_stage_num());
+            int next = current_stage + 1;
+            if (next >= scene_stage_count(current_scene))
+                next = 0; // loop the scene for now
+            stage_load(current_scene, next);
+        }
+
+        if (stage_score > hiscore)
+            hiscore = stage_score;
+
+        camera.follow(player_center_x());
+        render_frame();
+    }
+
+    return 0;
+}

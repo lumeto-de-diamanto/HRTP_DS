@@ -1,0 +1,17 @@
+things_I_spotted.txt
+
+build/
+nitrofs/
+
+docs/
+
+assets/th01.hdi
+assets/font.bmp
+assets/*.wav
+assets/*.WAV
+
+assets/hdi_dump/
+assets/packfile/
+assets/processed/
+
+hrtp_ds.nds

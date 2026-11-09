@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "ssg_global_volume": 45,
+  "unity_global_volume": 64,
+  "description": "Shared SSG/FM balance for all tracks and SSG channels; no changes to source volume, envelopes, pitch or timing.",
+  "calibration": {
+    "target_db": -3.0,
+    "method": "Dominant-band recording comparison relative to FM, using analysis-only native stems to select bands. Shared native SSG gain 45/64 (-3.059 dB).",
+    "original_recording_sha256": "cec4020b6bd511ec80954f137a73295d6170673754cc6f2821c746403d932f22",
+    "ds_recording_sha256": "39eac25b840e5e33feab3cc081b9f2e0ea8b459cc76bc9111b49798760ff5261",
+    "scope": "Calibrated to the supplied reference excerpt; soundtrack and SFX subsequently user-approved for M4. Not a universal claim about every PC-98 board or emulator."
+  }
+}

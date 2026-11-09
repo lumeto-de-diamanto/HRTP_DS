@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "tracks": [
+    {"id": "reimu", "source": "REIMU.MDT", "aliases": [], "role": "title and menu", "looping": true},
+    {"id": "st0", "source": "ST0.MDT", "aliases": ["ST6.MDT"], "role": "Shrine regular stages; scene 6 alias", "looping": true},
+    {"id": "st1", "source": "ST1.MDT", "aliases": [], "role": "Makai scene 1; ending staff roll", "looping": true},
+    {"id": "st2", "source": "ST2.MDT", "aliases": [], "role": "Jigoku scene 2", "looping": true},
+    {"id": "st3", "source": "ST3.MDT", "aliases": [], "role": "Makai scene 3", "looping": true},
+    {"id": "st4", "source": "ST4.MDT", "aliases": [], "role": "Jigoku scene 4", "looping": true},
+    {"id": "st5", "source": "ST5.MDT", "aliases": [], "role": "Makai scene 5", "looping": true},
+    {"id": "st7", "source": "ST7.MDT", "aliases": ["ZIPANGU.MDT"], "role": "shipped unused track / music room", "looping": true},
+    {"id": "positive", "source": "POSITIVE.MDT", "aliases": [], "role": "SinGyoku boss", "looping": true},
+    {"id": "legend", "source": "LEGEND.MDT", "aliases": [], "role": "YuugenMagan and Mima bosses", "looping": true},
+    {"id": "kami", "source": "KAMI.MDT", "aliases": [], "role": "Kikuri boss", "looping": true},
+    {"id": "kami2", "source": "KAMI2.MDT", "aliases": [], "role": "Elis boss", "looping": true},
+    {"id": "tensi", "source": "TENSI.MDT", "aliases": [], "role": "Sariel boss", "looping": true},
+    {"id": "alice", "source": "ALICE.MDT", "aliases": [], "role": "Konngara boss", "looping": true},
+    {"id": "shugen", "source": "SHUGEN.MDT", "aliases": ["SYUGEN.MDT"], "role": "Sariel final phase", "looping": true},
+    {"id": "iris", "source": "IRIS.MDT", "aliases": [], "role": "ending", "looping": true},
+    {"id": "init", "source": "INIT.MDT", "aliases": [], "role": "silent MDRV2 initialization data", "looping": false, "playable": false}
+  ]
+}
