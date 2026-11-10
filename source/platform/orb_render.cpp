@@ -35,9 +35,9 @@ void orb_render_init(void)
         for (int i = 0; i < 7; ++i) {
             const int radius = i < 4 ? i : 3;
             for (int y = 7 - radius - 1; y <= 7 + radius + 1; ++y)
-                obj4_pixel(arrow_gfx, 8, 6 - i, y, 2);
-            for (int y = 7 - radius; y <= 7 + radius; ++y)
                 obj4_pixel(arrow_gfx, 8, 6 - i, y, 1);
+            for (int y = 7 - radius; y <= 7 + radius; ++y)
+                obj4_pixel(arrow_gfx, 8, 6 - i, y, 2);
         }
     }
     oamSetHidden(&oamMain, OAM_SLOT_ORB_ARROW, true);
