@@ -8,10 +8,10 @@
 
 #include "sprites/Pellet.h"
 
-// Bullets render in the classic PC-98 gray (palette entry 1 in the
-// original).
+// Keep intact/shatter cels pure white
+// independently of the scene's indexed background and stage-object palette.
 static const u16 PELLET_PAL[16] = {
-    0x0000, 0x6318,
+    0x0000, 0x7FFF,
 };
 
 #define PELLET_SPRITE 4 // halved from 8x8
