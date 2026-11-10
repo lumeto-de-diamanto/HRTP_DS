@@ -66,17 +66,59 @@ struct OamState {};
 inline OamState oamMain;
 struct TestObj { int x{}, y{}, priority{}, palette{}; SpriteSize size{}; bool hidden = true; const u16 *gfx{}; bool hflip{}; };
 inline TestObj test_objs[128];
-inline u16 test_obj_vram[32768]{};
+alignas(2048) inline u16 test_obj_vram[32768]{};
+// SpriteMapping_1D_32: 1024 addressable 32-byte units, NOT the entire 64KiB
+// physical bank. Model libnds' first-fit, block-size-aligned allocation and
+// coalescing free space, but not its heap-backed allocator metadata.
+inline constexpr size_t test_obj_capacity = 1024 * 32;
+inline bool test_obj_busy[1024]{};
+inline size_t test_obj_lengths[1024]{};
 inline size_t test_obj_used{};
+inline size_t test_obj_count{}, test_obj_attempts{}, test_obj_frees{};
+inline int test_obj_fail_after = -1;
 inline size_t test_oam_changes{};
-inline void oamInit(OamState *, int, bool) {}
+inline void oamInit(OamState *, int mapping, bool) {
+    assert(mapping == SpriteMapping_1D_32);
+    std::memset(test_obj_busy, 0, sizeof(test_obj_busy));
+    std::memset(test_obj_lengths, 0, sizeof(test_obj_lengths));
+    test_obj_used = test_obj_count = test_obj_attempts = test_obj_frees = 0;
+    test_obj_fail_after = -1;
+    for (auto &obj : test_objs) obj = TestObj{};
+}
 inline int sprite_bytes(SpriteSize size) {
     const int bytes[] = {32, 128, 256, 512, 2048, 64, 128, 1024}; return bytes[size];
 }
 inline u16 *oamAllocateGfx(OamState *, SpriteSize size, int) {
+    ++test_obj_attempts;
+    if (test_obj_fail_after == 0) return nullptr;
+    if (test_obj_fail_after > 0) --test_obj_fail_after;
     const size_t bytes = sprite_bytes(size);
-    if (test_obj_used + bytes > sizeof(test_obj_vram)) return nullptr;
-    auto *p = test_obj_vram + test_obj_used / 2; test_obj_used += bytes; return p;
+    const size_t units = bytes / 32;
+    for (size_t start = 0; start + units <= 1024; start += units) {
+        bool free = true;
+        for (size_t i = start; i < start + units; ++i) free &= !test_obj_busy[i];
+        if (!free) continue;
+        for (size_t i = start; i < start + units; ++i) test_obj_busy[i] = true;
+        test_obj_lengths[start] = bytes;
+        test_obj_used += bytes;
+        ++test_obj_count;
+        return test_obj_vram + start * 16;
+    }
+    return nullptr;
+}
+inline void oamFreeGfx(OamState *, const void *gfx) {
+    const auto address = reinterpret_cast<uintptr_t>(gfx);
+    const auto base = reinterpret_cast<uintptr_t>(test_obj_vram);
+    assert(address >= base && address < base + test_obj_capacity && (address - base) % 32 == 0);
+    const size_t start = (address - base) / 32, bytes = test_obj_lengths[start];
+    assert(bytes); // reject invalid/double frees
+    for (size_t i = start; i < start + bytes / 32; ++i) {
+        assert(test_obj_busy[i]); test_obj_busy[i] = false;
+    }
+    std::memset(test_obj_vram + start * 16, 0xDD, bytes);
+    test_obj_lengths[start] = 0;
+    test_obj_used -= bytes;
+    --test_obj_count; ++test_obj_frees;
 }
 inline void oamSet(OamState *, int slot, int x, int y, int priority, int palette,
                    SpriteSize size, int, const void *gfx, int, bool, bool hidden, bool hflip, bool, bool) {

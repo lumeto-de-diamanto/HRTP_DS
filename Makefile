@@ -143,28 +143,31 @@ boss-release-checks: all
 	python3 -B tests/test_boss_assets.py --rom
 
 VIEWPORT_TEST_SOURCES := tests/test_viewport.cpp $(wildcard source/engine/main/player/*.cpp source/engine/main/boss/*.cpp source/engine/main/bullet/*.cpp source/engine/main/stage/stageobj.cpp source/engine/main/stage/card.cpp source/engine/main/stage/item.cpp source/engine/main/stage/timer.cpp source/engine/main/math/*.cpp source/engine/main/random.cpp) $(addprefix source/platform/,camera.cpp canvas.cpp video.cpp tiles.cpp stage_render.cpp background.cpp upper_hud.cpp hud_render.cpp font16x16.cpp player_render.cpp orb_render.cpp shot_render.cpp item_render.cpp pellet_render.cpp popup.cpp boss_render.cpp palette_fx.cpp text_layer.cpp)
+VIEWPORT_TEST_SOURCES += tests/heap_probe.cpp
+HEAP_PROBE_LDFLAGS := -Wl,--wrap=malloc,--wrap=free
 viewport-tests: assets
 	@mkdir -p build/viewport/tests
-	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed $(VIEWPORT_TEST_SOURCES) -o build/viewport/tests/viewport
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed $(VIEWPORT_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/viewport/tests/viewport
 	python3 -B tests/test_viewport_assets.py --run build/viewport/tests/viewport
 
 viewport-sanitize: assets
 	@mkdir -p build/viewport/tests
-	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed $(VIEWPORT_TEST_SOURCES) -o build/viewport/tests/viewport_sanitized
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed $(VIEWPORT_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/viewport/tests/viewport_sanitized
 	UBSAN_OPTIONS=halt_on_error=1 python3 -B tests/test_viewport_assets.py --run build/viewport/tests/viewport_sanitized
 
 viewport-release-checks: all
 	python3 -B tests/test_viewport_assets.py --rom
 
 KONNGARA_TEST_SOURCES := tests/test_konngara.cpp source/engine/main/boss/konngara_intro.cpp source/engine/main/math/trig.cpp $(addprefix source/platform/,konngara_intro_render.cpp camera.cpp canvas.cpp video.cpp font16x16.cpp)
+KONNGARA_TEST_SOURCES += tests/heap_probe.cpp
 konngara-tests: assets native-soundtrack
 	@mkdir -p build/konngara/tests
-	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_TEST_SOURCES) -o build/konngara/tests/intro
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/konngara/tests/intro
 	python3 -B tests/test_konngara_assets.py --run build/konngara/tests/intro
 
 konngara-sanitize: assets native-soundtrack
 	@mkdir -p build/konngara/tests
-	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_TEST_SOURCES) -o build/konngara/tests/intro_sanitized
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/konngara/tests/intro_sanitized
 	UBSAN_OPTIONS=halt_on_error=1 python3 -B tests/test_konngara_assets.py --run build/konngara/tests/intro_sanitized
 
 konngara-release-checks: all

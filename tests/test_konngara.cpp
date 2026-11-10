@@ -8,6 +8,7 @@
 #include <fstream>
 #include <iterator>
 #include <vector>
+#include "heap_probe.hpp"
 #include "main/boss/konngara_intro.hpp"
 #include "konngara_intro_render.hpp"
 #include "camera.hpp"
@@ -120,11 +121,20 @@ int main() {
     const std::vector<u16> resident(test_vram.pixels, test_vram.pixels + 384 * 1024 / 2);
     const std::vector<u16> bgpal(BG_PALETTE, BG_PALETTE + 256), objpal(SPRITE_PALETTE, SPRITE_PALETTE + 256);
     test_vblank_hook = observe;
-    for (int repeat = 0; repeat < 2; ++repeat) {
+    const auto obj_attempts = test_obj_attempts;
+    assert(test_heap_count == 0 && test_heap_bytes == 0);
+    for (int fail = 0; fail < 2; ++fail) {
+        test_heap_fail_after = fail;
+        assert(!konngara_intro_preview());
+        assert(test_heap_count == 0 && test_heap_bytes == 0 && starts == 0);
+    }
+    test_heap_fail_after = -1;
+    for (int repeat = 0; repeat < 20; ++repeat) {
         ticks = sounds = 0;
         assert(konngara_intro_preview());
         assert(ticks == 831 && sounds == 4);
         assert(starts == repeat + 1 && stops == repeat + 1 && sfx_stops == repeat + 1);
+        assert(test_heap_count == 0 && test_heap_bytes == 0 && test_obj_attempts == obj_attempts);
         assert(REG_WININ == 0x1919 && test_bgs[0].priority == 0 && camera.left == 64);
         for (int slot : {OAM_SLOT_ORB_ARROW, OAM_SLOT_HUD_LIVES, OAM_SLOT_HUD_BOMBS, OAM_SLOT_HUD_HP})
             assert(test_objs[slot].priority == 0);
@@ -139,17 +149,20 @@ int main() {
         CanvasForegroundScope outer;
         ticks = sounds = 0;
         assert(konngara_intro_preview());
+        assert(test_heap_count == 0 && test_heap_bytes == 0);
         assert(ticks == 831 && REG_WININ == 0x1D1D && test_bgs[0].priority == 1);
     }
     assert(REG_WININ == 0x1919 && test_bgs[0].priority == 0);
     test_vblank_hook = nullptr;
     allow_play = false;
     assert(!konngara_intro_preview());
+    assert(test_heap_count == 0 && test_heap_bytes == 0);
     assert(REG_WININ == 0x1919 && test_bgs[0].priority == 0);
     // A failed open must not enter a foreground scope or touch audio/video.
     assert(std::rename("nitro:/konngara_intro.bin", "nitro:/konngara_intro.saved") == 0);
     const int before = starts;
     assert(!konngara_intro_preview() && starts == before);
+    assert(test_heap_count == 0 && test_heap_bytes == 0);
     // Truncated and malformed files must also fail before any audio/video work.
     auto write_bad = [](const std::vector<u8> &bytes) {
         std::ofstream output("nitro:/konngara_intro.bin", std::ios::binary);
@@ -157,12 +170,16 @@ int main() {
     };
     write_bad({asset.begin(), asset.begin() + 15});
     assert(!konngara_intro_preview() && starts == before);
+    assert(test_heap_count == 0 && test_heap_bytes == 0);
     write_bad({asset.begin(), asset.end() - 1});
     assert(!konngara_intro_preview() && starts == before);
+    assert(test_heap_count == 0 && test_heap_bytes == 0);
     write_bad(bad);
     assert(!konngara_intro_preview() && starts == before);
     assert(REG_WININ == 0x1919 && test_bgs[0].priority == 0);
     assert(std::rename("nitro:/konngara_intro.saved", "nitro:/konngara_intro.bin") == 0);
+    assert(test_heap_count == 0 && test_heap_bytes == 0 && test_obj_attempts == obj_attempts);
+    std::puts("Konngara allocations: 20 full replays, both malloc failures, audio/open/invalid-file failures return to zero live heap allocations; zero OBJ requests");
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     std::puts("Konngara: all 711 source frames, odd-line/wrapped scroll, strip pan, four SFX9 cues, palette composition, replay/failure cleanup and fullscreen priority restoration passed");
 }

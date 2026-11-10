@@ -198,6 +198,7 @@ int main(int argc, char **argv)
     initialize_irand(time(NULL));
 
     video_init();
+    // One OAM lifetime: stage/game resets reuse the renderer graphics caches.
     oamInit(&oamMain, SpriteMapping_1D_32, false);
     subscreen_init();
     text_layer_init();
@@ -209,18 +210,10 @@ int main(int argc, char **argv)
     // Backgrounds load per stage (stage_load); tiles only need the atlas.
     tiles_init();
 
-    player_render_init();
-    shots_render_init();
-    orb_render_init();
-    item_render_init();
-    if (!boss_render_init()) {
+    if (!player_render_init() || !shots_render_init() || !orb_render_init() ||
+        !item_render_init() || !boss_render_init() || !upper_hud_init()) {
         consoleDemoInit();
-        printf("Boss sprite VRAM allocation failed");
-        while (true) swiWaitForVBlank();
-    }
-    if (!upper_hud_init()) {
-        consoleDemoInit();
-        printf("HUD sprite VRAM allocation failed");
+        printf("Sprite VRAM allocation failed");
         while (true) swiWaitForVBlank();
     }
 

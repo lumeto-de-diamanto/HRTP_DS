@@ -40,6 +40,7 @@ void route_render(RouteChoice route)
 
 bool boss_render_init()
 {
+    if (gfx) return true;
     static_assert(sizeof(SingyokuSphere_tiles) == 8 * frame_bytes);
     static_assert(sizeof(SingyokuFlash_tiles) == 3 * frame_bytes);
     static_assert(sizeof(SingyokuPerson_tiles) == 5 * frame_bytes);

@@ -2,6 +2,7 @@
 #include "main/player/player.hpp"
 #include "video.hpp"
 #include "camera.hpp"
+#include "obj_gfx.hpp"
 #include <nds.h>
 
 #include "sprites/Miko.h"
@@ -20,17 +21,18 @@ const int MIKO_48_FRAME_COUNT = 28;
 const int MIKO_48_FRAME_BYTES = (32 * 32 * 4) / 8;
 
 u16 *g_regular_gfx[REGULAR_FRAME_COUNT];
-u16 *g_32_gfx[REGULAR_FRAME_COUNT];
-u16 *g_48_gfx[REGULAR_FRAME_COUNT];
+u16 *g_32_gfx[MIKO_32_FRAME_COUNT];
+u16 *g_48_gfx[MIKO_48_FRAME_COUNT];
 
-void player_render_init() {
+bool player_render_init() {
+    if (g_regular_gfx[0]) return true;
+    ObjGfxTransaction<REGULAR_FRAME_COUNT + MIKO_32_FRAME_COUNT + MIKO_48_FRAME_COUNT> allocation;
     // Load Reimu's sprites into memory
     
     const uint8_t *regular_bytes = reinterpret_cast<const uint8_t *>(Miko_tiles);
     for (int i = 0; i < REGULAR_FRAME_COUNT; i++)
     {
-        g_regular_gfx[i] = oamAllocateGfx(&oamMain, SpriteSize_16x16,
-                                           SpriteColorFormat_16Color);
+        if (!allocation.allocate(g_regular_gfx[i], SpriteSize_16x16)) return false;
         memcpy(g_regular_gfx[i], regular_bytes + (i * REGULAR_FRAME_BYTES),
                REGULAR_FRAME_BYTES);
     }
@@ -38,8 +40,7 @@ void player_render_init() {
     const uint8_t *miko_32_bytes = reinterpret_cast<const uint8_t *>(Miko32_tiles);
     for (int i = 0; i < MIKO_32_FRAME_COUNT; i++)
     {
-        g_32_gfx[i] = oamAllocateGfx(&oamMain, SpriteSize_32x16,
-                                           SpriteColorFormat_16Color);
+        if (!allocation.allocate(g_32_gfx[i], SpriteSize_32x16)) return false;
         memcpy(g_32_gfx[i], miko_32_bytes + (i * MIKO_32_FRAME_BYTES),
                MIKO_32_FRAME_BYTES);
     }
@@ -47,13 +48,14 @@ void player_render_init() {
     const uint8_t *miko_48_bytes = reinterpret_cast<const uint8_t *>(Miko48_tiles);
     for (int i = 0; i < MIKO_48_FRAME_COUNT; i++)
     {
-        g_48_gfx[i] = oamAllocateGfx(&oamMain, SpriteSize_32x32,
-                                           SpriteColorFormat_16Color);
+        if (!allocation.allocate(g_48_gfx[i], SpriteSize_32x32)) return false;
         memcpy(g_48_gfx[i], miko_48_bytes + (i * MIKO_48_FRAME_BYTES),
                MIKO_48_FRAME_BYTES);
     }
 
     memcpy(SPRITE_PALETTE, Miko_palette, sizeof(Miko_palette));
+    allocation.commit();
+    return true;
 }
 
 void player_render_frame() {

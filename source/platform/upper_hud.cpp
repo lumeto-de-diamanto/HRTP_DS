@@ -26,9 +26,15 @@ void icon_row(int slot, int x, int count, int maximum, int capacity, u16 *gfx)
 
 bool upper_hud_init()
 {
+    if (icons[0]) return true;
+    ObjGfxTransaction<2 + OAM_HUD_HP_COUNT> allocation;
+    for (int icon = 0; icon < 2; ++icon)
+        if (!allocation.allocate(icons[icon], SpriteSize_16x16)) return false;
+    for (int i = 0; i < OAM_HUD_HP_COUNT; ++i)
+        if (!allocation.allocate(health[i], SpriteSize_64x32)) return false;
+
+    // Do not publish OAM pointers or palettes until all allocations succeed.
     for (int icon = 0; icon < 2; ++icon) {
-        icons[icon] = oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_16Color);
-        if (!icons[icon]) return false;
         obj4_clear(icons[icon], 128);
         for (int y = 0; y < 16; ++y)
             for (int x = 0; x < 16; ++x)
@@ -41,8 +47,6 @@ bool upper_hud_init()
     // Compact boss resources leave144px for all original bosses' <=18 HP.
     // Eight points per64px OBJ keeps the scanline budget comfortably small.
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) {
-        health[i] = oamAllocateGfx(&oamMain, SpriteSize_64x32, SpriteColorFormat_16Color);
-        if (!health[i]) return false;
         obj4_clear(health[i], 1024);
         oamSet(&oamMain, OAM_SLOT_HUD_HP + i, 48 + i * 64, 0,
             0, OBJ_PAL_OVERLAY, SpriteSize_64x32, SpriteColorFormat_16Color,
@@ -51,6 +55,7 @@ bool upper_hud_init()
     last_lives = last_bombs = last_hp = -1;
     health_visible = false;
     mode_valid = false;
+    allocation.commit();
     return true;
 }
 

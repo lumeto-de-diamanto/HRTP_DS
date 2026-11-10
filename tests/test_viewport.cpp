@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iterator>
 #include <vector>
+#include "heap_probe.hpp"
 #include "camera.hpp"
 #include "canvas.hpp"
 #include "video.hpp"
@@ -203,6 +204,117 @@ static void check_portal_rendering()
     std::puts("Portal rendering: actual BG1 entrance/exit cels and OAM orb reappearance at 40 passed");
 }
 
+static void check_obj_allocator_model()
+{
+    oamInit(&oamMain, SpriteMapping_1D_32, false);
+    auto *small = oamAllocateGfx(&oamMain, SpriteSize_8x8, SpriteColorFormat_16Color);
+    auto *large = oamAllocateGfx(&oamMain, SpriteSize_64x64, SpriteColorFormat_16Color);
+    assert(small == test_obj_vram && large == test_obj_vram + 1024);
+    // The alignment gap remains usable, rather than silently consumed.
+    auto *gap = oamAllocateGfx(&oamMain, SpriteSize_8x8, SpriteColorFormat_16Color);
+    assert(gap == test_obj_vram + 16);
+    oamFreeGfx(&oamMain, large); oamFreeGfx(&oamMain, small); oamFreeGfx(&oamMain, gap);
+    std::vector<u16 *> full;
+    while (auto *p = oamAllocateGfx(&oamMain, SpriteSize_8x8, SpriteColorFormat_16Color)) full.push_back(p);
+    assert(full.size() == 1024 && test_obj_used == 32768);
+    // Free alternating blocks: enough total space, but no contiguous 16x16.
+    for (size_t i = 0; i < full.size(); i += 2) oamFreeGfx(&oamMain, full[i]);
+    assert(!oamAllocateGfx(&oamMain, SpriteSize_16x16, SpriteColorFormat_16Color));
+    for (size_t i = 1; i < full.size(); i += 2) oamFreeGfx(&oamMain, full[i]);
+    assert(test_obj_used == 0 && test_obj_count == 0);
+    large = oamAllocateGfx(&oamMain, SpriteSize_64x64, SpriteColorFormat_16Color);
+    assert(large == test_obj_vram); oamFreeGfx(&oamMain, large);
+    oamInit(&oamMain, SpriteMapping_1D_32, false);
+}
+
+static void check_sprite_initializers()
+{
+    struct Owner { bool (*init)(); size_t count, bytes; };
+    const Owner owners[] = {
+        {player_render_init, 62, 19456}, {shots_render_init, 4, 128},
+        {orb_render_init, 5, 576}, {item_render_init, 2, 256},
+        {boss_render_init, 1, 2048}, {upper_hud_init, 5, 3328}
+    };
+    for (const auto &owner : owners) {
+        const size_t bytes = test_obj_used, count = test_obj_count;
+        const std::vector<size_t> lengths(std::begin(test_obj_lengths), std::end(test_obj_lengths));
+        const std::vector<u16> resident(std::begin(test_obj_vram), std::end(test_obj_vram));
+        const std::vector<u16> palette(std::begin(SPRITE_PALETTE), std::end(SPRITE_PALETTE));
+        const auto changes = test_oam_changes;
+        for (size_t fail = 0; fail < owner.count; ++fail) {
+            const size_t attempts = test_obj_attempts, frees = test_obj_frees;
+            test_obj_fail_after = fail;
+            assert(!owner.init());
+            assert(test_obj_attempts == attempts + fail + 1 && test_obj_frees == frees + fail);
+            assert(test_obj_used == bytes && test_obj_count == count);
+            assert(std::equal(lengths.begin(), lengths.end(), test_obj_lengths));
+            for (size_t i = 0; i < lengths.size(); ++i)
+                if (lengths[i]) assert(std::equal(resident.begin() + i * 16,
+                    resident.begin() + i * 16 + lengths[i] / 2, test_obj_vram + i * 16));
+            assert(test_oam_changes == changes && std::equal(palette.begin(), palette.end(), SPRITE_PALETTE));
+        }
+        test_obj_fail_after = -1;
+        // Also exercise real capacity exhaustion, not just injected failures.
+        std::vector<u16 *> blockers;
+        while (auto *p = oamAllocateGfx(&oamMain, SpriteSize_8x8, SpriteColorFormat_16Color)) blockers.push_back(p);
+        assert(!owner.init());
+        for (auto *p : blockers) oamFreeGfx(&oamMain, p);
+        assert(test_obj_used == bytes && test_obj_count == count);
+        assert(owner.init()); // retry after every partial-allocation failure
+        assert(test_obj_used == bytes + owner.bytes && test_obj_count == count + owner.count);
+    }
+    assert(test_obj_count == 79 && test_obj_used == 25792);
+    const auto attempts = test_obj_attempts, changes = test_oam_changes;
+    const std::vector<u16> resident(std::begin(test_obj_vram), std::end(test_obj_vram));
+    const std::vector<u16> palette(std::begin(SPRITE_PALETTE), std::end(SPRITE_PALETTE));
+    test_obj_fail_after = 0;
+    for (int repeat = 0; repeat < 2000; ++repeat)
+        for (const auto &owner : owners) assert(owner.init());
+    test_obj_fail_after = -1;
+    assert(test_obj_attempts == attempts && test_oam_changes == changes);
+    assert(std::equal(resident.begin(), resident.end(), test_obj_vram));
+    assert(std::equal(palette.begin(), palette.end(), SPRITE_PALETTE));
+    size_t end = 0;
+    for (size_t i = 0; i < 1024; ++i) if (test_obj_lengths[i]) end = i * 32 + test_obj_lengths[i];
+    std::printf("Sprites: 79 allocation-failure positions rolled back; 2000 reinitializations stable; %zu allocations/%zu bytes, aligned end %zu of 32768\n",
+        test_obj_count, test_obj_used, end);
+}
+
+static void check_sprite_lifecycles()
+{
+    // The pause/bonus canvas snapshot is intentionally retained after first use.
+    palette_dim(50); palette_restore();
+    assert(test_heap_count == 1 && test_heap_bytes == 98304);
+    const auto heap_attempts = test_heap_attempts, obj_attempts = test_obj_attempts;
+    for (int transition = 0; transition < 1000; ++transition) {
+        const bool boss = transition % 8 == 7;
+        boss_render_hide();
+        camera.snap_center();
+        if (boss) load_boss_background(); else load_background(transition % 7);
+        palette_apply_round();
+        const auto &stage = ds_stagedat0[transition % 5];
+        stage_init(stage.obstacle, stage.card); stage_reset(); stage_render_clear();
+        player_initialize(); orb_initialize(); shots_initialize(); Pellets.init(); Items.init();
+        timer_init_for(0, transition % 5);
+        if (boss) singyoku_init();
+        Items.add_bomb(300, 120); Items.add_point(340, 120); Items.update();
+        shots_add(300, 160); shots_update();
+        player_is_hit = true; player_miss();
+        stage_render_frame(); player_render_frame(); shots_render_frame(); orb_render_frame();
+        item_render_frame(); item_rings_frame(); orb_indicator_render();
+        upper_hud_render(transition % 13, transition % 6, stage_timer,
+            boss ? UpperHudMode::Boss : UpperHudMode::Regular);
+        if (boss) { boss_render_frame(); upper_hud_boss(18, 18, 6, 12); }
+        else upper_hud_boss_hide();
+        palette_dim(50); palette_restore();
+        assert(test_obj_count == 79 && test_obj_used == 25792 && test_obj_attempts == obj_attempts);
+        // Each background load uses one temporary buffer and frees it.
+        assert(test_heap_count == 1 && test_heap_bytes == 98304);
+        assert(test_heap_attempts == heap_attempts + transition + 1);
+    }
+    std::puts("Sprites: 1000 stage/life/HUD/boss reset cycles with flat OBJ usage and one retained 98304-byte dim snapshot passed");
+}
+
 int main()
 {
     static_assert(PLAYFIELD_W == 640 && PLAYFIELD_H == 336);
@@ -221,6 +333,7 @@ int main()
     camera.snap_center(); assert(camera.left == 32);
 
     video_init(); text_layer_init(); tiles_init();
+    check_obj_allocator_model();
     assert(test_bgs[1].size == BgSize_T_512x256);
     assert(test_bgs[3].size == BgSize_B8_512x256 && test_bgs[2].map == 16);
     assert(test_vram_d_mode == VRAM_D_MAIN_BG_0x06040000);
@@ -241,10 +354,10 @@ int main()
                 const int left = pass & 1 ? 64 - step : step;
                 camera.left = left;
                 video_apply_camera(); assert(test_bgs[1].x == left && test_bgs[1].y == 0);
-                // Current checked-in camera uses centered two-thirds scenery
+                // Current checked-in camera uses centered three-fifths scenery
                 // motion; keep it unchanged rather than restoring an old test's
                 // half-speed policy during unrelated title/build fixes.
-                assert(test_bgs[3].x == (boss ? left : 32 + ((left - 32) * 2) / 3) && test_bgs[3].y == 0);
+                assert(test_bgs[3].x == (boss ? left : 32 + ((left - 32) * 3) / 5) && test_bgs[3].y == 0);
                 check_background(source);
                 assert(std::equal(resident.begin(), resident.end(), BG_BMP_RAM(4)));
             }
@@ -272,9 +385,9 @@ int main()
     stage_render_clear(); stage_render_frame();
 
     initialize_irand(1234); player_initialize(); orb_initialize(); shots_initialize(); Pellets.init(); Items.init();
-    player_render_init(); shots_render_init(); orb_render_init(); item_render_init(); assert(boss_render_init());
-    assert(upper_hud_init());
-    assert(test_obj_used < 65536 && player.x_position == 304 && player.y_position == 368);
+    check_sprite_initializers();
+    const auto sprite_attempts = test_obj_attempts;
+    assert(test_obj_used < test_obj_capacity && player.x_position == 304 && player.y_position == 368);
     assert(orb_get_state().x_position == 600 && orb_get_state().y_position == 280);
     for (int i = 0; i < 200; ++i) player_update(KEY_LEFT, 0);
     assert(player.x_position == 0);
@@ -513,6 +626,8 @@ int main()
     check_ofuda_rendering();
     check_portal_rendering();
     assert(test_obj_used == obj_used);
+    assert(test_obj_attempts == sprite_attempts && test_obj_count == 79 && test_obj_used == 25792);
+    check_sprite_lifecycles();
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     std::puts("Viewport: center-anchored regular parallax/boss 1:1, both full-size HUD modes, 18HP strips, cached mode handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
 }

@@ -3,6 +3,7 @@
 #include "main/player/shot.hpp"
 #include "video.hpp"
 #include "camera.hpp"
+#include "obj_gfx.hpp"
 
 #include "sprites/Shot.h"
 
@@ -16,14 +17,15 @@ const int OAM_ID_BASE = 1;
 
 u16 *g_shot_gfx[FRAME_COUNT];
 
-void shots_render_init(void)
+bool shots_render_init(void)
 {
+    if (g_shot_gfx[0]) return true;
+    ObjGfxTransaction<FRAME_COUNT> allocation;
     const uint8_t *tiles_bytes = reinterpret_cast<const uint8_t *>(Shot_tiles);
 
     for (int i = 0; i < FRAME_COUNT; i++)
     {
-        g_shot_gfx[i] = oamAllocateGfx(&oamMain, SpriteSize_8x8,
-                                         SpriteColorFormat_16Color);
+        if (!allocation.allocate(g_shot_gfx[i], SpriteSize_8x8)) return false;
         memcpy(g_shot_gfx[i], tiles_bytes + (i * FRAME_SIZE_BYTES),
                FRAME_SIZE_BYTES);
     }
@@ -42,6 +44,8 @@ void shots_render_init(void)
                true, // hide
                false, false, false);
     }
+    allocation.commit();
+    return true;
 }
 
 void shots_render_frame() {

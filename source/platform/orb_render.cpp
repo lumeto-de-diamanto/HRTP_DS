@@ -17,30 +17,31 @@ const int FRAME_BYTES = (FRAME_H * FRAME_W * 4) / 8;
 u16 *g_orb_gfx[FRAME_COUNT];
 static u16 *arrow_gfx;
 
-void orb_render_init(void)
+bool orb_render_init(void)
 {
+    if (g_orb_gfx[0]) return true;
+    ObjGfxTransaction<FRAME_COUNT + 1> allocation;
     const uint8_t *tiles_bytes = reinterpret_cast<const uint8_t *>(Orb_tiles);
 
     for (int i = 0; i < FRAME_COUNT; i++)
     {
-        g_orb_gfx[i] = oamAllocateGfx(&oamMain, SpriteSize_16x16,
-                                         SpriteColorFormat_16Color);
+        if (!allocation.allocate(g_orb_gfx[i], SpriteSize_16x16)) return false;
         memcpy(g_orb_gfx[i], tiles_bytes + (i * FRAME_BYTES),
                FRAME_BYTES);
     }
 
-    arrow_gfx = oamAllocateGfx(&oamMain, SpriteSize_8x16, SpriteColorFormat_16Color);
-    if (arrow_gfx) {
-        obj4_clear(arrow_gfx, 64);
-        for (int i = 0; i < 7; ++i) {
-            const int radius = i < 4 ? i : 3;
-            for (int y = 7 - radius - 1; y <= 7 + radius + 1; ++y)
-                obj4_pixel(arrow_gfx, 8, 6 - i, y, 1);
-            for (int y = 7 - radius; y <= 7 + radius; ++y)
-                obj4_pixel(arrow_gfx, 8, 6 - i, y, 2);
-        }
+    if (!allocation.allocate(arrow_gfx, SpriteSize_8x16)) return false;
+    obj4_clear(arrow_gfx, 64);
+    for (int i = 0; i < 7; ++i) {
+        const int radius = i < 4 ? i : 3;
+        for (int y = 7 - radius - 1; y <= 7 + radius + 1; ++y)
+            obj4_pixel(arrow_gfx, 8, 6 - i, y, 1);
+        for (int y = 7 - radius; y <= 7 + radius; ++y)
+            obj4_pixel(arrow_gfx, 8, 6 - i, y, 2);
     }
     oamSetHidden(&oamMain, OAM_SLOT_ORB_ARROW, true);
+    allocation.commit();
+    return true;
 }
 
 void orb_render_frame() {

@@ -5,6 +5,7 @@
 #include "canvas.hpp"
 #include "video.hpp"
 #include "camera.hpp"
+#include "obj_gfx.hpp"
 
 #include "main/stage/item.hpp"
 
@@ -16,17 +17,20 @@
 
 static u16 *g_item_gfx[2]; // 0 = bomb, 1 = point
 
-void item_render_init()
+bool item_render_init()
 {
+    if (g_item_gfx[0]) return true;
+    ObjGfxTransaction<2> allocation;
     const uint8_t *tiles = reinterpret_cast<const uint8_t *>(Item_tiles);
     for (int i = 0; i < 2; i++) {
-        g_item_gfx[i] = oamAllocateGfx(&oamMain, SpriteSize_16x16,
-                                       SpriteColorFormat_16Color);
+        if (!allocation.allocate(g_item_gfx[i], SpriteSize_16x16)) return false;
         memcpy(g_item_gfx[i], tiles + (i * ITEM_FRAME_BYTES),
                ITEM_FRAME_BYTES);
     }
     // Palette banks are filled by palette_apply_round(): bombs follow the
     // current round, the point orb stays on round 1's palette.
+    allocation.commit();
+    return true;
 }
 
 static void item_slot_update(int slot, const Item &item, int frame,
