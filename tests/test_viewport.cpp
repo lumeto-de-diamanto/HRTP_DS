@@ -39,7 +39,9 @@
 #include "sprites/HudIcons.h"
 #include "fonts/font8x16.h"
 
-void mdrv2_se_play(int) {}
+std::vector<int> test_effects;
+void mdrv2_se_play(int id) { test_effects.push_back(id); }
+void test_stage_entrances();
 extern PlayerState player;
 
 // Count calls at the real bottom HUD's drawing seam: unchanged frames must
@@ -628,6 +630,7 @@ int main()
     assert(test_obj_used == obj_used);
     assert(test_obj_attempts == sprite_attempts && test_obj_count == 79 && test_obj_used == 25792);
     check_sprite_lifecycles();
+    test_stage_entrances();
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     std::puts("Viewport: center-anchored regular parallax/boss 1:1, both full-size HUD modes, 18HP strips, cached mode handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
 }

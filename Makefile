@@ -143,7 +143,7 @@ boss-release-checks: all
 	python3 -B tests/test_boss_assets.py --rom
 
 VIEWPORT_TEST_SOURCES := tests/test_viewport.cpp $(wildcard source/engine/main/player/*.cpp source/engine/main/boss/*.cpp source/engine/main/bullet/*.cpp source/engine/main/stage/stageobj.cpp source/engine/main/stage/card.cpp source/engine/main/stage/item.cpp source/engine/main/stage/timer.cpp source/engine/main/math/*.cpp source/engine/main/random.cpp) $(addprefix source/platform/,camera.cpp canvas.cpp video.cpp tiles.cpp stage_render.cpp background.cpp upper_hud.cpp hud_render.cpp font16x16.cpp player_render.cpp orb_render.cpp shot_render.cpp item_render.cpp pellet_render.cpp popup.cpp boss_render.cpp palette_fx.cpp text_layer.cpp)
-VIEWPORT_TEST_SOURCES += tests/heap_probe.cpp
+VIEWPORT_TEST_SOURCES += tests/heap_probe.cpp tests/test_stage_entrance.cpp source/platform/stage_entrance.cpp
 HEAP_PROBE_LDFLAGS := -Wl,--wrap=malloc,--wrap=free
 viewport-tests: assets
 	@mkdir -p build/viewport/tests

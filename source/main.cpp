@@ -10,6 +10,7 @@
 #include "video.hpp"
 #include "tiles.hpp"
 #include "stage_render.hpp"
+#include "stage_entrance.hpp"
 #include "pellet_render.hpp"
 #include "subscreen.hpp"
 #include "hud_render.hpp"
@@ -82,6 +83,17 @@ static int global_stage_num()
     return stage_number(current_scene, current_stage);
 }
 
+static void render_hud()
+{
+    const bool boss = stage_has_singyoku(current_scene, current_stage);
+    upper_hud_render(lives, rem_bombs, stage_timer, boss ? UpperHudMode::Boss : UpperHudMode::Regular);
+    if (boss) {
+        const auto &s = singyoku_state();
+        upper_hud_boss(s.health.hp, s.hp_displayed);
+    } else upper_hud_boss_hide();
+    hud_render(lives, global_stage_num());
+}
+
 static void render_frame()
 {
     const bool boss = stage_has_singyoku(current_scene, current_stage);
@@ -101,12 +113,7 @@ static void render_frame()
     orb_indicator_render();
     if (boss) boss_render_frame();
     canvas_playfield_clip(false);
-    upper_hud_render(lives, rem_bombs, stage_timer, boss ? UpperHudMode::Boss : UpperHudMode::Regular);
-    if (boss) {
-        const auto &s = singyoku_state();
-        upper_hud_boss(s.health.hp, s.hp_displayed);
-    } else upper_hud_boss_hide();
-    hud_render(lives, global_stage_num());
+    render_hud();
     oamUpdate(&oamMain);
 }
 
@@ -138,6 +145,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false)
     if (scene != current_scene || boss != previous_boss)
         music_stop();
     boss_render_hide();
+    stage_entrance_prepare();
     // Snap before loading/displaying scenery or drawing any stage text. A
     // previous life/scene's camera must never leak into the entrance.
     camera.snap_center();
@@ -158,22 +166,26 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false)
         stage_init(layout->obstacle, layout->card);
     }
     stage_reset();
-    stage_render_clear();
     Pellets.init();
     Items.init();
     timer_init_for(scene, stage);
     orb_initialize();
     player_initialize();
     shots_initialize();
-    canvas_clear();
     popup_clear();
-    if (boss) singyoku_init();
-    render_frame();
-
-    // ReC98 stage_entrance: giant stage number, then the wait-for-shot
-    // serve; SinGyoku instead gets its 200-frame rotation entrance.
-    stage_num_animate(global_stage_num(), current_stage == 0 || boss);
+    if (boss) {
+        singyoku_init();
+        // Preserve the approved boss palette/frame cache beneath its title.
+        // Entrance presentation hides this shadow OAM before any update.
+        boss_render_frame();
+    }
+    render_hud();
+    // No fully rendered gameplay frame may expose the orb/cards before the
+    // entrance. Later-stage card ripple precedes STAGE NN, as in ReC98.
+    video_apply_camera();
+    stage_entrance_animate(global_stage_num(), current_stage == 0 || boss);
     wait_for_shot = !boss;
+    render_frame(); // source life-loop handoff: player/orb appear before BGM
 
     // ReC98 starts regular-stage BGM after the entrance and keeps it running
     // across the scene's non-boss stages. music_play_scene() is idempotent for

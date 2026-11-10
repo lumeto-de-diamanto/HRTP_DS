@@ -36,8 +36,9 @@ executable ranges, linked font and exact NitroFS contents
 extensions and HURRY UP
 * `make projectile-tests projectile-sanitize`: checks orb/pellet contact and
 portal timelines; viewport tests also verify white bullets and portal rendering
-* `make viewport-tests viewport-sanitize`: checks rendering, sprite allocation
-rollback/reinitialization and stable usage across repeated state transitions
+* `make viewport-tests viewport-sanitize`: checks rendering, original stage-entry
+cel order/timing, sprite allocation rollback/reinitialization and stable usage
+across repeated state transitions
 * `make konngara-tests konngara-sanitize`: checks the intro timeline/rendering
 and temporary-allocation cleanup on replay and failure
 

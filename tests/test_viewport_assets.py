@@ -24,8 +24,12 @@ class ViewportAssets(unittest.TestCase):
         source = Path('source/main.cpp').read_text()
         load = source.split('static void stage_load(', 1)[1].split('int main(', 1)[0]
         self.assertLess(load.index('camera.snap_center()'), load.index('load_boss_background()'))
-        self.assertLess(load.index('player_initialize()'), load.index('render_frame()'))
-        self.assertLess(load.index('render_frame()'), load.index('stage_num_animate('))
+        self.assertLess(load.index('stage_entrance_prepare()'), load.index('load_boss_background()'))
+        self.assertLess(load.index('player_initialize()'), load.index('stage_entrance_animate('))
+        presentations = list(re.finditer(r'(?<!\w)render_frame\(\);', load))
+        self.assertEqual(len(presentations), 1)  # never expose orb/cards before entrance
+        self.assertLess(load.index('stage_entrance_animate('), presentations[0].start())
+        self.assertLess(presentations[0].start(), load.index('music_play_track('))
         for path in Path('source/engine').rglob('*'):
             if path.suffix in ('.cpp', '.hpp', '.h'):
                 self.assertNotRegex(path.read_text(), r'#include\s*[<\"][^>\"]*camera\.')
