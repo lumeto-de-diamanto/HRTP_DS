@@ -7,6 +7,7 @@
 
 #include "pellet.hpp"
 #include "main/math/vector.hpp"
+#include "main/math/overlap.hpp"
 #include "main/player/player.hpp"
 #include "main/player/orb.hpp"
 #include "main/player/shot.hpp"
@@ -312,10 +313,14 @@ bool CPellets::update()
         // Orb: halves the velocity and starts the destruction animation
         // (+10). Decaying pellets ignore all hit tests (ReC98).
         if (pel.decay_frame == 0) {
-            if ((pel.cur_left.v > (orb.x_position - PELLET_W) * 16) &&
-                (pel.cur_left.v < (orb.x_position + PELLET_W + 8) * 16) &&
-                (pel.cur_top.v > (orb.y_position - PELLET_H) * 16) &&
-                (pel.cur_top.v < (orb.y_position + PELLET_H) * 16)) {
+            // ReC98 tests integer-pixel pellet 16x8 against the full 32x32
+            // orb, not a small box around its top-left. Keep strict edges
+            // and the source's asymmetric extra 8px pellet width.
+            if (overlap_xywh_xywh_lt_gt(
+                pel.cur_left.to_pixel(), pel.cur_top.to_pixel(),
+                (PELLET_W + 8), PELLET_H,
+                orb.x_position, orb.y_position, ORB_W, ORB_H
+            )) {
                 pel.velocity.x.v >>= 1;
                 pel.velocity.y.v >>= 1;
                 pel.decay_frame = 1;

@@ -100,7 +100,7 @@ struct CPellets {
 
     int alive_count() const;
 
-    // Bomb effect (ReC98 Pellets.decay): halves every pellet's velocity.
+    // Bomb effect (ReC98 Pellets.decay): reduces velocity to two thirds.
     void decay();
 
     // Access for the renderer and hit tests.
