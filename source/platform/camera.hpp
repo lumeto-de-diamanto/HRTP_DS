@@ -14,7 +14,7 @@ static_assert(UPPER_HUD_H + VIEW_PLAY_H == VIEW_H);
 // Floor, including partially visible sprites left/above the viewport. Division
 // toward zero would make those sprites jump by one pixel at the screen edge.
 constexpr int half_floor(int value) { return value / 2 - (value < 0 && value % 2 != 0); }
-constexpr int two_thirds(int value) { return (value * 2) / 3; }
+constexpr int three_fifths(int value) { return (value * 3) / 5; }
 constexpr int view_clamp(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 struct Camera {
@@ -26,7 +26,7 @@ struct Camera {
     int x(int world_x) const { return half_floor(world_x) - left; }
     int background_x(bool boss) const {
         const int center = VIEW_MAX_LEFT / 2;
-        return boss ? left : center + two_thirds(left - center);
+        return boss ? left : center + three_fifths(left - center);
     }
     static constexpr int y(int world_y) { return half_floor(world_y) - PLAYFIELD_TOP / 2 + UPPER_HUD_H; }
 };
