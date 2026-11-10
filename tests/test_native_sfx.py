@@ -14,7 +14,7 @@ from audio_mix import load_mix_profile
 
 class DecoderTests(unittest.TestCase):
     def setUp(self):
-        self.raw = Path('assets/ZIGOKU.MDE').read_bytes()
+        self.raw = Path('assets/hdi_dump/ZIGOKU.MDE').read_bytes()
         self.bank = Bank(self.raw)
 
     def test_original_bank_identity_and_all_entry_stream_counts(self):
@@ -44,7 +44,7 @@ class DecoderTests(unittest.TestCase):
         self.assertEqual(self.bank.render_events(17)['notes'][0]['slope'], -299)
 
     def test_periods_match_shipped_driver_table(self):
-        driver = Path('assets/MDRV98.COM').read_bytes()
+        driver = Path('assets/hdi_dump/MDRV98.COM').read_bytes()
         self.assertEqual(struct.unpack_from('<12H', driver, 0x14c - 0x100), PERIODS)
 
     def test_noise_raw_bytes_reach_chip_without_pitch_coupling(self):

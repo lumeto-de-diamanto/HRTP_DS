@@ -45,7 +45,7 @@ class ViewportAssets(unittest.TestCase):
     def test_backgrounds_keep_all_source_columns(self):
         for name in [f'ST{i}' for i in range(7)] + ['BOSS1']:
             with self.subTest(background=name):
-                image, palette, size = decode_grp(Path(f'assets/{name}.GRP').read_bytes())
+                image, palette, size = decode_grp(Path(f'assets/hdi_dump/{name}.GRP').read_bytes())
                 self.assertEqual(size, (400, 640))
                 half, _ = halve_background(image, palette)
                 expected = bytes(pixel for row in half[8:] for pixel in row)

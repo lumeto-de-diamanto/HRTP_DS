@@ -11,8 +11,6 @@ BACKGROUND_DIR  := $(PROCESSED_DIR)/backgrounds
 NITROFS_DIR     := nitrofs
 
 FONT_DIR        := $(PROCESSED_DIR)/fonts
-SHIFTJIS_DIR    := ReC98-anniversary/th01/shiftjis
-SHIFTJIS_HEADERS := $(wildcard $(SHIFTJIS_DIR)/*.hpp)
 
 STAGEDAT_DIR    := $(PROCESSED_DIR)/stagedat
 SCENES          := 0 1 2 3 4 5 6 7
@@ -25,6 +23,28 @@ PYTHON          := python3
 
 PACKFILE_STAMP   := $(PACKFILE_DIR)/.stamp
 HDI_DUMP_STAMP   := $(HDI_DUMP_DIR)/.stamp
+
+# Extraction creates multiple files at once. Explicit grouped targets let Make
+# find these inputs on the FIRST build and recover a deleted member safely
+# under -j. A stamp alone cannot describe an implicit rule's missing input.
+HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
+HDI_FILES := $(PACKFILE) $(addprefix $(HDI_DUMP_DIR)/,$(addsuffix .GRP,$(HDI_GRP_NAMES)))
+PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
+PACKFILE_FILES := $(addprefix $(PACKFILE_DIR)/,$(PACKFILE_NAMES))
+BACKGROUND_BINS := $(addprefix $(NITROFS_DIR)/,$(addsuffix .bin,st0 st1 st2 st3 st4 st5 st6 boss1))
+
+# If ANY extraction peer was deleted, regenerate the whole group before its
+# first consumer. Otherwise a late missing peer could re-extract files after
+# Make already checked an earlier consumer, requiring a second invocation.
+ifneq ($(filter-out $(wildcard $(HDI_FILES)),$(HDI_FILES)),)
+HDI_EXTRACT_FORCE := force-hdi-extract
+endif
+ifneq ($(filter-out $(wildcard $(PACKFILE_FILES)),$(PACKFILE_FILES)),)
+PACKFILE_EXTRACT_FORCE := force-packfile-extract
+endif
+
+.PHONY: assets assets-clean force-hdi-extract force-packfile-extract
+.DELETE_ON_ERROR:
 
 ifeq ($(VERBOSE),1)
 V		:=
@@ -39,12 +59,13 @@ assets: $(PACKFILE_STAMP) $(HDI_DUMP_STAMP) $(SPRITES_DIR)/Miko.h $(SPRITES_DIR)
 assets: $(SPRITES_DIR)/SingyokuSphere.h $(SPRITES_DIR)/SingyokuFlash.h $(SPRITES_DIR)/SingyokuPerson.h $(BACKGROUND_DIR)/boss1.h
 assets: $(SPRITES_DIR)/HudIconsSmall.h
 assets: $(NITROFS_DIR)/konngara_intro.bin
+assets: $(BACKGROUND_BINS)
 
 assets-clean:
 	@echo "  ASSETS clean"
 	$(V)$(RM) $(PROCESSED_DIR) $(HDI_DUMP_DIR) $(PACKFILE_DIR) $(NITROFS_DIR)
 
-$(NITROFS_DIR)/konngara_intro.bin: $(HDI_DUMP_DIR)/BOSS7_D1.GRP $(HDI_DUMP_DIR)/BOSS8_A1.GRP $(wildcard $(HDI_DUMP_DIR)/BOSS8_D[1-4].GRP) $(TOOLS_DIR)/konngara_to_bin.py $(TOOLS_DIR)/grp_to_bin.py
+$(NITROFS_DIR)/konngara_intro.bin: $(HDI_DUMP_DIR)/BOSS7_D1.GRP $(HDI_DUMP_DIR)/BOSS8_A1.GRP $(addprefix $(HDI_DUMP_DIR)/BOSS8_D,1.GRP 2.GRP 3.GRP 4.GRP) $(TOOLS_DIR)/konngara_to_bin.py $(TOOLS_DIR)/grp_to_bin.py
 	$(PYTHON) $(TOOLS_DIR)/konngara_to_bin.py $(HDI_DUMP_DIR) $@
 
 $(SPRITES_DIR)/HudIconsSmall.h: $(PACKFILE_STAMP) $(PACKFILE_DIR)/STG.PTN $(TOOLS_DIR)/ptn_to_h.py $(TOOLS_DIR)/halve_image.py
@@ -59,20 +80,22 @@ $(SPRITES_DIR)/SingyokuFlash.h: $(PACKFILE_STAMP) $(PACKFILE_DIR)/BOSS1_2.BOS $(
 $(SPRITES_DIR)/SingyokuPerson.h: $(PACKFILE_STAMP) $(PACKFILE_DIR)/BOSS1_3.BOS $(TOOLS_DIR)/bos_to_h.py $(TOOLS_DIR)/halve_image.py
 	$(PYTHON) $(TOOLS_DIR)/bos_to_h.py $(PACKFILE_DIR)/BOSS1_3.BOS $(SPRITES_DIR) SingyokuPerson --halve dither
 
-$(BACKGROUND_DIR)/boss1.h: $(HDI_DUMP_DIR)/BOSS1.GRP $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/halve_image.py
+$(BACKGROUND_DIR)/boss1.h $(NITROFS_DIR)/boss1.bin &: $(HDI_DUMP_DIR)/BOSS1.GRP $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/halve_image.py
 	$(PYTHON) $(TOOLS_DIR)/grp_to_bin.py $(HDI_DUMP_DIR)/BOSS1.GRP $(BACKGROUND_DIR) $(NITROFS_DIR) boss1 --halve topleft2
 
-$(PACKFILE_STAMP): $(HDI_DUMP_STAMP) $(PACKFILE) $(TOOLS_DIR)/extract_pf.py
+$(PACKFILE_STAMP) $(PACKFILE_FILES) &: $(PACKFILE) $(TOOLS_DIR)/extract_pf.py $(PACKFILE_EXTRACT_FORCE)
 	@echo "  ASSETS  extracting $(PACKFILE)"
 	@mkdir -p $(PACKFILE_DIR)
 	$(PYTHON) $(TOOLS_DIR)/extract_pf.py "$(PACKFILE)" $(PACKFILE_DIR)
-	@touch $@
+	@for file in $(PACKFILE_FILES); do test -f "$$file" || exit 1; done
+	@touch $(PACKFILE_STAMP) $(PACKFILE_FILES)
 
-$(HDI_DUMP_STAMP): $(GAME_HDI) $(TOOLS_DIR)/hdi_extract.py
+$(HDI_DUMP_STAMP) $(HDI_FILES) &: $(GAME_HDI) $(TOOLS_DIR)/hdi_extract.py $(HDI_EXTRACT_FORCE)
 	@echo "  ASSETS  extracting $(GAME_HDI)"
 	@mkdir -p $(HDI_DUMP_DIR)
 	$(PYTHON) $(TOOLS_DIR)/hdi_extract.py "$(GAME_HDI)" -o $(HDI_DUMP_DIR)
-	@touch $@
+	@for file in $(HDI_FILES); do test -f "$$file" || exit 1; done
+	@touch $(HDI_DUMP_STAMP) $(HDI_FILES)
 
 $(SPRITES_DIR)/Miko.h: $(PACKFILE_STAMP) $(PACKFILE_DIR)/MIKO.PTN $(TOOLS_DIR)/ptn_to_h.py
 	@echo "  ASSETS  creating Miko.h"
@@ -102,10 +125,9 @@ $(SPRITES_DIR)/Orb.h: $(PACKFILE_STAMP) $(PACKFILE_DIR)/STG.PTN $(TOOLS_DIR)/ptn
 # One background per scene (ST0..ST6; scene 7 is unused leftover content).
 # Indices 0..15 of each generated palette keep the original GRP colors --
 # the stage tiles and items are drawn through these (palette_fx.cpp).
-$(BACKGROUND_DIR)/st%.h: $(PACKFILE_STAMP) $(HDI_DUMP_DIR)/ST%.GRP $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/halve_image.py
+$(BACKGROUND_DIR)/st%.h $(NITROFS_DIR)/st%.bin &: $(HDI_DUMP_DIR)/ST%.GRP $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/halve_image.py
 	@echo "  ASSETS  creating st$*.h and st$*.bin"
 	$(PYTHON) $(TOOLS_DIR)/grp_to_bin.py $(HDI_DUMP_DIR)/ST$*.GRP $(BACKGROUND_DIR) $(NITROFS_DIR) "st$*" --halve topleft2
-	@touch $@
 $(SPRITES_DIR)/Stgobj.h: $(PACKFILE_STAMP) $(PACKFILE_DIR)/STG.PTN $(TOOLS_DIR)/ptn_to_h.py $(TOOLS_DIR)/halve_image.py
 	@echo "  ASSETS  creating Stgobj.h"
 	$(PYTHON) $(TOOLS_DIR)/ptn_to_h.py $(PACKFILE_DIR)/STG.PTN $(SPRITES_DIR) "Stgobj" --halve dither:7-21 --halve rare:22-33
@@ -119,9 +141,9 @@ $(FONT_DIR)/font8x16.h: assets/font.bmp $(TOOLS_DIR)/font_atlas.py
 	@echo "  ASSETS  creating font8x16.h"
 	$(PYTHON) $(TOOLS_DIR)/font_atlas.py assets/font.bmp $(FONT_DIR)
 
-$(FONT_DIR)/font16x16.h: assets/font.bmp $(TOOLS_DIR)/font16x16.py $(SHIFTJIS_HEADERS)
+$(FONT_DIR)/font16x16.h: assets/font.bmp $(TOOLS_DIR)/font16x16.py $(TOOLS_DIR)/font16x16_chars.py
 	@echo "  ASSETS  creating compact font16x16.h"
-	$(PYTHON) $(TOOLS_DIR)/font16x16.py assets/font.bmp $(SHIFTJIS_DIR) $(FONT_DIR)
+	$(PYTHON) $(TOOLS_DIR)/font16x16.py assets/font.bmp $(FONT_DIR)
 
 $(SPRITES_DIR)/Pellet.h: assets/sprites/pellet.bmp $(TOOLS_DIR)/mono_bmp_to_h.py $(TOOLS_DIR)/halve_image.py
 	@echo "  ASSETS  creating Pellet.h"

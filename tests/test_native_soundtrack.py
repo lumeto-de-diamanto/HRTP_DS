@@ -13,7 +13,7 @@ def check(args):
     out.mkdir(parents=True, exist_ok=True)
     exe = out / ('engine_sanitized' if args.sanitize else 'engine')
     flags = ['-O1', '-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer'] if args.sanitize else ['-O2']
-    subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', *flags, '-Itools',
+    subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', *flags, '-I.', '-Itools',
         'tests/test_native_audio.cpp', '-o', str(exe)], check=True)
     if not args.sanitize:
         # Fixed-address RAM model conflicts with sanitizer shadow layouts on

@@ -7,42 +7,26 @@ The Anex86/Neko Project II 2048x2048 font sheet is a 128x128 grid of
     slot column = KK - 0x20   (ku)
     slot row    = TT          (ten + 0x20)
 
-This is the PC-98 CG-ROM layout.  We scan the original game's production
-Shift-JIS string headers so the output contains only glyphs the game uses.
-debug.hpp is deliberately excluded. All fullwidth A-Z/a-z are added because
-name entry selects them as ranges rather than spelling each one in a string.
+This is the PC-98 CG-ROM layout. The explicit production inventory lives in
+font16x16_chars.py, including the fullwidth name-entry ranges. A reference
+source checkout is not a build dependency.
 """
 
 import argparse
-import re
 import struct
 import sys
 from pathlib import Path
+
+from font16x16_chars import PRODUCTION_CHARS
 
 SHEET_SIZE = 2048
 SLOT_SIZE = 16
 
 
-def strip_c_comments(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    return re.sub(r"//.*", "", text)
-
-
-def required_chars(source_dir: Path) -> set[str]:
-    chars: set[str] = set()
-    quote_re = re.compile(r'''(["'])(.*?)(?<!\\)\1''')
-
-    for path in sorted(source_dir.glob("*.hpp")):
-        if path.name == "debug.hpp":
-            continue
-        text = strip_c_comments(path.read_bytes().decode("cp932"))
-        for match in quote_re.finditer(text):
-            chars.update(c for c in match.group(2) if ord(c) > 0x7F)
-
-    # REGIST's name-entry code walks these ranges dynamically.
-    chars.update(chr(ord("Ａ") + i) for i in range(26))
-    chars.update(chr(ord("ａ") + i) for i in range(26))
-    chars.update("０１２３４５６７８９")
+def required_chars() -> set[str]:
+    chars = set(PRODUCTION_CHARS)
+    if not chars or any(ord(char) < 0x80 for char in chars):
+        raise ValueError("production inventory must contain double-byte glyphs only")
     return chars
 
 
@@ -98,14 +82,13 @@ def glyph_rows(data: bytes, pixel_offset: int, jis: int) -> list[int]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("sheet", type=Path)
-    parser.add_argument("source_dir", type=Path)
     parser.add_argument("outdir", type=Path)
     parser.add_argument("--name", default="font16x16")
     args = parser.parse_args()
 
     try:
         by_jis: dict[int, str] = {}
-        for char in required_chars(args.source_dir):
+        for char in required_chars():
             encoded = char.encode("cp932")
             jis = sjis_to_jis(encoded)
             by_jis.setdefault(jis, char)

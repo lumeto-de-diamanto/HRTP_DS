@@ -54,7 +54,7 @@ class KonngaraAssets(unittest.TestCase):
         data = Path('nitrofs/konngara_intro.bin').read_bytes()
         magic, width, height, count, colors, size = HEADER.unpack_from(data)
         self.assertEqual((magic, width, height, count, size), (b'KGI1', 320, 400, 3, len(data)))
-        self.assertEqual(data, build(Path('assets')))
+        self.assertEqual(data, build(Path('assets/hdi_dump')))
         dictionaries = struct.unpack_from('<' + 'H' * colors, data, 64)
         ids = array('H')
         ids.frombytes(data[64 + colors * 2:])
@@ -62,7 +62,7 @@ class KonngaraAssets(unittest.TestCase):
             ids.byteswap()
         self.assertEqual(len(ids), 320 * 400 * 3)
         def load(name):
-            return decode_grp(Path(f'assets/{name}.GRP').read_bytes())
+            return decode_grp(Path(f'assets/hdi_dump/{name}.GRP').read_bytes())
         scroll, _, _ = load('BOSS7_D1')
         arena, palette, _ = load('BOSS8_A1')
         self.assertEqual(data[16:64], bytes(c // 17 for rgb in palette for c in rgb))

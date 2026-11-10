@@ -77,13 +77,35 @@ static int ink_count() {
     return std::count_if(px, px + VIEW_W * VIEW_H, [](u16 v) { return v != 0; });
 }
 
-static int foreground_frames, covered_hud_frames;
+static int foreground_frames, covered_hud_frames, title_frames;
+static u16 displayed_canvas_pixel(int x, int y) {
+    const auto &bg = test_bgs[2];
+    return *canvas_at(bg.x + x * bg.sx / 256, bg.y + y * bg.sy / 256);
+}
 static void observe_foreground() {
     assert(++foreground_frames < 2000);
     assert(REG_WININ == 0x1D1D && test_bgs[0].priority == 1 && test_bgs[2].priority == 0);
     assert(test_objs[OAM_SLOT_HUD_LIVES].priority == 1 && test_objs[OAM_SLOT_HUD_HP].priority == 1);
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) assert(test_objs[OAM_SLOT_HUD_HP + i].priority == 1);
-    covered_hud_frames += (*canvas_at(0, 0) & 0x8000) != 0;
+    covered_hud_frames += (displayed_canvas_pixel(0, 0) & 0x8000) != 0;
+    if (test_bgs[2].sy == 32) {
+        assert(test_bgs[2].sx == 32 && test_bgs[2].y == CANVAS_H);
+        assert(title_frames < 48);
+        const int index = title_frames / 8;
+        assert(test_bgs[2].x == (index % 2) * 32);
+        const u16 *glyph = font16x16_find(JIS_TOUHOU_REIIDEN[index]);
+        assert(glyph);
+        int windows = 0;
+        for (int y = 0; y < VIEW_H; ++y)
+            for (int x = 0; x < VIEW_W; ++x) {
+                const bool ink = x >= 64 && x < 192 && y >= 32 && y < 160 &&
+                    (glyph[(y - 32) / 8] & (0x8000 >> ((x - 64) / 8)));
+                assert(displayed_canvas_pixel(x, y) == (ink ? 0 : 0x8000));
+                windows += ink;
+            }
+        assert(windows > 0); // Never a full-screen black field between glyphs.
+        ++title_frames;
+    }
 }
 
 static int bg0_pixel(int x, int y) {
@@ -130,7 +152,10 @@ int main()
                 const int left = pass & 1 ? 64 - step : step;
                 camera.left = left;
                 video_apply_camera(); assert(test_bgs[1].x == left && test_bgs[1].y == 0);
-                assert(test_bgs[3].x == (boss ? left : 16 + left / 2) && test_bgs[3].y == 0);
+                // Current checked-in camera uses centered two-thirds scenery
+                // motion; keep it unchanged rather than restoring an old test's
+                // half-speed policy during unrelated title/build fixes.
+                assert(test_bgs[3].x == (boss ? left : 32 + ((left - 32) * 2) / 3) && test_bgs[3].y == 0);
                 check_background(source);
                 assert(std::equal(resident.begin(), resident.end(), BG_BMP_RAM(4)));
             }
@@ -317,10 +342,11 @@ int main()
     assert(REG_WININ == 0x1D1D && test_bgs[0].priority == 1);
     video_canvas_foreground_end(); assert(REG_WININ == 0x1D1D);
     video_canvas_foreground_end(); assert(REG_WININ == 0x1919 && test_bgs[0].priority == 0);
-    foreground_frames = covered_hud_frames = 0; test_vblank_hook = observe_foreground;
+    foreground_frames = covered_hud_frames = title_frames = 0; test_vblank_hook = observe_foreground;
     stage_num_animate(1, true);
     test_vblank_hook = nullptr;
-    assert(foreground_frames == 118 && covered_hud_frames == 48);
+    assert(foreground_frames == 118 && covered_hud_frames == 48 && title_frames == 48);
+    assert(test_bgs[2].sx == 256 && test_bgs[2].sy == 256 && test_bgs[2].x == 0 && test_bgs[2].y == 0);
     assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && !test_objs[OAM_SLOT_HUD_HP].hidden);
     assert(text_map[64] == divider && REG_WININ == 0x1919 && test_bgs[0].priority == 0);
     assert(test_objs[OAM_SLOT_HUD_LIVES].priority == 0 && test_objs[OAM_SLOT_HUD_HP].priority == 0);

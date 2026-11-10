@@ -41,7 +41,7 @@ enum { BgType_Text4bpp, BgType_Bmp16, BgType_Bmp8, BgSize_T_512x256, BgSize_T_25
 inline constexpr int DISPLAY_WIN0_ON = 1 << 13, DISPLAY_WIN1_ON = 1 << 14;
 inline u32 REG_DISPCNT{};
 inline u16 REG_WIN0H{}, REG_WIN1H{}, REG_WIN0V{}, REG_WIN1V{}, REG_WININ{}, REG_WINOUT{};
-struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; };
+struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; };
 inline TestBg test_bgs[4];
 inline void videoSetMode(int) {}
 inline void vramSetPrimaryBanks(int, int, int, int) {}
@@ -54,6 +54,7 @@ inline int bgInit(int id, int type, int size, int map, int tile) {
 inline int bgInitHidden(int id, int type, int size, int map, int tile) { return bgInit(id, type, size, map, tile); }
 inline void bgSetPriority(int id, int priority) { test_bgs[id].priority = priority; }
 inline void bgSetScroll(int id, int x, int y) { test_bgs[id].x = x; test_bgs[id].y = y; }
+inline void bgSetScale(int id, int sx, int sy) { test_bgs[id].sx = sx; test_bgs[id].sy = sy; }
 inline void bgUpdate() {}
 inline void bgShow(int) {}
 inline void *bgGetGfxPtr(int id) { return BG_BMP_RAM(test_bgs[id].map); }

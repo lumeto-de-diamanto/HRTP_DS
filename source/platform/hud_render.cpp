@@ -130,6 +130,23 @@ void harryup_animate()
     banner_two_phase("HURRY", "UP", 27);
 }
 
+static void prepare_title_mask(int page, u16 jis)
+{
+    // BG2's invisible rows 192..255 are already allocated VRAM. Two compact
+    // 32x24 masks fit side by side there. Hardware magnification turns each
+    // source pixel into an 8x8 screen block, with a centered 16x16 glyph.
+    // Prepare only the INACTIVE mask; never black out the displayed glyph.
+    const u16 *glyph = font16x16_find(jis);
+    for (int y = 0; y < 24; ++y) {
+        u16 *out = canvas_at(page * 32, CANVAS_H + y);
+        for (int x = 0; x < 32; ++x) {
+            const bool ink = glyph && x >= 8 && x < 24 && y >= 4 && y < 20 &&
+                (glyph[y - 4] & (0x8000 >> (x - 8)));
+            out[x] = ink ? 0 : 0x8000;
+        }
+    }
+}
+
 static void touhou_reiiden_animate()
 {
     // Original: each 16x16 CG-ROM glyph is expanded to 256x256 in PC-98
@@ -137,16 +154,27 @@ static void touhou_reiiden_animate()
     // Reverse-video spaces mask the screen while the glyph's ink acts as a
     // cut-out to the stage beneath; on BG2, opaque black + transparent glyph
     // pixels reproduces that composition directly.
+    // Repainting a full visible black field before punching the next window
+    // could expose the reported blank fields even with valid glyphs. Flip a small
+    // affine source window instead: each complete mask follows the last one
+    // directly at the VBlank ending its 8-frame hold. No DMA/cache or RAM buffer.
+    prepare_title_mask(0, JIS_TOUHOU_REIIDEN[0]);
+    bgSetScale(g_bg_id_canvas, 32, 32); // inverse scale: 256/8
     for (int i = 0; i < 6; i++) {
+        bgSetScroll(g_bg_id_canvas, (i % 2) * 32, CANVAS_H);
+        bgUpdate();
         mdrv2_se_play(SFX_TITLE_GLYPH);
-        canvas_fill_rect(0, 0, VIEW_W, VIEW_H, RGB15(0, 0, 0));
-        canvas_jis_window_scaled((CANVAS_W - 128) / 2,
-                                 (VIEW_H - 128) / 2,
-                                 JIS_TOUHOU_REIIDEN[i], 8);
+        if (i + 1 < 6)
+            prepare_title_mask((i + 1) % 2, JIS_TOUHOU_REIIDEN[i + 1]);
         for (int frame = 0; frame < 8; frame++)
             swiWaitForVBlank();
     }
+    // Clear normal effects while they are still offscreen, then restore the
+    // usual 1:1 canvas before STAGE text. Scenery/camera/HUD layers never move.
     canvas_clear();
+    bgSetScale(g_bg_id_canvas, 256, 256);
+    bgSetScroll(g_bg_id_canvas, 0, 0);
+    bgUpdate();
 }
 
 void stage_num_animate(int stage_num, bool show_title)

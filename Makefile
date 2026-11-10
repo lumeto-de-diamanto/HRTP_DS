@@ -46,14 +46,25 @@ ROM		:= $(NAME).nds
 .PHONY: audio-tests audio-release-checks native-audio native-soundtrack native-tests native-sanitize native-sfx sfx-tests boss-tests boss-sanitize boss-release-checks
 .PHONY: viewport-tests viewport-sanitize viewport-release-checks
 .PHONY: konngara-tests konngara-sanitize konngara-release-checks
+.PHONY: asset-tests font-tests rom-checks
 
 # Required host source dependencies live outside the disposable build tree.
 MDT_TOOLS ?= tools/deps/mdt-tools
 HOST_CXX ?= g++
 YMFM ?= tools/deps/ymfm
 export PYTHONDONTWRITEBYTECODE := 1
+export PYTHONPATH := $(CURDIR)/tools:$(CURDIR)$(if $(PYTHONPATH),:$(PYTHONPATH))
 
 all: $(ROM)
+
+asset-tests:
+	python3 -B tests/test_asset_build.py
+
+font-tests:
+	python3 -B tests/test_font16x16.py
+
+rom-checks: all
+	python3 -B tests/test_rom_packaging.py
 
 audio-tests: native-tests sfx-tests
 	@mkdir -p build/native_tools/tests
@@ -68,16 +79,16 @@ audio-release-checks:
 native-audio:
 	$(MAKE) -f native_audio/Makefile --no-print-directory
 
-native-soundtrack:
+native-soundtrack: assets
 	python3 -B tools/build_native_soundtrack.py --tools-dir $(MDT_TOOLS) --ymfm $(YMFM) --cxx $(HOST_CXX)
 
-native-sfx:
+native-sfx: assets
 	python3 -B tools/build_native_sfx.py --ymfm $(YMFM) --cxx $(HOST_CXX)
 
 sfx-tests: native-sfx
 	python3 tests/test_native_sfx.py
 	@mkdir -p build/native_sfx/tests
-	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Inative_audio/service_stubs -Itools tests/test_native_sfx.cpp -o build/native_sfx/tests/player
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I. -Inative_audio/service_stubs -Itools tests/test_native_sfx.cpp -o build/native_sfx/tests/player
 	build/native_sfx/tests/player nitrofs/audio/sfx.bin
 	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform tests/test_sfx_gameplay_hooks.cpp source/engine/main/player/shot.cpp source/engine/main/stage/card.cpp source/engine/main/stage/item.cpp -o build/native_sfx/tests/hooks
 	build/native_sfx/tests/hooks
@@ -89,7 +100,7 @@ native-tests: native-soundtrack
 native-sanitize: native-soundtrack native-sfx
 	python3 -B tests/test_native_soundtrack.py --sanitize
 	@mkdir -p build/native_sfx/tests
-	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Inative_audio/service_stubs -Itools tests/test_native_sfx.cpp -o build/native_sfx/tests/player_sanitized
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -I. -Inative_audio/service_stubs -Itools tests/test_native_sfx.cpp -o build/native_sfx/tests/player_sanitized
 	build/native_sfx/tests/player_sanitized nitrofs/audio/sfx.bin
 
 BOSS_TEST_SOURCES := tests/test_boss.cpp source/engine/main/boss/boss.cpp source/engine/main/boss/singyoku.cpp source/engine/main/player/orb.cpp source/engine/main/player/shot.cpp source/engine/main/bullet/pellet.cpp source/engine/main/math/vector.cpp source/engine/main/math/trig.cpp source/engine/main/random.cpp
@@ -166,10 +177,12 @@ else
     GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_SUBTITLE);$(GAME_AUTHOR)
 endif
 
+# A 0x200 header omits TWL sections: package actual DS-only, not DS+DSi.
 $(ROM): arm9 arm7
 	@echo "  NDSTOOL $@"
 	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
 		-7 build/arm7.elf -9 build/arm9.elf \
+		-h 0x200 \
 		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
 		-d $(NITROFSDIR) $(NDSTOOL_ARGS)
 
