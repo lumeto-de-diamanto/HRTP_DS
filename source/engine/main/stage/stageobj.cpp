@@ -108,7 +108,8 @@ int stage_portal_anim(int i)
             return 0;
         if (t >= 10 && t < 20)
             return 1;
-        return -1;
+        // A lone portal (or a failed destination lottery) is also the exit.
+        // Fall through so its 20..39 exit frames are not masked by entry.
     }
     if (i == entered_portal_dst) {
         int t = stage_obstacles[entered_portal_slot].since_collision;
@@ -348,7 +349,10 @@ void stage_obstacles_update()
                                          stage_obstacles[entered_portal_dst].top);
                         orb_set_velocity_x(
                             (orb_velocity_x_t)(irand() % OVX_COUNT));
-                        orb_force_new((irand() % 19) - 9, OF_IMMEDIATE);
+                        // Same signed whole-pixel Q16.16 force, without the
+                        // int constructor's undefined left shift of negatives.
+                        const int exit_force = (irand() % 19) - 9;
+                        orb_force_new(fixed::from_raw(exit_force * 65536), OF_IMMEDIATE);
                         orb_set_in_portal(false);
                     } else if (o.since_collision == 60) {
                         o.since_collision = 0;

@@ -34,6 +34,8 @@ and font generation
 executable ranges, linked font and exact NitroFS contents
 * `make timer-tests timer-sanitize`: checks original stage durations, frame cadence,
 extensions and HURRY UP
+* `make projectile-tests projectile-sanitize`: checks orb/pellet contact and
+portal timelines; viewport tests also verify white bullets and portal rendering
 
 ## Current status
 

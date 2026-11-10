@@ -48,6 +48,7 @@ ROM		:= $(NAME).nds
 .PHONY: konngara-tests konngara-sanitize konngara-release-checks
 .PHONY: asset-tests font-tests rom-checks
 .PHONY: timer-tests timer-sanitize
+.PHONY: projectile-tests projectile-sanitize
 
 # Required host source dependencies live outside the disposable build tree.
 MDT_TOOLS ?= tools/deps/mdt-tools
@@ -77,6 +78,17 @@ timer-sanitize:
 	@mkdir -p build/timer/tests
 	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -I$(BLOCKSDS)/libs/libnds/include -Isource/engine $(TIMER_TEST_SOURCES) -o build/timer/tests/timer_sanitized
 	UBSAN_OPTIONS=halt_on_error=1 build/timer/tests/timer_sanitized
+
+PROJECTILE_TEST_SOURCES := tests/test_projectiles_portals.cpp source/engine/main/stage/stageobj.cpp source/engine/main/bullet/pellet.cpp source/engine/main/player/orb.cpp source/engine/main/player/shot.cpp source/engine/main/math/vector.cpp source/engine/main/math/trig.cpp
+projectile-tests:
+	@mkdir -p build/projectiles/tests
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(PROJECTILE_TEST_SOURCES) -o build/projectiles/tests/projectiles
+	build/projectiles/tests/projectiles
+
+projectile-sanitize:
+	@mkdir -p build/projectiles/tests
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(PROJECTILE_TEST_SOURCES) -o build/projectiles/tests/projectiles_sanitized
+	UBSAN_OPTIONS=halt_on_error=1 build/projectiles/tests/projectiles_sanitized
 
 audio-tests: native-tests sfx-tests
 	@mkdir -p build/native_tools/tests

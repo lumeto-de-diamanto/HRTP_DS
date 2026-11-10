@@ -90,7 +90,7 @@ def run_renderer(binary):
     runtime = Path('build/viewport/tests/runtime')
     destination = runtime / 'nitro:'
     destination.mkdir(parents=True, exist_ok=True)
-    for name in ('st0', 'boss1'):
+    for name in [f'st{i}' for i in range(7)] + ['boss1']:
         shutil.copyfile(f'nitrofs/{name}.bin', destination / f'{name}.bin')
     subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
 

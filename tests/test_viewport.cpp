@@ -114,6 +114,67 @@ static int bg0_pixel(int x, int y) {
     return (word >> ((x % 4) * 4)) & 15;
 }
 
+static void check_white_projectiles()
+{
+    camera.snap_center();
+    for (int scene = -1; scene < 7; ++scene) {
+        if (scene < 0) load_boss_background(); else load_background(scene);
+        palette_apply_round();
+        Pellets.init();
+        Pellets.add_group(300, 120, PG_1, 3 * 16);
+        auto &pellet = Pellets.at(0);
+        for (int decay : {0, 1, 11, 19}) {
+            pellet.decay_frame = decay;
+            canvas_clear(); pellet_render_frame();
+            assert(ink_count() > 0);
+            for (const u16 *px = canvas_at(0, 0); px < canvas_at(0, VIEW_H); ++px)
+                assert(*px == 0 || *px == 0xFFFF); // opaque pure white, never scene palette gray
+        }
+        pellet.decay_frame = 20;
+        canvas_clear(); pellet_render_frame(); assert(ink_count() == 0);
+    }
+    std::puts("Projectile rendering: white intact/shatter cels on all seven scene palettes and SinGyoku passed");
+}
+
+static void check_portal_rendering()
+{
+    camera.snap_center();
+    for (int count : {1, 2}) for (int entry = 0; entry < count; ++entry) {
+        uint8_t obstacles[STAGE_ROWS][STAGE_COLS] = {};
+        const uint8_t cards[STAGE_ROWS][STAGE_COLS] = {};
+        for (int i = 0; i < count; ++i) obstacles[2][6 + i * 4] = OT_PORTAL;
+        stage_init(obstacles, cards); stage_reset(); stage_render_clear();
+        initialize_irand(1234); orb_initialize();
+        const int destination = count == 1 ? entry : 1 - entry;
+        orb_set_position(stage_obstacle(entry).left, stage_obstacle(entry).top);
+        for (int frame = 1; frame <= 60; ++frame) {
+            if (frame > 40) orb_set_position(10000, 10000);
+            stage_obstacles_update(); stage_render_frame(); orb_render_frame();
+            if (frame <= 40) assert(test_objs[10].hidden == (frame < 40));
+            for (int slot = 0; slot < count; ++slot) {
+                StgObj expected = STGOBJ_PORTAL;
+                if (slot == entry && frame < 10) expected = STGOBJ_PORTAL_ANIM;
+                else if (slot == entry && frame < 20) expected = STGOBJ_PORTAL_ANIM2;
+                else if (slot == destination && frame >= 20 && frame < 30) expected = STGOBJ_PORTAL_ANIM2;
+                else if (slot == destination && frame >= 30 && frame < 40) expected = STGOBJ_PORTAL_ANIM;
+                for (int q = 0; q < 4; ++q) {
+                    const int mx = (6 + slot * 4) * 2 + (q & 1);
+                    const int my = 2 * 2 + 3 + (q >> 1);
+                    const u16 tile = BG_MAP_RAM(8)[(mx / 32) * 1024 + my * 32 + mx % 32];
+                    assert((tile & 1023) == 1 + expected * 4 + q);
+                }
+            }
+            if (frame == 40) {
+                assert(test_objs[10].x == camera.x(stage_obstacle(destination).left));
+                assert(test_objs[10].y == Camera::y(stage_obstacle(destination).top));
+            }
+        }
+        stage_reset(); stage_render_frame();
+        assert(!orb_get_in_portal());
+    }
+    std::puts("Portal rendering: actual BG1 entrance/exit cels and OAM orb reappearance at 40 passed");
+}
+
 int main()
 {
     static_assert(PLAYFIELD_W == 640 && PLAYFIELD_H == 336);
@@ -419,6 +480,10 @@ int main()
     canvas_begin_frame(); assert(test_dma_fill_bytes == empty);
     canvas_playfield_clip(true); canvas_clear();
     canvas_fill_rect(-2, 20, 8, 8, 0x7FFF); assert(*canvas_at(0,23) == 0 && *canvas_at(0,24) == 0xFFFF);
+    const auto obj_used = test_obj_used;
+    check_white_projectiles();
+    check_portal_rendering();
+    assert(test_obj_used == obj_used);
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     std::puts("Viewport: center-anchored regular parallax/boss 1:1, both full-size HUD modes, 18HP strips, cached mode handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
 }
