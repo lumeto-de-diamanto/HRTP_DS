@@ -51,7 +51,7 @@ void text_layer_init()
     }
 
     BG_PALETTE[TEXT_PAL_WHITE * 16 + 1] = RGB15(31, 31, 31);
-    BG_PALETTE[TEXT_PAL_RED * 16 + 1] = RGB15(31, 10, 10);
+    BG_PALETTE[TEXT_PAL_RED * 16 + 1] = RGB15(31, 0, 0);
     BG_PALETTE[TEXT_PAL_RED * 16 + 2] = RGB15(31, 0, 0);
 
     // Original 16x16 fullwidth digits, four 8x8 BG0 tiles per digit.
@@ -107,7 +107,7 @@ void text_layer_hud_timer(unsigned value)
     if (value > 9999) value = 9999;
     if (last_hud_timer == value) return;
     last_hud_timer = value;
-    const int bank = value > 0 && value < 200 ? TEXT_PAL_RED : TEXT_PAL_WHITE;
+    const int bank = value < 200 ? TEXT_PAL_RED : TEXT_PAL_WHITE;
     unsigned divisor = 1000;
     for (int i = 0; i < 4; ++i, divisor /= 10) {
         const int tile = HUD_DIGIT_FIRST + ((value / divisor) % 10) * 4;

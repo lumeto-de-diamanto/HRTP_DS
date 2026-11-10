@@ -211,7 +211,27 @@ int main()
         assert(ink_count() > 0);
         assert(std::all_of(canvas_at(0, 0), canvas_at(0, UPPER_HUD_H), [](u16 pixel) { return pixel == 0; }));
         canvas_playfield_clip(false); camera.snap_center();
-        timer_extend(); assert(stage_timer == 1000);
+        player_is_hit = true;
+        player_miss(); // real gameplay miss hook, not a direct helper call
+        assert(stage_timer == 1000 && !player_is_hit && player_is_invincible());
+    }
+    // Surviving misses preserve the countdown and add time on both card and
+    // boss stages. Fresh-stage/game-over initialization must NOT extend it.
+    for (int stage : {0, 4}) {
+        for (unsigned remaining : {1000u, 198u, 2u, 0u}) {
+            timer_init_for(0, stage);
+            const unsigned initial = stage_timer;
+            player_initialize(); assert(stage_timer == initial);
+            stage_timer = remaining;
+            player_is_hit = true;
+            player_miss();
+            assert(!player_is_hit && player_is_invincible());
+            assert(stage_timer == (remaining ? remaining + 200 : 1000));
+            player_update(0, 0); // respawn updates do not repeatedly add time
+            assert(stage_timer == (remaining ? remaining + 200 : 1000));
+            timer_init_for(0, stage);
+            player_initialize(); assert(stage_timer == initial);
+        }
     }
     rank = RANK_NORMAL; pellet_speed = 0; Pellets.init(); orb_initialize();
     player_render_frame(); assert(test_objs[0].x == 120 && test_objs[0].y == 176);
@@ -265,6 +285,20 @@ int main()
     auto *text_map = BG_MAP_RAM(30);
     const auto divider = text_map[64];
     assert(divider && text_map[24]);
+    // Warning ink is pure red below 200, including zero as in timer_put().
+    // Check the actual palette bank used by all four displayed digits.
+    assert(BG_PALETTE[TEXT_PAL_RED * 16 + 1] == RGB15(31, 0, 0));
+    for (unsigned remaining : {1000u, 200u, 198u, 2u, 0u, 1000u}) {
+        text_layer_hud_timer(remaining);
+        for (int y = 0; y < 2; ++y)
+            for (int x = 24; x < 32; ++x)
+                assert((text_map[y * 32 + x] >> 12) ==
+                       (remaining < 200 ? TEXT_PAL_RED : TEXT_PAL_WHITE));
+    }
+    palette_dim(40);
+    assert(BG_PALETTE[TEXT_PAL_RED * 16 + 1] == RGB15(12, 0, 0));
+    palette_restore();
+    assert(BG_PALETTE[TEXT_PAL_RED * 16 + 1] == RGB15(31, 0, 0));
     for (int x = 0; x < 32; ++x) assert(text_map[64 + x] == divider);
     const u16 *divider_gfx = BG_TILE_RAM(2) + (divider & 1023) * 16;
     assert(divider_gfx[0] == 0 && divider_gfx[14] == 0x2222);

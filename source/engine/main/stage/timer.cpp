@@ -50,6 +50,11 @@ void timer_init_for(int scene, int stage)
     harryup_cycle = 0;
 }
 
+timer_event_t timer_update(unsigned int gameplay_frame)
+{
+    return (gameplay_frame & 3u) == 0 ? timer_tick() : TIMER_EVENT_NONE;
+}
+
 timer_event_t timer_tick()
 {
     if (stage_timer > 0) {

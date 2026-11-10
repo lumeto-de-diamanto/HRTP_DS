@@ -1,6 +1,7 @@
 #include "player.hpp"
 #include "shot.hpp"
 #include "orb.hpp"
+#include "main/stage/timer.hpp"
 #include "rank.h"
 #include "nds/input.h"
 #include "sound_effects.hpp"
@@ -523,6 +524,9 @@ void player_miss()
 	player.y_position = player_top;
 	miss_invincibility_frames = PLAYER_MISS_INVINCIBILITY_FRAMES;
 	player_is_hit = false;
+	// ReC98 player_miss_animate_and_update(): surviving a miss extends the
+	// current timer, canceling HURRY UP rather than restarting the stage.
+	timer_extend();
 }
 
 bool player_is_invincible()

@@ -26,9 +26,14 @@ make
 
 The rom file `hrtp_ds.nds` will then appear.
 
-Useful checks: `make asset-tests font-tests` tests clean/parallel asset builds
-and font generation; `make rom-checks` rebuilds and verifies the DS header,
-executable ranges, linked font and exact NitroFS contents.
+## Checks:
+
+* `make asset-tests font-tests`: tests clean/parallel asset builds
+and font generation
+* `make rom-checks`: rebuilds and verifies the DS header,
+executable ranges, linked font and exact NitroFS contents
+* `make timer-tests timer-sanitize`: checks original stage durations, frame cadence,
+extensions and HURRY UP
 
 ## Current status
 

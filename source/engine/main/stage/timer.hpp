@@ -12,5 +12,9 @@ enum timer_event_t {
 };
 
 void timer_init_for(int scene, int stage);
+// Call once per active gameplay frame, after incrementing its unsigned counter.
+// Serve, pause and blocking entrances do not advance that counter. Keep its
+// phase across lives/stages, as with ReC98's persistent frame_rand counter.
+timer_event_t timer_update(unsigned int gameplay_frame);
 timer_event_t timer_tick(); // call every 4th frame (ReC98 TIMER_TICK = 2)
 void timer_extend();        // +200 (or +1000 from zero)

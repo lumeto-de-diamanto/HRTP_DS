@@ -61,7 +61,7 @@ static const int START_LIVES = 3;
 static int current_scene;
 static int current_stage;
 static int lives;
-static int frame;
+static unsigned int frame;
 static bool wait_for_shot; // ReC98 stage_wait_for_shot_to_begin
 
 static void check_music()
@@ -330,12 +330,10 @@ int main(int argc, char **argv)
             }
             Items.update();
 
-            // ReC98 ticks the stage timer every 4th frame (TIMER_TICK = 2).
-            frame++;
-            if ((frame & 3) == 0) {
-                if (timer_tick() == TIMER_EVENT_HARRYUP)
-                    harryup_animate();
-            }
+            // ReC98 ticks only on active gameplay, preserving the counter's
+            // phase across stage/life changes. Unsigned overflow is defined.
+            if (timer_update(++frame) == TIMER_EVENT_HARRYUP)
+                harryup_animate();
 
             if (Pellets.update())
                 player_is_hit = true;

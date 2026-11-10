@@ -47,6 +47,7 @@ ROM		:= $(NAME).nds
 .PHONY: viewport-tests viewport-sanitize viewport-release-checks
 .PHONY: konngara-tests konngara-sanitize konngara-release-checks
 .PHONY: asset-tests font-tests rom-checks
+.PHONY: timer-tests timer-sanitize
 
 # Required host source dependencies live outside the disposable build tree.
 MDT_TOOLS ?= tools/deps/mdt-tools
@@ -65,6 +66,17 @@ font-tests:
 
 rom-checks: all
 	python3 -B tests/test_rom_packaging.py
+
+TIMER_TEST_SOURCES := tests/test_timer.cpp source/engine/main/stage/timer.cpp
+timer-tests:
+	@mkdir -p build/timer/tests
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine $(TIMER_TEST_SOURCES) -o build/timer/tests/timer
+	build/timer/tests/timer
+
+timer-sanitize:
+	@mkdir -p build/timer/tests
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -I$(BLOCKSDS)/libs/libnds/include -Isource/engine $(TIMER_TEST_SOURCES) -o build/timer/tests/timer_sanitized
+	UBSAN_OPTIONS=halt_on_error=1 build/timer/tests/timer_sanitized
 
 audio-tests: native-tests sfx-tests
 	@mkdir -p build/native_tools/tests
