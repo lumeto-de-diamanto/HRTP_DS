@@ -60,6 +60,10 @@ assets: $(SPRITES_DIR)/SingyokuSphere.h $(SPRITES_DIR)/SingyokuFlash.h $(SPRITES
 assets: $(SPRITES_DIR)/HudIconsSmall.h
 assets: $(NITROFS_DIR)/konngara_intro.bin
 assets: $(BACKGROUND_BINS)
+assets: $(SPRITES_DIR)/OrbArrow.h
+
+$(SPRITES_DIR)/OrbArrow.h: $(ASSETS_DIR)/sprites/orb_arrow.xpm $(TOOLS_DIR)/orb_arrow_to_h.py
+	$(PYTHON) $(TOOLS_DIR)/orb_arrow_to_h.py $< $@
 
 assets-clean:
 	@echo "  ASSETS clean"

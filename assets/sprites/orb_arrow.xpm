@@ -1,0 +1,26 @@
+/* XPM */
+/* Fixed 8x16 orb indicator, pointing right. Matches the approved marker.
+ * Palette slots: transparent, overlay red, overlay white. Flip in OAM for left.
+ */
+static const char *orb_arrow[] = {
+"8 16 3 1",
+". c None",
+"R c #FF0000",
+"W c #FFFFFF",
+"........",
+"........",
+"........",
+"RRR.....",
+"WWWR....",
+"WWWWR...",
+"WWWWWR..",
+"WWWWWWR.",
+"WWWWWWR.",
+"WWWWWR..",
+"WWWWR...",
+"WWWR....",
+"RRR.....",
+"........",
+"........",
+"........"
+};

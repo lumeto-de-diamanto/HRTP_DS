@@ -6,6 +6,7 @@
 #include <nds.h>
 
 #include "sprites/Orb.h"
+#include "sprites/OrbArrow.h"
 
 const int FRAME_H = 16;
 const int FRAME_W = 16;
@@ -31,14 +32,8 @@ bool orb_render_init(void)
     }
 
     if (!allocation.allocate(arrow_gfx, SpriteSize_8x16)) return false;
-    obj4_clear(arrow_gfx, 64);
-    for (int i = 0; i < 7; ++i) {
-        const int radius = i < 4 ? i : 3;
-        for (int y = 7 - radius - 1; y <= 7 + radius + 1; ++y)
-            obj4_pixel(arrow_gfx, 8, 6 - i, y, 1);
-        for (int y = 7 - radius; y <= 7 + radius; ++y)
-            obj4_pixel(arrow_gfx, 8, 6 - i, y, 2);
-    }
+    static_assert(sizeof(OrbArrow_tiles) == 64);
+    memcpy(arrow_gfx, OrbArrow_tiles, sizeof(OrbArrow_tiles));
     oamSetHidden(&oamMain, OAM_SLOT_ORB_ARROW, true);
     allocation.commit();
     return true;
@@ -75,7 +70,7 @@ void orb_indicator_render()
         oamSetHidden(&oamMain, OAM_SLOT_ORB_ARROW, true);
         return;
     }
-    // Reuse the same white-edged red arrow as a single flipped/moved OBJ.
+    // Reuse the fixed arrow graphic as a single flipped/moved OBJ.
     const bool left = marker.direction < 0;
     oamSet(&oamMain, OAM_SLOT_ORB_ARROW, marker.x - (left ? 1 : 6), marker.y - 7,
         0, OBJ_PAL_OVERLAY, SpriteSize_8x16, SpriteColorFormat_16Color,
