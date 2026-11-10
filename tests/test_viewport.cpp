@@ -136,6 +136,34 @@ static void check_white_projectiles()
     std::puts("Projectile rendering: white intact/shatter cels on all seven scene palettes and SinGyoku passed");
 }
 
+static void check_ofuda_rendering()
+{
+    shots_initialize(); Pellets.init(); camera.snap_center();
+    orb_set_position(10000, 10000);
+    shots_add(300, 160); shots_render_frame();
+    assert(!test_objs[1].hidden);
+    const u16 *normal = test_objs[1].gfx;
+    Pellets.add_group(300, 160, PG_1, 3 * 16);
+    canvas_clear(); pellet_render_frame(); assert(ink_count() > 0);
+    assert(!Pellets.update());
+    canvas_begin_frame(); pellet_render_frame();
+    assert(ink_count() == 0); // no pellet/shatter remains in the rendered hit frame
+    shots_render_frame();
+    assert(!test_objs[1].hidden && test_objs[1].gfx != normal);
+    const u16 *impact = test_objs[1].gfx;
+    const int x = test_objs[1].x, y = test_objs[1].y;
+    for (int frame = 1; frame <= 7; ++frame) {
+        shots_update(); shots_render_frame();
+        assert(test_objs[1].hidden == (frame == 7));
+        if (frame < 7) {
+            assert(test_objs[1].x == x && test_objs[1].y == y);
+            assert(test_objs[1].gfx != normal);
+            assert((test_objs[1].gfx == impact) == (frame < 3));
+        }
+    }
+    std::puts("Ofuda rendering: pellet disappears immediately, stationary OAM impact cels then hide passed");
+}
+
 static void check_portal_rendering()
 {
     camera.snap_center();
@@ -482,6 +510,7 @@ int main()
     canvas_fill_rect(-2, 20, 8, 8, 0x7FFF); assert(*canvas_at(0,23) == 0 && *canvas_at(0,24) == 0xFFFF);
     const auto obj_used = test_obj_used;
     check_white_projectiles();
+    check_ofuda_rendering();
     check_portal_rendering();
     assert(test_obj_used == obj_used);
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);

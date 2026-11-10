@@ -77,7 +77,9 @@ bool shots_hit_pellet(int pellet_left, int pellet_top)
         // ReC98 tests the pellet against the shot box shrunk by 2px.
         if ((dx > -6) && (dx < (SHOT_W - 2)) &&
             (dy > -6) && (dy < (SHOT_H - 2))) {
-            shots.alive[i] = false;
+            moving[i] = false;
+            decay_frame[i] = 1;
+            shots.sprite_number[i] = 1;
             mdrv2_se_play(SFX_SHOT_HIT);
             return true;
         }

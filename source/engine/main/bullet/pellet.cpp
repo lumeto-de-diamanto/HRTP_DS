@@ -310,6 +310,16 @@ bool CPellets::update()
             continue;
         }
 
+        // Original game resolves ofuda first: erase the pellet immediately, while
+        // the shot remains visible for its own impact animation. A pellet
+        // intercepted here cannot also hit the orb/player in this frame.
+        if (pel.decay_frame == 0 &&
+            shots_hit_pellet(TO_PIXEL(pel.cur_left.v), TO_PIXEL(pel.cur_top.v))) {
+            pel.moving = false;
+            pel.decay_frame = 0;
+            continue;
+        }
+
         // Orb: halves the velocity and starts the destruction animation
         // (+10). Decaying pellets ignore all hit tests (ReC98).
         if (pel.decay_frame == 0) {
@@ -354,12 +364,6 @@ bool CPellets::update()
                     (py < player_top + 24)) {
                     player_hit = true;
                 }
-            }
-
-            // Shots start the destruction animation.
-            if (shots_hit_pellet(TO_PIXEL(pel.cur_left.v),
-                                 TO_PIXEL(pel.cur_top.v))) {
-                pel.decay_frame = 1;
             }
         } else {
             // Decay tick (ReC98 decay_tick_for_cur).

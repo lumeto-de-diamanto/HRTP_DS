@@ -3,20 +3,24 @@
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <vector>
 #include "main/bullet/pellet.hpp"
 #include "main/player/orb.hpp"
 #include "main/player/player.hpp"
 #include "main/player/shot.hpp"
 #include "main/stage/stageobj.hpp"
+#include "sound_effects.hpp"
 
 rank_t rank = RANK_NORMAL;
 bool player_is_hit;
 static PlayerState player{PLAYER_LEFT_START, player_top, PLAYER, 0};
 const PlayerState &player_get_state() { return player; }
-bool player_is_invincible() { return true; }
+static bool invincible = true;
+bool player_is_invincible() { return invincible; }
 bool player_is_deflecting() { return false; }
 bool player_is_sliding() { return false; }
-void mdrv2_se_play(int) {}
+static std::vector<int> effects;
+void mdrv2_se_play(int id) { effects.push_back(id); }
 
 static int portal_frame, exit_roll, exit_force = 9;
 static bool fallback;
@@ -74,6 +78,56 @@ static void pellet_orb_contacts()
         assert(p.moving == (frame <= PELLET_DECAY_FRAMES));
     }
     std::puts("Projectiles: source overlap boundaries/subpixels/all ranks, signed half-speed, single scoring and decay passed");
+}
+
+static void ofuda_contacts()
+{
+    for (int difficulty = RANK_EASY; difficulty <= RANK_LUNATIC; ++difficulty) {
+        rank = static_cast<rank_t>(difficulty);
+        // Plain contact, simultaneous orb contact, and a player-threatening
+        // pellet must all resolve to immediate interception by the ofuda.
+        for (int mode = 0; mode < 3; ++mode) {
+            Pellets.init(); shots_initialize(); effects.clear(); stage_score = 0;
+            const int x = mode == 2 ? player.x_position + 8 : 300;
+            const int y = mode == 2 ? player_top : 160;
+            invincible = mode != 2;
+            orb_set_position(mode == 1 ? x : 10000, mode == 1 ? y : 10000);
+            shots_add(x, y);
+            Pellets.add_group(x, y, PG_1, 3 * 16);
+            auto &p = Pellets.at(0);
+            p.velocity.x.v = p.velocity.y.v = 0;
+            assert(!Pellets.update());
+            assert(!p.moving && p.decay_frame == 0 && Pellets.alive_count() == 0);
+            assert(stage_score == 0); // only orb destruction awards10
+            assert(effects == (std::vector<int>{SFX_SHOT, SFX_SHOT_HIT}));
+            assert(shots_get_state().alive[0] && shots_get_state().sprite_number[0] == 1);
+            assert(!shots_hit_pellet(x, y) && !shots_hit_boss(x, y, 96, 96));
+            // A second pellet is not erased by the non-moving impact sprite.
+            invincible = true; orb_set_position(10000, 10000);
+            Pellets.add_group(x, y, PG_1, 3 * 16);
+            p.velocity.x.v = p.velocity.y.v = 0;
+            assert(!Pellets.update() && p.moving && p.decay_frame == 0);
+            assert(effects.size() == 2);
+            for (int frame = 1; frame <= 7; ++frame) {
+                shots_update();
+                assert(shots_get_state().x_position[0] == x && shots_get_state().y_position[0] == y);
+                assert(shots_get_state().alive[0] == (frame < 7));
+                if (frame < 7) assert(shots_get_state().sprite_number[0] == (frame + 1) / 4 + 1);
+            }
+            shots_add(x + 40, y);
+            assert(shots_get_state().alive[0] && shots_get_state().sprite_number[0] == 0);
+            assert(shots_get_state().x_position[0] == x + 40); // slot reusable after animation
+        }
+    }
+    // Pellets already shattering from the orb remain untouched by ofuda.
+    Pellets.init(); shots_initialize(); orb_set_position(10000, 10000);
+    Pellets.add_group(300, 160, PG_1, 3 * 16);
+    auto &p = Pellets.at(0);
+    p.velocity.x.v = p.velocity.y.v = 0; p.decay_frame = 1;
+    shots_add(300, 160); effects.clear();
+    assert(!Pellets.update() && p.moving && p.decay_frame == 2);
+    assert(shots_get_state().alive[0] && shots_get_state().sprite_number[0] == 0 && effects.empty());
+    std::puts("Ofuda: immediate pellet erase, stationary impact cels/lifetime, single SFX/contact, hit priority and slot reuse passed");
 }
 
 static int expected_portal_cel(int frame, bool entered, bool destination)
@@ -135,5 +189,6 @@ static void portals()
 int main(int argc, char **argv)
 {
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();
+    if (argc == 1 || std::strcmp(argv[1], "ofuda") == 0) ofuda_contacts();
     if (argc == 1 || std::strcmp(argv[1], "portals") == 0) portals();
 }

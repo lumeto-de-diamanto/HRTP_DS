@@ -15,8 +15,8 @@ void shots_initialize();
 void shots_add(int new_left, int new_top);
 void shots_update();
 
-// Destroys the first live shot overlapping the given pellet position
-// (ReC98's CShots::hittest_pellet). Returns true if a shot was hit.
+// Stops the first moving shot overlapping the pellet and starts its impact
+// animation (ReC98's CShots::hittest_pellet). Returns true on contact.
 bool shots_hit_pellet(int pellet_left, int pellet_top);
 // Contact/decay only, never HP damage. Width/height are visual hitbox sizes;
 // the original tests the shot top-left against (width-SHOT_W,height-SHOT_H).
