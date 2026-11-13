@@ -13,6 +13,13 @@ static u16 bg_snap[256];
 static u16 obj_snap[256];
 static u16 *canvas_snap;
 
+static void present_buffered_canvas()
+{
+    if(!g_canvas_target) return;
+    canvas_buffer_dirty_all();canvas_buffer_prepare();
+    do { swiWaitForVBlank(); } while(!canvas_buffer_present());
+}
+
 static u16 dim_color(u16 c, int tone)
 {
     if (c == 0x7FFF) // keep white
@@ -27,7 +34,7 @@ void palette_dim(int tone)
 {
     memcpy(bg_snap, BG_PALETTE, 256 * sizeof(u16));
     memcpy(obj_snap, SPRITE_PALETTE, 256 * sizeof(u16));
-    for (int i = 0; i < 256; i++) {
+    if(!g_canvas_target) for (int i = 0; i < 256; i++) {
         BG_PALETTE[i] = dim_color(bg_snap[i], tone);
         SPRITE_PALETTE[i] = dim_color(obj_snap[i], tone);
     }
@@ -44,15 +51,30 @@ void palette_dim(int tone)
             px[i] = 0x8000 | dim_color(c & 0x7FFF, tone);
         }
     }
+    if(g_canvas_target) {
+        // Publish the RAM effects and indexed palettes in the same VBlank.
+        present_buffered_canvas();
+        for(int i=0;i<256;++i) {
+            BG_PALETTE[i]=dim_color(bg_snap[i],tone);
+            SPRITE_PALETTE[i]=dim_color(obj_snap[i],tone);
+        }
+    }
 }
 
 void palette_restore()
 {
-    memcpy(BG_PALETTE, bg_snap, 256 * sizeof(u16));
-    memcpy(SPRITE_PALETTE, obj_snap, 256 * sizeof(u16));
+    if(!g_canvas_target) {
+        memcpy(BG_PALETTE, bg_snap, 256 * sizeof(u16));
+        memcpy(SPRITE_PALETTE, obj_snap, 256 * sizeof(u16));
+    }
     if (canvas_snap) {
         memcpy(canvas_at(0, 0), canvas_snap,
                CANVAS_W * CANVAS_H * sizeof(u16));
+    }
+    if(g_canvas_target) {
+        present_buffered_canvas();
+        memcpy(BG_PALETTE,bg_snap,256*sizeof(u16));
+        memcpy(SPRITE_PALETTE,obj_snap,256*sizeof(u16));
     }
 }
 

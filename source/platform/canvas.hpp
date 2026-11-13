@@ -16,15 +16,25 @@ static const int CANVAS_H = 192;
 
 // Bmp16 at mapBase 16 (16 KB units) = 0x40000, in VRAM D -- see video.hpp.
 #define CANVAS_BMP_BLOCK 16
+extern u16 *g_canvas_target; // null: direct VRAM; otherwise caller-owned256x256 RAM
 
 static inline u16 *canvas_at(int x, int y)
 {
-    return BG_BMP_RAM(CANVAS_BMP_BLOCK) + (y * CANVAS_W) + x;
+    return (g_canvas_target ? g_canvas_target : BG_BMP_RAM(CANVAS_BMP_BLOCK)) + (y * CANVAS_W) + x;
 }
 
 void canvas_init();
 // Erase only last frame's touched 8x8 regions, then track this frame's ink.
 void canvas_begin_frame();
+// Optional buffered presentation for combat. Compose ALL effects, flush once,
+// then present in VBlank. No allocation; the owner supplies128KiB of RAM.
+bool canvas_buffer_begin(u16 *pixels);
+void canvas_buffer_end();
+void canvas_buffer_prepare();
+bool canvas_buffer_ready();
+bool canvas_buffer_present();
+// Direct RAM writers (e.g. pause snapshot/dim/restore) must publish their writes.
+void canvas_buffer_dirty_all();
 // Gameplay draw calls clip below the transparent HUD; screen-space menus and
 // the HUD itself disable this clip. Clearing the whole canvas always works.
 void canvas_playfield_clip(bool enabled);

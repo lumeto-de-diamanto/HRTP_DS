@@ -1,6 +1,7 @@
 #include <nds.h>
 #include <cstring>
 #include "boss_render.hpp"
+#include "boss_gfx.hpp"
 #include "main/boss/singyoku.hpp"
 #include "canvas.hpp"
 #include "palette_fx.hpp"
@@ -14,8 +15,8 @@
 #include "sprites/SingyokuPerson.h"
 
 namespace {
-constexpr int boss_slot = 40, boss_palette = 3, frame_bytes = 64 * 64 / 2;
-u16 *gfx;
+constexpr int boss_slot = BOSS_OAM_SLOT, boss_palette = 3, frame_bytes = 64 * 64 / 2;
+bool initialized;
 int last_image = -1;
 u16 palette[16];
 bool last_flash;
@@ -40,14 +41,14 @@ void route_render(RouteChoice route)
 
 bool boss_render_init()
 {
-    if (gfx) return true;
+    if (initialized) return true;
     static_assert(sizeof(SingyokuSphere_tiles) == 8 * frame_bytes);
     static_assert(sizeof(SingyokuFlash_tiles) == 3 * frame_bytes);
     static_assert(sizeof(SingyokuPerson_tiles) == 5 * frame_bytes);
     // One replaceable frame, not all 16 cels in the limited OBJ VRAM window.
-    gfx = oamAllocateGfx(&oamMain, SpriteSize_64x64, SpriteColorFormat_16Color);
-    if (!gfx) return false;
+    if (!boss_gfx_init()) return false;
     boss_render_hide();
+    initialized = true;
     return true;
 }
 
@@ -71,7 +72,7 @@ void boss_render_frame()
     if (image != last_image) {
         const unsigned int *sheets[] = {SingyokuSphere_tiles, SingyokuFlash_tiles, SingyokuPerson_tiles};
         const auto *bytes = reinterpret_cast<const u8 *>(sheets[s.sheet]);
-        std::memcpy(gfx, bytes + s.cel * frame_bytes, frame_bytes);
+        std::memcpy(boss_gfx(), bytes + s.cel * frame_bytes, frame_bytes);
         last_image = image;
     }
     if (s.health.flashing != last_flash) {
@@ -104,7 +105,7 @@ void boss_render_frame()
     const int x = camera.x(s.entity.left) - 8, y = camera.y(s.entity.top) - 16;
     oamSet(&oamMain, boss_slot, x, y,
         OAM_PRIORITY_GAMEPLAY, boss_palette, SpriteSize_64x64, SpriteColorFormat_16Color,
-        gfx, -1, false, !view_visible(x, y, 64, 64), false, false, false);
+        boss_gfx(), -1, false, !view_visible(x, y, 64, 64), false, false, false);
 }
 
 RouteChoice boss_defeat_and_select_route()

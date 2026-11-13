@@ -26,6 +26,11 @@ make
 
 The rom file `hrtp_ds.nds` will then appear.
 
+## Screenshots
+
+![Screenshot 1](images/image1.png)
+![Screenshot 2](images/image2.png)
+
 ## Checks:
 
 * `make asset-tests font-tests`: tests clean/parallel asset builds
@@ -40,7 +45,10 @@ portal timelines; viewport tests also verify white bullets and portal rendering
 cel order/timing, sprite allocation rollback/reinitialization and stable usage
 across repeated state transitions
 * `make konngara-tests konngara-sanitize`: checks the intro timeline/rendering
-and temporary-allocation cleanup on replay and failure
+and BOS/GRZ artwork, source phases1–7 combat/lasers and defeat, exact BG/OBJ composition and allocation
+cleanup on replay/failure (camera/flash changes must not upload bitmaps)
+* `make konngara-hybrid-tests`: offline slash-sprite packing and independent
+source-pixel packing checks. The hybrid is used by practice and real Stage20.
 
 ## Current status
 
@@ -66,7 +74,7 @@ and temporary-allocation cleanup on replay and failure
   * [ ] Elis
   * [ ] Kikuri
   * [ ] Sariel
-  * [ ] Konngara (*in progress*, intro implemented)
+  * [x] Konngara
 * [ ] Other screens
   * [ ] Start-up screen
   * [ ] Title screen and menu
@@ -97,9 +105,7 @@ Current controls:
 * **START** — pause (RESUME / QUIT; QUIT restarts at stage 1 until the
   title screen exists)
 * **SELECT + d-pad** — dev stage navigator (←/→: stage, ↑/↓: scene;
-  Shrine has five stages now, other scenes four; scene 1/2 stage 1 =
-  Makai/Jigoku stage 6)
-* **SELECT+X** — Konngara intro preview; returns to/restarts the current stage
+  Shrine and the last Jigoku scene have five stages, other scenes four)
 
 ## AI disclaimer
 

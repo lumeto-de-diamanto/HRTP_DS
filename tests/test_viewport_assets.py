@@ -22,14 +22,16 @@ def layout_bytes(scene):
 class ViewportAssets(unittest.TestCase):
     def test_stage_center_snap_precedes_scene_and_banner_display(self):
         source = Path('source/main.cpp').read_text()
-        load = source.split('static void stage_load(', 1)[1].split('int main(', 1)[0]
+        load = source.split('static void stage_load(', 1)[1].split('static void gameplay_tick(', 1)[0]
         self.assertLess(load.index('camera.snap_center()'), load.index('load_boss_background()'))
         self.assertLess(load.index('stage_entrance_prepare()'), load.index('load_boss_background()'))
         self.assertLess(load.index('player_initialize()'), load.index('stage_entrance_animate('))
         presentations = list(re.finditer(r'(?<!\w)render_frame\(\);', load))
-        self.assertEqual(len(presentations), 1)  # never expose orb/cards before entrance
-        self.assertLess(load.index('stage_entrance_animate('), presentations[0].start())
-        self.assertLess(presentations[0].start(), load.index('music_play_track('))
+        self.assertEqual(len(presentations), 2)  # distinct real Konngara/ordinary entrances
+        self.assertLess(load.index('konngara_intro_play()'), load.index('konngara_view.begin()'))
+        self.assertLess(load.index('konngara_view.begin()'), presentations[0].start())
+        self.assertLess(load.index('stage_entrance_animate('), presentations[1].start())
+        self.assertLess(presentations[1].start(), load.index('music_play_track('))
         for path in Path('source/engine').rglob('*'):
             if path.suffix in ('.cpp', '.hpp', '.h'):
                 self.assertNotRegex(path.read_text(), r'#include\s*[<\"][^>\"]*camera\.')
@@ -96,6 +98,11 @@ def run_renderer(binary):
     destination.mkdir(parents=True, exist_ok=True)
     for name in [f'st{i}' for i in range(7)] + ['boss1']:
         shutil.copyfile(f'nitrofs/{name}.bin', destination / f'{name}.bin')
+    shutil.copyfile('nitrofs/konngara_art.bin', destination / 'konngara_art.bin')
+    shutil.copyfile('nitrofs/konngara_combat.bin', destination / 'konngara_combat.bin')
+    shutil.copyfile('nitrofs/konngara_slash.bin', destination / 'konngara_slash.bin')
+    shutil.copyfile('nitrofs/konngara_defeat.bin', destination / 'konngara_defeat.bin')
+    shutil.copyfile('nitrofs/konngara_intro.bin', destination / 'konngara_intro.bin')
     subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
 
 

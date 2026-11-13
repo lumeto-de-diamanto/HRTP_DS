@@ -5,6 +5,9 @@
 
 static int clip_top;
 static u32 dirty_rows[CANVAS_H / 8];
+static u32 present_rows[CANVAS_H / 8];
+static bool prepared;
+u16 *g_canvas_target;
 void canvas_playfield_clip(bool enabled) { clip_top = enabled ? UPPER_HUD_H : 0; }
 
 static inline u16 opaque(u16 bgr15)
@@ -34,6 +37,7 @@ static bool clip_rect(int &x, int &y, int &w, int &h)
 static void mark_dirty(int x, int y, int w, int h)
 {
     if (!clip_rect(x, y, w, h)) return;
+    prepared = false;
     const int first = x / 8, count = (x + w - 1) / 8 - first + 1;
     const u32 mask = count == 32 ? ~u32(0) : ((u32(1) << count) - 1) << first;
     for (int row = y / 8; row <= (y + h - 1) / 8; ++row)
@@ -46,13 +50,17 @@ void canvas_begin_frame()
     // drawing the new ones, regardless of the current camera offset/clip.
     for (int row = 0; row < CANVAS_H / 8; ++row) {
         const u32 mask = dirty_rows[row];
+        if (g_canvas_target && mask) { present_rows[row] |= mask; prepared = false; }
         dirty_rows[row] = 0;
         for (int x = 0; x < 32;) {
             if (!(mask & (u32(1) << x))) { ++x; continue; }
             const int first = x++;
             while (x < 32 && (mask & (u32(1) << x))) ++x;
-            for (int y = row * 8; y < row * 8 + 8; ++y)
-                dmaFillHalfWords(0, canvas_at(first * 8, y), (x - first) * 8 * sizeof(u16));
+            for (int y = row * 8; y < row * 8 + 8; ++y) {
+                if (g_canvas_target) {
+                    for (int px = first*8; px < x*8; ++px) *canvas_at(px,y) = 0;
+                } else dmaFillHalfWords(0, canvas_at(first * 8, y), (x - first) * 8 * sizeof(u16));
+            }
         }
     }
 }
@@ -64,7 +72,11 @@ void canvas_init()
 
 void canvas_clear()
 {
-    dmaFillHalfWords(0, canvas_at(0, 0), CANVAS_W * CANVAS_H * sizeof(u16));
+    if (g_canvas_target) {
+        memset(g_canvas_target,0,CANVAS_W*CANVAS_H*sizeof(u16));
+        for (auto &row : present_rows) row = ~u32(0);
+        prepared = false;
+    } else dmaFillHalfWords(0, canvas_at(0, 0), CANVAS_W * CANVAS_H * sizeof(u16));
     memset(dirty_rows, 0, sizeof(dirty_rows));
 }
 
@@ -72,11 +84,75 @@ void canvas_clear_rect(int x, int y, int w, int h)
 {
     if (!clip_rect(x, y, w, h))
         return;
+    if (g_canvas_target) {
+        mark_dirty(x,y,w,h);
+        for (int row=y;row<y+h;++row) for (int col=x;col<x+w;++col) *canvas_at(col,row)=0;
+        return;
+    }
     // 16-bit DMA: byte stores to VRAM are dropped by the hardware (see
     // subscreen.cpp), and memset can fall back to them for small or
     // 2-byte-aligned ranges -- which caused pellet trails.
     for (int row = y; row < y + h; row++)
         dmaFillHalfWords(0, canvas_at(x, row), w * sizeof(u16));
+}
+
+bool canvas_buffer_begin(u16 *pixels)
+{
+    if (!pixels || g_canvas_target) return false;
+    g_canvas_target = pixels;
+    memset(pixels,0,256*256*sizeof(u16));
+    memset(dirty_rows,0,sizeof(dirty_rows));
+    for (auto &row : present_rows) row = ~u32(0);
+    prepared = false;
+    return true;
+}
+
+void canvas_buffer_end()
+{
+    g_canvas_target = nullptr;
+    memset(dirty_rows,0,sizeof(dirty_rows));
+    memset(present_rows,0,sizeof(present_rows));
+    prepared = false;
+}
+
+void canvas_buffer_prepare()
+{
+    if (!g_canvas_target) return;
+    int first=CANVAS_H/8,last=-1;
+    for (int row=0;row<CANVAS_H/8;++row) if (dirty_rows[row] || present_rows[row]) {
+        if(first>row) first=row;
+        last=row;
+    }
+    if(last>=first) DC_FlushRange(g_canvas_target+first*8*CANVAS_W,(last-first+1)*8*CANVAS_W*sizeof(u16));
+    prepared = true;
+}
+
+bool canvas_buffer_ready() { return g_canvas_target && prepared; }
+
+void canvas_buffer_dirty_all()
+{
+    if(!g_canvas_target) return;
+    for(auto &row:present_rows) row=~u32(0);
+    prepared=false;
+}
+
+bool canvas_buffer_present()
+{
+    if (!canvas_buffer_ready() || REG_VCOUNT < 192 || REG_VCOUNT >= 200) return false;
+    for (int row=0;row<CANVAS_H/8;++row) {
+        const u32 mask = dirty_rows[row] | present_rows[row];
+        present_rows[row] = 0;
+        if (!mask) continue;
+        int first=0,last=31;
+        while (!(mask & (u32(1)<<first))) ++first;
+        while (!(mask & (u32(1)<<last))) --last;
+        // One bounded span per scanline also clears transparent gaps, without
+        // hundreds of tiny DMA setups for overlapping beams and pellets.
+        for (int y=row*8;y<row*8+8;++y)
+            dmaCopyHalfWords(3,canvas_at(first*8,y),BG_BMP_RAM(CANVAS_BMP_BLOCK)+y*256+first*8,(last-first+1)*16);
+    }
+    prepared = false;
+    return true;
 }
 
 void canvas_fill_rect(int x, int y, int w, int h, u16 bgr15)
@@ -212,7 +288,7 @@ void canvas_circle_dots(int cx, int cy, int radius, u16 bgr15, bool clear)
         if (x < 0 || x >= CANVAS_W || y < clip_top || y >= CANVAS_H)
             continue;
         u16 *p = canvas_at(x, y);
-        if (!clear) mark_dirty(x, y, 1, 1);
+        if (!clear || g_canvas_target) mark_dirty(x, y, 1, 1);
         *p = clear ? 0 : opaque(bgr15);
     }
 }

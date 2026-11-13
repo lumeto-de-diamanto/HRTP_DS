@@ -259,6 +259,16 @@ bool CPellets::update()
         if (pel.from_group == PG_NONE) {
             if (pel.motion_type == PM_GRAVITY) {
                 pel.velocity.y.v += pel.speed;
+            } else if (pel.motion_type == PM_FALL_STRAIGHT_FROM_TOP_THEN_REGULAR) {
+                // Source pellet.cpp363..371: compare INTEGER Y before moving.
+                // The fixed3px descent is not rank/global-speed adjusted.
+                if (pel.cur_top.to_pixel() <= PLAYFIELD_TOP + (PELLET_H / 4) * 3) {
+                    pel.velocity.x.v = 0;
+                    pel.velocity.y.v = pel.speed.v;
+                    pel.motion_type = PM_REGULAR;
+                    if (pel.cur_top.to_pixel() <= PLAYFIELD_TOP)
+                        pel.cur_top.set(PLAYFIELD_TOP + 1);
+                }
             } else if (pel.motion_type == PM_CHASE) {
                 int vx, vy;
                 vector2_between(TO_PIXEL(pel.cur_left.v), TO_PIXEL(pel.cur_top.v),

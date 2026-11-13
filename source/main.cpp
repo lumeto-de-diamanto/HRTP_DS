@@ -1,7 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#ifndef HRTP_GAME_FLOW_TEST
 #include <filesystem.h>
+#endif
 #include <main/random.hpp>
 
 #include <nds.h>
@@ -38,10 +40,12 @@
 #include "boss_render.hpp"
 #include "canvas.hpp"
 #include <main/boss/singyoku.hpp>
+#include <main/boss/konngara.hpp>
 #include <main/progression.hpp>
 #include "camera.hpp"
 #include "upper_hud.hpp"
 #include "konngara_intro_render.hpp"
+#include "konngara_combat_render.hpp"
 
 #include "stagedat/stagedat0.h"
 #include "stagedat/stagedat1.h"
@@ -64,6 +68,18 @@ static int current_stage;
 static int lives;
 static unsigned int frame;
 static bool wait_for_shot; // ReC98 stage_wait_for_shot_to_begin
+static KonngaraCombat konngara;
+static KonngaraCombatView konngara_view;
+static bool jigoku_cleared;
+
+static void check_konngara(bool okay,const char *part)
+{
+    if(okay) return;
+    konngara_view.end();music_stop();
+    consoleDemoInit();
+    printf("Konngara %s asset/audio error\n%s",part,music_error());
+    while(true) swiWaitForVBlank();
+}
 
 static void check_music()
 {
@@ -85,11 +101,14 @@ static int global_stage_num()
 
 static void render_hud()
 {
-    const bool boss = stage_has_singyoku(current_scene, current_stage);
+    const bool boss = stage_has_boss(current_scene, current_stage);
     upper_hud_render(lives, rem_bombs, stage_timer, boss ? UpperHudMode::Boss : UpperHudMode::Regular);
-    if (boss) {
+    if (stage_has_singyoku(current_scene,current_stage)) {
         const auto &s = singyoku_state();
         upper_hud_boss(s.health.hp, s.hp_displayed);
+    } else if(stage_has_konngara(current_scene,current_stage)) {
+        const auto &s=konngara.state();
+        upper_hud_boss(s.health.hp,s.hp_displayed,10,16);
     } else upper_hud_boss_hide();
     hud_render(lives, global_stage_num());
 }
@@ -97,12 +116,14 @@ static void render_hud()
 static void render_frame()
 {
     const bool boss = stage_has_singyoku(current_scene, current_stage);
-    video_apply_camera();
+    const bool final_boss=stage_has_konngara(current_scene,current_stage);
+    if(!final_boss) video_apply_camera();
     stage_render_frame();
     // Erase only previous effects; the background scrolls in hardware and
     // BG0/OAM HUD elements never go through the software canvas.
     canvas_begin_frame();
     canvas_playfield_clip(true);
+    if(final_boss) check_konngara(konngara_view.frame(konngara.state()),"frame");
     player_render_frame();
     shots_render_frame();
     orb_render_frame();
@@ -114,7 +135,10 @@ static void render_frame()
     if (boss) boss_render_frame();
     canvas_playfield_clip(false);
     render_hud();
-    oamUpdate(&oamMain);
+    if(final_boss) {
+        canvas_buffer_prepare(); // after lasers, pellets and all other effects
+        do { swiWaitForVBlank(); } while(!konngara_view.present());
+    } else oamUpdate(&oamMain);
 }
 
 static const ds_stage_layout_t *scene_layout(int scene, int stage)
@@ -131,12 +155,20 @@ static const ds_stage_layout_t *scene_layout(int scene, int stage)
     }
 }
 
-static void stage_load(int scene, int stage, bool preserve_sfx = false)
+static void stage_load(int scene, int stage, bool preserve_sfx = false, bool preserve_score = false)
 {
     if (scene < 0 || scene >= SCENES) scene = 0;
     if (stage < 0 || stage >= scene_stage_count(scene)) stage = 0;
-    const bool boss = stage_has_singyoku(scene, stage);
-    const bool previous_boss = stage_has_singyoku(current_scene, current_stage);
+    const bool boss = stage_has_boss(scene, stage);
+    const bool final_boss=stage_has_konngara(scene,stage);
+    const bool previous_boss = stage_has_boss(current_scene, current_stage);
+    const int entering_score=preserve_score ? stage_score : 0;
+    // Remove modal/result text before restoring scenery or revealing it through
+    // the next entrance's transparent glyphs. Preserve the fixed upper HUD.
+    text_layer_clear();
+    konngara_view.end(); // also releases the temporary OBJ lease on navigation/restart
+    jigoku_cleared=false;
+    upper_hud_invalidate();
     // Route confirmation must survive into the new scene's title glyphs.
     // Other boundaries cancel stale effects; music never owns SFX channels.
     if (!preserve_sfx) sfx_stop();
@@ -155,7 +187,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false)
     // Per-scene background: its palette becomes the round palette that
     // cards/items render through (the original's ptn_load "retains the
     // current hardware palette").
-    if (boss) load_boss_background(); else load_background(scene);
+    if (stage_has_singyoku(scene,stage)) load_boss_background(); else load_background(scene);
     palette_apply_round();
 
     if (boss) {
@@ -165,6 +197,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false)
         const ds_stage_layout_t *layout = scene_layout(scene, stage);
         stage_init(layout->obstacle, layout->card);
     }
+    stage_score=entering_score;
     stage_reset();
     Pellets.init();
     Items.init();
@@ -173,11 +206,25 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false)
     player_initialize();
     shots_initialize();
     popup_clear();
-    if (boss) {
+    if (stage_has_singyoku(scene,stage)) {
         singyoku_init();
         // Preserve the approved boss palette/frame cache beneath its title.
         // Entrance presentation hides this shadow OAM before any update.
         boss_render_frame();
+    }
+    if(final_boss) {
+        konngara.reset(); // real18HP encounter; no practice HP/resource presets
+        wait_for_shot=false;
+        hud_invalidate();hud_render(lives,20);
+        // Source Konngara has its own entrance, not STAGE NN/title banners.
+        // Keep the final opaque intro image over old scenery until the first
+        // buffered combat frame commits its BG, actors and fixed HUD together.
+        CanvasForegroundScope foreground;
+        check_konngara(konngara_intro_play(),"entrance");
+        check_konngara(konngara_view.begin(),"combat");
+        render_frame();
+        check_music();
+        return; // ALICE continues from the entrance, without a second play call
     }
     render_hud();
     // No fully rendered gameplay frame may expose the orb/cards before the
@@ -197,6 +244,89 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false)
     check_music();
 }
 
+static void start_new_game()
+{
+    lives=START_LIVES;rem_bombs=2;
+    pellet_speed=-4; // ReC98 to_pellet_speed(-0.1)
+    frame=0;
+    stage_load(0,0);
+}
+
+// One normal game tick, shared with the existing host viewport integration
+// checks. Stage20 uses this same life/timer/item/miss path, not the practice loop.
+static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
+{
+    if(jigoku_cleared) return;
+    bool serving=wait_for_shot;
+    if(serving && (keys_held&KEY_B)) { wait_for_shot=false;serving=false; }
+    const bool boss=stage_has_boss(current_scene,current_stage);
+    const bool final_boss=stage_has_konngara(current_scene,current_stage);
+    const bool entrance=stage_has_singyoku(current_scene,current_stage) && singyoku_state().phase==SG_ENTRANCE;
+    if(entrance) singyoku_update();
+    else player_update(keys_held,keys_down);
+    if(!serving && !entrance) {
+        // Boss collision uses the previous orb point, before orb movement.
+        if(final_boss) {
+            konngara.update();
+            if(konngara.state().complete) {
+                player_is_hit=false; // victory wins a simultaneous player hit
+                Pellets.init();shots_initialize();Items.init();
+                if(stage_score>hiscore) hiscore=stage_score;
+                hud_render(lives,20); // includes the lethal-hit50000 immediately
+                check_konngara(konngara_view.defeat(konngara.state().health.invincible),"defeat");
+                for(int f=0;f<120;++f) swiWaitForVBlank(); // source ending handoff delay
+                text_layer_clear();
+                text_layer_puts(7,4,"JIGOKU CLEARED",TEXT_PAL_WHITE);
+                text_layer_puts(3,6,"ENDING NOT IMPLEMENTED",TEXT_PAL_WHITE);
+                text_layer_puts(4,9,"A/B/START: NEW GAME",TEXT_PAL_WHITE);
+                jigoku_cleared=true;
+                return;
+            }
+            konngara.update_lasers();
+        } else if(boss) {
+            singyoku_update();
+            if(singyoku_state().phase==SG_DEFEATED) {
+                player_is_hit=false;
+                music_stop();
+                Pellets.init();shots_initialize();Items.init();render_frame();
+                const RouteChoice route=boss_defeat_and_select_route();
+                stage_load(route_first_scene(route),0,true);
+                return;
+            }
+        }
+        shots_update();orb_update();
+        if(!boss) { cards_hittest();stage_obstacles_update();cards_update(); }
+        Items.update();
+        // Only active gameplay advances the shared timer cadence.
+        if(timer_update(++frame)==TIMER_EVENT_HARRYUP) harryup_animate();
+        if(Pellets.update()) player_is_hit=true;
+    }
+    if(!entrance && !player_is_hit && orb_hits_player(player_get_state().x_position,
+        player_get_state().y_position,OR_NONE,player_is_invincible(),player_is_invincible_to_orb())) player_is_hit=true;
+    if(player_is_hit) {
+        player_is_hit=false;--lives;
+        if(lives<0) {
+            // Existing placeholder game-over policy: restart this stage/BGM.
+            music_stop();lives=START_LIVES;stage_load(current_scene,current_stage);
+            if(final_boss) return; // its entrance already presented the first frame
+        } else {
+            mdrv2_se_play(SFX_MISS);player_miss();
+            if(!boss) orb_initialize(); // boss misses preserve the orb/phase/HP
+            shots_initialize();Pellets.init();stage_reset();
+        }
+    }
+    if(!boss && stage_is_cleared()) {
+        stagebonus_run(stagebonus_compute(global_stage_num(),lives),global_stage_num());
+        int next=current_stage+1;
+        if(next>=scene_stage_count(current_scene)) next=0; // other unported bosses remain gated
+        stage_load(current_scene,next,false,stage_has_konngara(current_scene,next));
+        if(stage_has_konngara(current_scene,current_stage)) return;
+    }
+    if(stage_score>hiscore) hiscore=stage_score;
+    camera.follow(player_center_x());render_frame();
+}
+
+#ifndef HRTP_GAME_FLOW_TEST
 int main(int argc, char **argv)
 {
     if (!nitroFSInit(NULL))
@@ -229,16 +359,20 @@ int main(int argc, char **argv)
         while (true) swiWaitForVBlank();
     }
 
-    // ReC98's starting bullet-speed offset (to_pellet_speed(-0.1)).
-    pellet_speed = -4;
-    rem_bombs = 2;
-
-    lives = START_LIVES;
-    stage_load(0, 0);
+    start_new_game();
 
     while (1)
     {
-        swiWaitForVBlank();
+        if(jigoku_cleared) {
+            swiWaitForVBlank();scanKeys();
+            if(keysDown()&(KEY_A|KEY_B|KEY_START)) {
+                start_new_game();
+            }
+            continue; // terminal route-clear state, never loop Stage20 to16
+        }
+        // Konngara composes during visible time and commits at the END of the
+        // frame. Do not add a second VBlank wait and halve its gameplay rate.
+        if(!stage_has_konngara(current_scene,current_stage)) swiWaitForVBlank();
 
         scanKeys();
         uint16_t keys_held = keysHeld();
@@ -246,18 +380,6 @@ int main(int argc, char **argv)
 
         // Dev stage navigator (SELECT + d-pad).
         if (keys_held & KEY_SELECT) {
-            // Intro-first M5 review slice. Do not expose a dummy stage20 boss
-            // or advance progression until Konngara's combat is implemented.
-            if (keys_down & KEY_X) {
-                if (!konngara_intro_preview()) {
-                    consoleDemoInit();
-                    printf("Konngara intro asset/audio error\n%s", music_error());
-                    while (true) swiWaitForVBlank();
-                }
-                music_stop(); // ALICE must not bleed into the restored STAGE banner
-                stage_load(current_scene, current_stage);
-                continue;
-            }
             if (keys_down & KEY_LEFT) {
                 int s = current_stage - 1;
                 if (s < 0)
@@ -295,101 +417,9 @@ int main(int argc, char **argv)
             continue;
         }
 
-        // Stage serve (ReC98's wait-for-shot gate): Reimu moves freely
-        // while the orb rests at its start position; pressing shot (B)
-        // starts the action. Only the first life of a stage waits.
-        bool serving = wait_for_shot;
-        if (serving && (keys_held & KEY_B)) {
-            wait_for_shot = false;
-            serving = false;
-        }
-
-        const bool boss = stage_has_singyoku(current_scene, current_stage);
-        const bool entrance = boss && singyoku_state().phase == SG_ENTRANCE;
-        if (entrance)
-            singyoku_update(); // gameplay/timer are frozen during the source entrance
-        else
-            player_update(keys_held, keys_down);
-        if (!serving && !entrance) {
-            // Boss logic sees the previous orb point, before this frame's
-            // orb movement, as in CBossEntity::hittest_orb().
-            if (boss) {
-                singyoku_update();
-                if (singyoku_state().phase == SG_DEFEATED) {
-                    player_is_hit = false; // victory wins a simultaneous hit
-                    music_stop(); // original nonblocking fade is still M5 follow-up
-                    Pellets.init(); shots_initialize(); Items.init();
-                    render_frame();
-                    const RouteChoice route = boss_defeat_and_select_route();
-                    stage_load(route_first_scene(route), 0, true);
-                    continue;
-                }
-            }
-            shots_update();
-            orb_update();
-
-            if (!boss) {
-                cards_hittest();
-                stage_obstacles_update();
-                cards_update();
-            }
-            Items.update();
-
-            // ReC98 ticks only on active gameplay, preserving the counter's
-            // phase across stage/life changes. Unsigned overflow is defined.
-            if (timer_update(++frame) == TIMER_EVENT_HARRYUP)
-                harryup_animate();
-
-            if (Pellets.update())
-                player_is_hit = true;
-        }
-
-        // Deadly orb contact (ReC98 checks this every frame outside of
-        // attacks; player_update handles the repel cases during swings).
-        if (!entrance && !player_is_hit &&
-            orb_hits_player(player_get_state().x_position,
-                            player_get_state().y_position,
-                            OR_NONE,
-                            player_is_invincible(),
-                            player_is_invincible_to_orb())) {
-            player_is_hit = true;
-        }
-
-        if (player_is_hit) {
-            player_is_hit = false;
-            lives--;
-            if (lives < 0) {
-                // The placeholder game-over flow restarts this stage, so also
-                // restart its BGM from the intro rather than retaining position.
-                music_stop();
-                lives = START_LIVES;
-                stage_load(current_scene, current_stage);
-            } else {
-                // ReC98's life loop respawns both the player and the orb.
-                mdrv2_se_play(SFX_MISS);
-                player_miss();
-                orb_initialize();
-                shots_initialize();
-                Pellets.init();
-                stage_reset();
-            }
-        }
-
-        if (!boss && stage_is_cleared()) {
-            stagebonus_run(stagebonus_compute(global_stage_num(), lives),
-                           global_stage_num());
-            int next = current_stage + 1;
-            if (next >= scene_stage_count(current_scene))
-                next = 0; // loop the scene for now
-            stage_load(current_scene, next);
-        }
-
-        if (stage_score > hiscore)
-            hiscore = stage_score;
-
-        camera.follow(player_center_x());
-        render_frame();
+        gameplay_tick(keys_held,keys_down);
     }
 
     return 0;
 }
+#endif

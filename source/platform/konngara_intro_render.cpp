@@ -80,8 +80,9 @@ bool konngara_intro_asset_valid(const void *data, size_t size)
     return true;
 }
 
-bool konngara_intro_preview()
+static bool play_intro(bool preview)
 {
+    if(g_canvas_target) return false;
     // Bound the read/allocation even for a damaged input file. Do not disturb
     // the current screen or song until all data and allocation checks pass.
     FILE *input = std::fopen("nitro:/konngara_intro.bin", "rb");
@@ -127,10 +128,15 @@ bool konngara_intro_preview()
             swiWaitForVBlank();
         }
         // Preview-only review hold; NOT part of the source entrance timeline.
-        for (int f = 0; f < 120; ++f) swiWaitForVBlank();
-        canvas_clear();
+        if(preview) {
+            for (int f = 0; f < 120; ++f) swiWaitForVBlank();
+            canvas_clear();
+        }
     }
     std::free(colors);
     std::free(data);
     return true;
 }
+
+bool konngara_intro_preview() { return play_intro(true); }
+bool konngara_intro_play() { return play_intro(false); }

@@ -59,6 +59,12 @@ bool upper_hud_init()
     return true;
 }
 
+void upper_hud_invalidate()
+{
+    mode_valid=false;
+    last_hp=last_redwhite=last_white=-1;
+}
+
 void upper_hud_render(int lives, int bombs, unsigned timer, UpperHudMode mode)
 {
     lives = view_clamp(lives, 0, 12);

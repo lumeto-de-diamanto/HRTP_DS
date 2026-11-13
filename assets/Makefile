@@ -28,8 +28,8 @@ HDI_DUMP_STAMP   := $(HDI_DUMP_DIR)/.stamp
 # find these inputs on the FIRST build and recover a deleted member safely
 # under -j. A stamp alone cannot describe an implicit rule's missing input.
 HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
-HDI_FILES := $(PACKFILE) $(addprefix $(HDI_DUMP_DIR)/,$(addsuffix .GRP,$(HDI_GRP_NAMES)))
-PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
+HDI_FILES := $(PACKFILE) $(addprefix $(HDI_DUMP_DIR)/,$(addsuffix .GRP,$(HDI_GRP_NAMES))) $(HDI_DUMP_DIR)/BOSS8.GRZ
+PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
 PACKFILE_FILES := $(addprefix $(PACKFILE_DIR)/,$(PACKFILE_NAMES))
 BACKGROUND_BINS := $(addprefix $(NITROFS_DIR)/,$(addsuffix .bin,st0 st1 st2 st3 st4 st5 st6 boss1))
 
@@ -59,8 +59,16 @@ assets: $(PACKFILE_STAMP) $(HDI_DUMP_STAMP) $(SPRITES_DIR)/Miko.h $(SPRITES_DIR)
 assets: $(SPRITES_DIR)/SingyokuSphere.h $(SPRITES_DIR)/SingyokuFlash.h $(SPRITES_DIR)/SingyokuPerson.h $(BACKGROUND_DIR)/boss1.h
 assets: $(SPRITES_DIR)/HudIconsSmall.h
 assets: $(NITROFS_DIR)/konngara_intro.bin
+assets: $(NITROFS_DIR)/konngara_art.bin
+assets: $(NITROFS_DIR)/konngara_combat.bin
+assets: $(NITROFS_DIR)/konngara_slash.bin
+assets: $(NITROFS_DIR)/konngara_defeat.bin
 assets: $(BACKGROUND_BINS)
 assets: $(SPRITES_DIR)/OrbArrow.h
+assets: $(SPRITES_DIR)/Shape8x8.h
+
+$(SPRITES_DIR)/Shape8x8.h: $(ASSETS_DIR)/sprites/shape8x8.bmp $(TOOLS_DIR)/mono_bmp_to_h.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/mono_bmp_to_h.py $< $(SPRITES_DIR) --name Shape8x8 --halve rare
 
 $(SPRITES_DIR)/OrbArrow.h: $(ASSETS_DIR)/sprites/orb_arrow.xpm $(TOOLS_DIR)/orb_arrow_to_h.py
 	$(PYTHON) $(TOOLS_DIR)/orb_arrow_to_h.py $< $@
@@ -71,6 +79,15 @@ assets-clean:
 
 $(NITROFS_DIR)/konngara_intro.bin: $(HDI_DUMP_DIR)/BOSS7_D1.GRP $(HDI_DUMP_DIR)/BOSS8_A1.GRP $(addprefix $(HDI_DUMP_DIR)/BOSS8_D,1.GRP 2.GRP 3.GRP 4.GRP) $(TOOLS_DIR)/konngara_to_bin.py $(TOOLS_DIR)/grp_to_bin.py
 	$(PYTHON) $(TOOLS_DIR)/konngara_to_bin.py $(HDI_DUMP_DIR) $@
+
+$(NITROFS_DIR)/konngara_defeat.bin: $(HDI_DUMP_DIR)/BOSS7_D1.GRP $(HDI_DUMP_DIR)/BOSS8_A1.GRP $(HDI_DUMP_DIR)/BOSS8.GRZ $(TOOLS_DIR)/konngara_defeat_to_bin.py $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/grz_decode.py
+	$(PYTHON) $(TOOLS_DIR)/konngara_defeat_to_bin.py $(HDI_DUMP_DIR) $@
+
+$(NITROFS_DIR)/konngara_art.bin: $(NITROFS_DIR)/konngara_intro.bin $(HDI_DUMP_DIR)/BOSS8.GRZ $(addprefix $(PACKFILE_DIR)/,BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS) $(TOOLS_DIR)/konngara_art_to_bin.py $(TOOLS_DIR)/grz_decode.py $(TOOLS_DIR)/konngara_to_bin.py $(TOOLS_DIR)/grp_to_bin.py
+	$(PYTHON) $(TOOLS_DIR)/konngara_art_to_bin.py $(HDI_DUMP_DIR) $(PACKFILE_DIR) $@
+
+$(NITROFS_DIR)/konngara_combat.bin $(NITROFS_DIR)/konngara_slash.bin &: $(NITROFS_DIR)/konngara_art.bin $(TOOLS_DIR)/konngara_slash_to_bin.py $(TOOLS_DIR)/konngara_combat_to_bin.py $(TOOLS_DIR)/analyze_konngara_hybrid.py
+	$(PYTHON) $(TOOLS_DIR)/konngara_slash_to_bin.py $< $(NITROFS_DIR)/konngara_combat.bin $(NITROFS_DIR)/konngara_slash.bin
 
 $(SPRITES_DIR)/HudIconsSmall.h: $(PACKFILE_STAMP) $(PACKFILE_DIR)/STG.PTN $(TOOLS_DIR)/ptn_to_h.py $(TOOLS_DIR)/halve_image.py
 	$(PYTHON) $(TOOLS_DIR)/ptn_to_h.py $(PACKFILE_DIR)/STG.PTN $(SPRITES_DIR) HudIconsSmall -s 0 --quarter --halve dither --linear

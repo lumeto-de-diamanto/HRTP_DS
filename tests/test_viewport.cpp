@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <string>
 #include <vector>
 #include "heap_probe.hpp"
 #include "camera.hpp"
@@ -42,15 +43,21 @@
 std::vector<int> test_effects;
 void mdrv2_se_play(int id) { test_effects.push_back(id); }
 void test_stage_entrances();
+void test_konngara_review();
+void test_konngara_stage20();
 extern PlayerState player;
 
 // Count calls at the real bottom HUD's drawing seam: unchanged frames must
 // issue NO writes, not merely rewrite bytes to the same values.
 struct SubCall { char type; int x, y, w, h; };
 static std::vector<SubCall> sub_calls;
+std::string test_practice_label;
 void subscreen_clear(u8) { sub_calls.push_back({'C',0,0,256,192}); }
 void subscreen_fill_rect(int x, int y, int w, int h, u8) { sub_calls.push_back({'F',x,y,w,h}); }
-void subscreen_text(int x, int y, const char *, u8) { sub_calls.push_back({'T',x,y,0,16}); }
+void subscreen_text(int x, int y, const char *s, u8) {
+    sub_calls.push_back({'T',x,y,0,16});
+    if (x == 8 && y == 140) test_practice_label = s;
+}
 void subscreen_number(int x, int y, int, int digits, u8) { sub_calls.push_back({'N',x,y,digits*8,16}); }
 void subscreen_fullwidth_number(int x, int y, int, int digits, u8) { sub_calls.push_back({'W',x,y,digits*16,16}); }
 
@@ -69,7 +76,7 @@ static void check_background(const std::vector<u8> &source) {
 
 static int obj_pixel(int slot, int x, int y) {
     const auto &obj = test_objs[slot];
-    const int widths[] = {8,16,32,32,64,8,32,64};
+    const int widths[] = {8,16,32,32,64,8,32,64,8,16,16,32};
     const int width = widths[obj.size];
     const int word = ((y / 8) * (width / 8) + x / 8) * 16 + (y % 8) * 2 + (x % 8) / 4;
     return (obj.gfx[word] >> ((x % 4) * 4)) & 15;
@@ -87,6 +94,8 @@ static u16 displayed_canvas_pixel(int x, int y) {
 }
 static void observe_foreground() {
     assert(++foreground_frames < 2000);
+    if(g_canvas_target && !canvas_buffer_ready())
+        assert(std::equal(canvas_at(0,0),canvas_at(0,VIEW_H),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
     assert(REG_WININ == 0x1D1D && test_bgs[0].priority == 1 && test_bgs[2].priority == 0);
     assert(test_objs[OAM_SLOT_HUD_LIVES].priority == 1 && test_objs[OAM_SLOT_HUD_HP].priority == 1);
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) assert(test_objs[OAM_SLOT_HUD_HP + i].priority == 1);
@@ -226,6 +235,9 @@ static void check_obj_allocator_model()
     assert(test_obj_used == 0 && test_obj_count == 0);
     large = oamAllocateGfx(&oamMain, SpriteSize_64x64, SpriteColorFormat_16Color);
     assert(large == test_obj_vram); oamFreeGfx(&oamMain, large);
+    auto *indexed = oamAllocateGfx(&oamMain, SpriteSize_64x64, SpriteColorFormat_256Color);
+    assert(indexed == test_obj_vram && test_obj_used == 4096);
+    oamFreeGfx(&oamMain, indexed);
     oamInit(&oamMain, SpriteMapping_1D_32, false);
 }
 
@@ -235,7 +247,7 @@ static void check_sprite_initializers()
     const Owner owners[] = {
         {player_render_init, 62, 19456}, {shots_render_init, 4, 128},
         {orb_render_init, 5, 576}, {item_render_init, 2, 256},
-        {boss_render_init, 1, 2048}, {upper_hud_init, 5, 3328}
+        {boss_render_init, 1, 4096}, {upper_hud_init, 5, 3328}
     };
     for (const auto &owner : owners) {
         const size_t bytes = test_obj_used, count = test_obj_count;
@@ -265,7 +277,7 @@ static void check_sprite_initializers()
         assert(owner.init()); // retry after every partial-allocation failure
         assert(test_obj_used == bytes + owner.bytes && test_obj_count == count + owner.count);
     }
-    assert(test_obj_count == 79 && test_obj_used == 25792);
+    assert(test_obj_count == 79 && test_obj_used == 27840);
     const auto attempts = test_obj_attempts, changes = test_oam_changes;
     const std::vector<u16> resident(std::begin(test_obj_vram), std::end(test_obj_vram));
     const std::vector<u16> palette(std::begin(SPRITE_PALETTE), std::end(SPRITE_PALETTE));
@@ -278,6 +290,16 @@ static void check_sprite_initializers()
     assert(std::equal(palette.begin(), palette.end(), SPRITE_PALETTE));
     size_t end = 0;
     for (size_t i = 0; i < 1024; ++i) if (test_obj_lengths[i]) end = i * 32 + test_obj_lengths[i];
+    assert(end == 28672 && test_obj_capacity - end == 4096);
+    // Prove the hybrid's temporary4KiB lease fits beside
+    // the real79 production owners, without freeing or resizing their caches.
+    auto *hybrid = oamAllocateGfx(&oamMain,SpriteSize_64x64,SpriteColorFormat_256Color);
+    assert(hybrid == test_obj_vram + 28672/2 && test_obj_used == 31936 && test_obj_count == 80);
+    assert(std::equal(palette.begin(),palette.end(),SPRITE_PALETTE) && test_oam_changes == changes);
+    for (size_t i = 0; i < 1024; ++i) if (test_obj_lengths[i] && i*32 < 28672)
+        assert(std::equal(resident.begin()+i*16,resident.begin()+i*16+test_obj_lengths[i]/2,test_obj_vram+i*16));
+    oamFreeGfx(&oamMain,hybrid);
+    assert(test_obj_used == 27840 && test_obj_count == 79);
     std::printf("Sprites: 79 allocation-failure positions rolled back; 2000 reinitializations stable; %zu allocations/%zu bytes, aligned end %zu of 32768\n",
         test_obj_count, test_obj_used, end);
 }
@@ -309,7 +331,7 @@ static void check_sprite_lifecycles()
         if (boss) { boss_render_frame(); upper_hud_boss(18, 18, 6, 12); }
         else upper_hud_boss_hide();
         palette_dim(50); palette_restore();
-        assert(test_obj_count == 79 && test_obj_used == 25792 && test_obj_attempts == obj_attempts);
+        assert(test_obj_count == 79 && test_obj_used == 27840 && test_obj_attempts == obj_attempts);
         // Each background load uses one temporary buffer and frees it.
         assert(test_heap_count == 1 && test_heap_bytes == 98304);
         assert(test_heap_attempts == heap_attempts + transition + 1);
@@ -588,6 +610,16 @@ int main()
     assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && !test_objs[OAM_SLOT_HUD_HP].hidden);
     assert(text_map[64] == divider && REG_WININ == 0x1919 && test_bgs[0].priority == 0);
     assert(test_objs[OAM_SLOT_HUD_LIVES].priority == 0 && test_objs[OAM_SLOT_HUD_HP].priority == 0);
+    // The same blocking banner path must publish each phase when BG2 is RAM
+    // buffered, rather than leave the previously displayed laser frame live.
+    static u16 buffered_canvas[256*256];
+    assert(canvas_buffer_begin(buffered_canvas));
+    foreground_frames = covered_hud_frames = 0;test_vblank_hook=observe_foreground;
+    harryup_animate();test_vblank_hook=nullptr;
+    assert(foreground_frames==54 && !canvas_buffer_ready());
+    canvas_buffer_prepare();REG_VCOUNT=192;assert(canvas_buffer_present());
+    canvas_buffer_end();
+    assert(ink_count()==0 && REG_WININ==0x1919);
     foreground_frames = covered_hud_frames = 0; test_vblank_hook = observe_foreground;
     test_keys_down = KEY_B;
     assert(boss_defeat_and_select_route() == ROUTE_MAKAI);
@@ -628,9 +660,11 @@ int main()
     check_ofuda_rendering();
     check_portal_rendering();
     assert(test_obj_used == obj_used);
-    assert(test_obj_attempts == sprite_attempts && test_obj_count == 79 && test_obj_used == 25792);
+    assert(test_obj_attempts == sprite_attempts && test_obj_count == 79 && test_obj_used == 27840);
     check_sprite_lifecycles();
     test_stage_entrances();
+    test_konngara_review();
+    test_konngara_stage20();
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     std::puts("Viewport: center-anchored regular parallax/boss 1:1, both full-size HUD modes, 18HP strips, cached mode handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
 }

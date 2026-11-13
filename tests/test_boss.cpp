@@ -48,6 +48,13 @@ int main()
     assert(boss_hit_update(health, entity, 3000, 100, 100, 96, 96) && health.hp == 6);
     outside_orb();
     assert(boss_hit_update(health, entity, 3000, 100, 100, 96, 96, true) && health.hp == 5);
+    health.reset(1);
+    assert(boss_hit_update(health, entity, 3000, 100, 100, 96, 96, true) && health.hp==0);
+    const int zero_score=stage_score;const auto zero_sounds=effects.size();
+    for(int i=1;i<=41;++i) {
+        assert(!boss_hit_update(health, entity, 3000, 100, 100, 96, 96, true));
+        assert(health.invincible==(i<=40) && health.hp==0 && stage_score==zero_score && effects.size()==zero_sounds);
+    }
     for (int i = 0; i < 200; ++i) {
         assert(boss_bomb_damage_allowed(true, 0, i) == (i % 50 == 0));
         assert(!boss_bomb_damage_allowed(true, 1, i));
@@ -85,6 +92,30 @@ int main()
         Pellets.add_single(player.x_position + 8, player_top + 1, 64, 16);
         assert(Pellets.update() == !grace);
     }
+
+    // Sleeve rain's new motion: independent pre-move integer-Y oracle, including
+    // the70.9375 boundary and clamp to65 before the fixed3px descent.
+    invincible=true;outside_orb();shots_initialize();
+    for(int difficulty=0;difficulty<4;++difficulty) for(int offset:{-15,20})
+        for(int top:{64,70,71,200}) for(int fraction:{0,15}) for(int angle=0;angle<10;++angle) {
+            rank=rank_t(difficulty);pellet_speed=offset;Pellets.init();
+            Pellets.add_single(290,200,(-angle*12)&255,32,PM_FALL_STRAIGHT_FROM_TOP_THEN_REGULAR,48);
+            auto &p=Pellets.at(0);p.cur_top.v=top*16+fraction;
+            int x=p.cur_left.v,y=p.cur_top.v,dx=p.velocity.x.v,dy=p.velocity.y.v;
+            bool fall=true,alive=true;
+            for(int frame=0;frame<700 && alive;++frame) {
+                if(fall && (y>>4)<=70) {
+                    dx=0;dy=48;fall=false;if((y>>4)<=64) y=65*16;
+                }
+                x+=dx;y+=dy;
+                alive=x>=-8*16 && x<=640*16 && y>=56*16 && y<=400*16;
+                assert(!Pellets.update());
+                assert(p.cur_left.v==x && p.cur_top.v==y && p.velocity.x.v==dx && p.velocity.y.v==dy && p.moving==alive);
+                assert(p.motion_type==(fall ? PM_FALL_STRAIGHT_FROM_TOP_THEN_REGULAR : PM_REGULAR));
+            }
+            assert(!alive);
+        }
+    rank=RANK_NORMAL;pellet_speed=0;
 
     invincible = true; outside_orb(); shots_initialize(); Pellets.init(); effects.clear();
     singyoku_init();
@@ -124,8 +155,14 @@ int main()
     assert(effects.size() == requests);
     singyoku_init(); assert(singyoku_state().health.hp == 8 && singyoku_state().frame == 0);
     assert(scene_stage_count(0) == 5 && scene_stage_count(1) == 4);
+    assert(scene_stage_count(6)==5 && stage_number(6,4)==20 && stage_has_konngara(6,4));
+    for(int scene=0;scene<7;++scene) for(int stage=0;stage<5;++stage) {
+        assert(stage_has_konngara(scene,stage)==(scene==6 && stage==4));
+        assert(stage_has_boss(scene,stage)==((scene==0 || scene==6) && stage==4));
+        assert(scene_stage_count(scene)==((scene==0 || scene==6)?5:4));
+    }
     assert(stage_has_singyoku(0, 4) && !stage_has_singyoku(1, 4));
     assert(stage_number(0, 4) == 5 && stage_number(1, 0) == 6 && stage_number(2, 0) == 6);
     assert(route_first_scene(ROUTE_MAKAI) == 1 && route_first_scene(ROUTE_JIGOKU) == 2);
-    std::puts("Boss tests: hitboxes, HP/i-frames, shot-only contact, bomb policy, chase/sling, grace, SinGyoku phases/patterns/defeat and route indexing passed");
+    std::puts("Boss tests: hitboxes, HP/zero-HP grace, shot/bomb policy, chase/sling/top-fall motion, SinGyoku phases/patterns/defeat and route indexing passed");
 }

@@ -42,6 +42,10 @@ class AssetBuildTests(unittest.TestCase):
                 for scene in range(8):
                     self.assertIn(f'assets/processed/stagedat/stagedat{scene}.h', before)
                 self.assertIn('nitrofs/konngara_intro.bin', before)
+                self.assertIn('nitrofs/konngara_art.bin', before)
+                self.assertIn('nitrofs/konngara_combat.bin', before)
+                self.assertIn('nitrofs/konngara_slash.bin', before)
+                self.assertIn('nitrofs/konngara_defeat.bin', before)
                 for scene in range(7):
                     self.assertEqual((root / f'nitrofs/st{scene}.bin').stat().st_size, 61440)
                 self.assertIn('FONT16X16_GLYPH_COUNT 272',
@@ -49,10 +53,19 @@ class AssetBuildTests(unittest.TestCase):
                 self.make_assets(root, jobs)
                 self.assertEqual(self.snapshot(root), before, 'second build must be a no-op')
 
+                (root / 'nitrofs/konngara_combat.bin').unlink()
+                self.make_assets(root, jobs)
+                recovered = self.snapshot(root)
+                self.assertEqual(recovered['nitrofs/konngara_combat.bin'][1], before['nitrofs/konngara_combat.bin'][1])
+                self.assertEqual({p: v for p, v in recovered.items() if p != 'nitrofs/konngara_combat.bin'},
+                                 {p: v for p, v in before.items() if p != 'nitrofs/konngara_combat.bin'})
+
                 # Recover each half of a converter's paired output, as well as
                 # missing extraction members with their old stamps still present.
                 for path in ('nitrofs/st0.bin', 'assets/processed/backgrounds/boss1.h',
-                             'assets/packfile/STAGE0.DAT', 'assets/hdi_dump/BOSS8_D2.GRP'):
+                             'assets/packfile/STAGE0.DAT', 'assets/hdi_dump/BOSS8_D2.GRP',
+                             'nitrofs/konngara_art.bin', 'nitrofs/konngara_combat.bin', 'nitrofs/konngara_slash.bin', 'assets/packfile/BOSS8_E1.BOS',
+                             'assets/hdi_dump/BOSS8.GRZ', 'nitrofs/konngara_defeat.bin'):
                     (root / path).unlink()
                 self.make_assets(root, jobs)
                 after = self.snapshot(root)

@@ -113,13 +113,21 @@ void banner_two_phase(const char *line1, const char *line2, int pause_frames)
     canvas_playfield_clip(false);
     canvas_clear_rect(0, UPPER_HUD_H, VIEW_W, VIEW_PLAY_H);
     banner_line(line1);
-    for (int i = 0; i < pause_frames; i++)
-        swiWaitForVBlank();
+    for (int i = 0; i < pause_frames; i++) {
+        if (i==0 && g_canvas_target) {
+            canvas_buffer_prepare();
+            do { swiWaitForVBlank(); } while(!canvas_buffer_present());
+        } else swiWaitForVBlank();
+    }
 
     canvas_clear_rect(0, UPPER_HUD_H, VIEW_W, VIEW_PLAY_H);
     banner_line(line2);
-    for (int i = 0; i < pause_frames; i++)
-        swiWaitForVBlank();
+    for (int i = 0; i < pause_frames; i++) {
+        if (i==0 && g_canvas_target) {
+            canvas_buffer_prepare();
+            do { swiWaitForVBlank(); } while(!canvas_buffer_present());
+        } else swiWaitForVBlank();
+    }
 
     canvas_clear_rect(0, UPPER_HUD_H, VIEW_W, VIEW_PLAY_H);
 }

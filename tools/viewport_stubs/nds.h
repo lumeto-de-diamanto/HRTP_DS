@@ -40,10 +40,12 @@ enum { MODE_5_2D, VRAM_A_MAIN_BG_0x06000000, VRAM_B_MAIN_BG_0x06020000, VRAM_C_L
 enum { BgType_Text4bpp, BgType_Bmp16, BgType_Bmp8, BgSize_T_512x256, BgSize_T_256x256, BgSize_B16_256x256, BgSize_B8_256x256, BgSize_B8_512x256 };
 inline constexpr int DISPLAY_WIN0_ON = 1 << 13, DISPLAY_WIN1_ON = 1 << 14;
 inline u32 REG_DISPCNT{};
+inline u16 REG_VCOUNT = 192;
 inline u16 REG_WIN0H{}, REG_WIN1H{}, REG_WIN0V{}, REG_WIN1V{}, REG_WININ{}, REG_WINOUT{};
-struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; };
+struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; bool visible = true; };
 inline TestBg test_bgs[4];
 inline void videoSetMode(int) {}
+inline void consoleDemoInit() { assert(false && "unexpected fatal game console"); }
 inline void vramSetPrimaryBanks(int, int, int, int) {}
 inline void vramSetBankE(int) {}
 inline int test_vram_d_mode;
@@ -51,20 +53,22 @@ inline void vramSetBankD(int mode) { test_vram_d_mode = mode; }
 inline int bgInit(int id, int type, int size, int map, int tile) {
     test_bgs[id] = {type, size, map, tile}; return id;
 }
-inline int bgInitHidden(int id, int type, int size, int map, int tile) { return bgInit(id, type, size, map, tile); }
+inline int bgInitHidden(int id, int type, int size, int map, int tile) { bgInit(id,type,size,map,tile);test_bgs[id].visible=false;return id; }
 inline void bgSetPriority(int id, int priority) { test_bgs[id].priority = priority; }
 inline void bgSetScroll(int id, int x, int y) { test_bgs[id].x = x; test_bgs[id].y = y; }
 inline void bgSetScale(int id, int sx, int sy) { test_bgs[id].sx = sx; test_bgs[id].sy = sy; }
 inline void bgUpdate() {}
-inline void bgShow(int) {}
+inline void bgShow(int id) { test_bgs[id].visible=true; }
+inline void bgHide(int id) { test_bgs[id].visible=false; }
 inline void *bgGetGfxPtr(int id) { return BG_BMP_RAM(test_bgs[id].map); }
 #define TILE_PALETTE(n) ((n) << 12)
 
-enum SpriteSize { SpriteSize_8x8, SpriteSize_16x16, SpriteSize_32x16, SpriteSize_32x32, SpriteSize_64x64, SpriteSize_8x16, SpriteSize_32x8, SpriteSize_64x32 };
-enum { SpriteColorFormat_16Color, SpriteMapping_1D_32 };
+enum SpriteSize { SpriteSize_8x8, SpriteSize_16x16, SpriteSize_32x16, SpriteSize_32x32, SpriteSize_64x64, SpriteSize_8x16, SpriteSize_32x8, SpriteSize_64x32,
+                  SpriteSize_8x32, SpriteSize_16x8, SpriteSize_16x32, SpriteSize_32x64 };
+enum { SpriteColorFormat_16Color, SpriteMapping_1D_32, SpriteColorFormat_256Color };
 struct OamState {};
 inline OamState oamMain;
-struct TestObj { int x{}, y{}, priority{}, palette{}; SpriteSize size{}; bool hidden = true; const u16 *gfx{}; bool hflip{}; };
+struct TestObj { int x{}, y{}, priority{}, palette{}; SpriteSize size{}; bool hidden = true; const u16 *gfx{}; bool hflip{}; int format{}; };
 inline TestObj test_objs[128];
 alignas(2048) inline u16 test_obj_vram[32768]{};
 // SpriteMapping_1D_32: 1024 addressable 32-byte units, NOT the entire 64KiB
@@ -86,13 +90,14 @@ inline void oamInit(OamState *, int mapping, bool) {
     for (auto &obj : test_objs) obj = TestObj{};
 }
 inline int sprite_bytes(SpriteSize size) {
-    const int bytes[] = {32, 128, 256, 512, 2048, 64, 128, 1024}; return bytes[size];
+    const int bytes[] = {32, 128, 256, 512, 2048, 64, 128, 1024, 128, 64, 256, 1024}; return bytes[size];
 }
-inline u16 *oamAllocateGfx(OamState *, SpriteSize size, int) {
+inline u16 *oamAllocateGfx(OamState *, SpriteSize size, int format) {
     ++test_obj_attempts;
     if (test_obj_fail_after == 0) return nullptr;
     if (test_obj_fail_after > 0) --test_obj_fail_after;
-    const size_t bytes = sprite_bytes(size);
+    assert(format == SpriteColorFormat_16Color || format == SpriteColorFormat_256Color);
+    const size_t bytes = sprite_bytes(size) * (format == SpriteColorFormat_256Color ? 2 : 1);
     const size_t units = bytes / 32;
     for (size_t start = 0; start + units <= 1024; start += units) {
         bool free = true;
@@ -121,9 +126,9 @@ inline void oamFreeGfx(OamState *, const void *gfx) {
     --test_obj_count; ++test_obj_frees;
 }
 inline void oamSet(OamState *, int slot, int x, int y, int priority, int palette,
-                   SpriteSize size, int, const void *gfx, int, bool, bool hidden, bool hflip, bool, bool) {
+                   SpriteSize size, int format, const void *gfx, int, bool, bool hidden, bool hflip, bool, bool) {
     ++test_oam_changes;
-    test_objs[slot] = {x, y, priority, palette, size, hidden, static_cast<const u16 *>(gfx), hflip};
+    test_objs[slot] = {x, y, priority, palette, size, hidden, static_cast<const u16 *>(gfx), hflip, format};
 }
 inline void oamSetHidden(OamState *, int slot, bool hidden) { ++test_oam_changes; test_objs[slot].hidden = hidden; }
 inline void oamSetPriority(OamState *, int slot, int priority) { ++test_oam_changes; test_objs[slot].priority = priority; }
@@ -131,7 +136,7 @@ inline void oamUpdate(OamState *) {}
 inline void oamEnable(OamState *) {}
 inline void oamDisable(OamState *) {}
 inline void (*test_vblank_hook)() = nullptr;
-inline void swiWaitForVBlank() { if (test_vblank_hook) test_vblank_hook(); }
+inline void swiWaitForVBlank() { REG_VCOUNT=192; if (test_vblank_hook) test_vblank_hook(); }
 inline void scanKeys() {}
 inline u16 test_keys_held{}, test_keys_down{};
 inline u16 keysHeld() { return test_keys_held; }

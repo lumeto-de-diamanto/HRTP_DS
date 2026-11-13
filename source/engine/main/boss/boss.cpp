@@ -32,13 +32,13 @@ bool boss_hit_update(BossHealth &health, const BossEntity &entity,
                      int hit_score, int shot_left, int shot_top,
                      int shot_width, int shot_height, bool bomb_damage)
 {
-    if (health.hp <= 0)
-        return false;
     if (health.invincible)
         ++health.invincibility_frame;
-    shots_hit_boss(shot_left, shot_top, shot_width, shot_height);
+    if (health.hp > 0) shots_hit_boss(shot_left, shot_top, shot_width, shot_height);
     const auto &orb = orb_get_state();
-    const bool hit = (!health.invincible && entity.hits_orb(orb.x_position, orb.y_position)) || bomb_damage;
+    // Konngara can reach zero before phase7. Keep expiring hit grace so the
+    // preceding transitions cannot deadlock, but never subtract/score again.
+    const bool hit = health.hp > 0 && ((!health.invincible && entity.hits_orb(orb.x_position, orb.y_position)) || bomb_damage);
     if (hit) {
         --health.hp;
         health.invincible = true;

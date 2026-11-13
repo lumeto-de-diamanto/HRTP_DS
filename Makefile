@@ -46,6 +46,9 @@ ROM		:= $(NAME).nds
 .PHONY: audio-tests audio-release-checks native-audio native-soundtrack native-tests native-sanitize native-sfx sfx-tests boss-tests boss-sanitize boss-release-checks
 .PHONY: viewport-tests viewport-sanitize viewport-release-checks
 .PHONY: konngara-tests konngara-sanitize konngara-release-checks
+.PHONY: konngara-art-tests konngara-art-sanitize
+.PHONY: konngara-combat-tests konngara-combat-sanitize
+.PHONY: konngara-hybrid-tests
 .PHONY: asset-tests font-tests rom-checks
 .PHONY: timer-tests timer-sanitize
 .PHONY: projectile-tests projectile-sanitize
@@ -61,6 +64,10 @@ all: $(ROM)
 
 asset-tests:
 	python3 -B tests/test_asset_build.py
+
+# Offline prototype investigation; intentionally not part of ROM generation.
+konngara-hybrid-tests: assets
+	python3 -B tests/test_konngara_hybrid.py
 
 font-tests:
 	python3 -B tests/test_font16x16.py
@@ -143,16 +150,19 @@ boss-release-checks: all
 	python3 -B tests/test_boss_assets.py --rom
 
 VIEWPORT_TEST_SOURCES := tests/test_viewport.cpp $(wildcard source/engine/main/player/*.cpp source/engine/main/boss/*.cpp source/engine/main/bullet/*.cpp source/engine/main/stage/stageobj.cpp source/engine/main/stage/card.cpp source/engine/main/stage/item.cpp source/engine/main/stage/timer.cpp source/engine/main/math/*.cpp source/engine/main/random.cpp) $(addprefix source/platform/,camera.cpp canvas.cpp video.cpp tiles.cpp stage_render.cpp background.cpp upper_hud.cpp hud_render.cpp font16x16.cpp player_render.cpp orb_render.cpp shot_render.cpp item_render.cpp pellet_render.cpp popup.cpp boss_render.cpp palette_fx.cpp text_layer.cpp)
-VIEWPORT_TEST_SOURCES += tests/heap_probe.cpp tests/test_stage_entrance.cpp source/platform/stage_entrance.cpp
+VIEWPORT_TEST_SOURCES += tests/heap_probe.cpp tests/test_stage_entrance.cpp source/platform/stage_entrance.cpp source/platform/boss_gfx.cpp
+VIEWPORT_TEST_SOURCES += tests/test_konngara_review.cpp $(addprefix source/platform/,konngara_art_render.cpp konngara_combat_render.cpp konngara_combat_review.cpp)
+VIEWPORT_TEST_SOURCES += source/platform/konngara_defeat_render.cpp
+VIEWPORT_TEST_SOURCES += source/platform/konngara_intro_render.cpp source/platform/menu_render.cpp source/engine/main/bonus.cpp
 HEAP_PROBE_LDFLAGS := -Wl,--wrap=malloc,--wrap=free
-viewport-tests: assets
+viewport-tests: assets native-soundtrack
 	@mkdir -p build/viewport/tests
-	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed $(VIEWPORT_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/viewport/tests/viewport
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(VIEWPORT_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/viewport/tests/viewport
 	python3 -B tests/test_viewport_assets.py --run build/viewport/tests/viewport
 
-viewport-sanitize: assets
+viewport-sanitize: assets native-soundtrack
 	@mkdir -p build/viewport/tests
-	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed $(VIEWPORT_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/viewport/tests/viewport_sanitized
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(VIEWPORT_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/viewport/tests/viewport_sanitized
 	UBSAN_OPTIONS=halt_on_error=1 python3 -B tests/test_viewport_assets.py --run build/viewport/tests/viewport_sanitized
 
 viewport-release-checks: all
@@ -160,18 +170,52 @@ viewport-release-checks: all
 
 KONNGARA_TEST_SOURCES := tests/test_konngara.cpp source/engine/main/boss/konngara_intro.cpp source/engine/main/math/trig.cpp $(addprefix source/platform/,konngara_intro_render.cpp camera.cpp canvas.cpp video.cpp font16x16.cpp)
 KONNGARA_TEST_SOURCES += tests/heap_probe.cpp
-konngara-tests: assets native-soundtrack
+konngara-tests: assets native-soundtrack konngara-art-tests konngara-combat-tests
 	@mkdir -p build/konngara/tests
 	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/konngara/tests/intro
 	python3 -B tests/test_konngara_assets.py --run build/konngara/tests/intro
 
-konngara-sanitize: assets native-soundtrack
+konngara-sanitize: assets native-soundtrack konngara-art-sanitize konngara-combat-sanitize
 	@mkdir -p build/konngara/tests
 	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/konngara/tests/intro_sanitized
 	UBSAN_OPTIONS=halt_on_error=1 python3 -B tests/test_konngara_assets.py --run build/konngara/tests/intro_sanitized
 
 konngara-release-checks: all
 	python3 -B tests/test_konngara_assets.py --rom
+	python3 -B tests/test_konngara_art_assets.py --rom
+
+KONNGARA_ART_TEST_SOURCES := tests/test_konngara_art.cpp tests/heap_probe.cpp source/engine/main/math/trig.cpp source/engine/main/bullet/shootout_laser.cpp $(addprefix source/platform/,konngara_art_render.cpp konngara_combat_render.cpp boss_gfx.cpp camera.cpp canvas.cpp video.cpp font16x16.cpp)
+KONNGARA_ART_TEST_SOURCES += source/platform/konngara_defeat_render.cpp source/platform/text_layer.cpp
+konngara-art-tests: assets native-soundtrack
+	@mkdir -p build/konngara/art-tests
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_ART_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/konngara/art-tests/art
+	python3 -B tests/test_konngara_art_assets.py --run build/konngara/art-tests/art
+
+konngara-art-sanitize: assets native-soundtrack
+	@mkdir -p build/konngara/art-tests
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -Itools/viewport_stubs -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform -Iassets/processed -Ibuild/native_soundtrack $(KONNGARA_ART_TEST_SOURCES) $(HEAP_PROBE_LDFLAGS) -o build/konngara/art-tests/art_sanitized
+	UBSAN_OPTIONS=halt_on_error=1 python3 -B tests/test_konngara_art_assets.py --run build/konngara/art-tests/art_sanitized
+
+KONNGARA_COMBAT_TEST_SOURCES := tests/test_konngara_phase1.cpp source/engine/main/boss/konngara_phase1.cpp source/engine/main/boss/boss.cpp source/engine/main/player/shot.cpp source/engine/main/math/vector.cpp source/engine/main/math/trig.cpp
+KONNGARA_PHASE3_TEST_SOURCES := $(filter-out tests/test_konngara_phase1.cpp,$(KONNGARA_COMBAT_TEST_SOURCES)) source/engine/main/boss/konngara.cpp source/engine/main/bullet/shootout_laser.cpp tests/test_konngara_phase3.cpp
+KONNGARA_PHASE5_TEST_SOURCES := $(filter-out tests/test_konngara_phase3.cpp,$(KONNGARA_PHASE3_TEST_SOURCES)) tests/test_konngara_phase5.cpp
+konngara-combat-tests:
+	@mkdir -p build/konngara/combat-tests
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(KONNGARA_COMBAT_TEST_SOURCES) -o build/konngara/combat-tests/combat
+	build/konngara/combat-tests/combat
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(KONNGARA_PHASE3_TEST_SOURCES) -o build/konngara/combat-tests/phase3
+	build/konngara/combat-tests/phase3
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(KONNGARA_PHASE5_TEST_SOURCES) -o build/konngara/combat-tests/phase5
+	build/konngara/combat-tests/phase5
+
+konngara-combat-sanitize:
+	@mkdir -p build/konngara/combat-tests
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(KONNGARA_COMBAT_TEST_SOURCES) -o build/konngara/combat-tests/combat_sanitized
+	UBSAN_OPTIONS=halt_on_error=1 build/konngara/combat-tests/combat_sanitized
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(KONNGARA_PHASE3_TEST_SOURCES) -o build/konngara/combat-tests/phase3_sanitized
+	UBSAN_OPTIONS=halt_on_error=1 build/konngara/combat-tests/phase3_sanitized
+	$(HOST_CXX) -O1 -g -std=c++17 -fsanitize=address,undefined -fno-omit-frame-pointer -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform $(KONNGARA_PHASE5_TEST_SOURCES) -o build/konngara/combat-tests/phase5_sanitized
+	UBSAN_OPTIONS=halt_on_error=1 build/konngara/combat-tests/phase5_sanitized
 
 clean:
 	@echo "  CLEAN"

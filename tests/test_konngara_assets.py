@@ -84,23 +84,23 @@ class KonngaraAssets(unittest.TestCase):
                     self.assertEqual(actual, sorted((image[y][x * 2], image[y][x * 2 + 1],
                                                      below[x * 2], below[x * 2 + 1])))
 
-    def test_source_timeline_and_preview_not_fake_combat(self):
+    def test_source_timeline_and_real_stage_entry(self):
         trace = reference_trace()
         self.assertEqual(len(trace), 711)
         self.assertEqual([sum(f[0] == p for f in trace) for p in range(7)], [404, 40, 32, 13, 32, 30, 160])
         self.assertEqual([i for i, f in enumerate(trace) if f[-1]], [444, 452, 460, 468])
         self.assertEqual(trace[476:489], [(3, y, y, 15, -1, 0) for y in range(400, -1, -32)])
         source = Path('source/main.cpp').read_text()
-        preview = source.split('if (keys_down & KEY_X)', 1)[1].split('if (keys_down & KEY_LEFT)', 1)[0]
-        self.assertIn('konngara_intro_preview()', preview)
-        self.assertIn('stage_load(current_scene, current_stage)', preview)
-        self.assertIn('continue;', preview)
-        self.assertLess(preview.index('music_stop()'), preview.index('stage_load('))
-        self.assertNotIn('stage_num_animate', preview)
-        self.assertNotIn('singyoku_update', preview)
-        self.assertNotIn('orb_update', preview)
-        # No dummy stage20 exposed or automatic progression into an empty fight.
-        self.assertIn('scene == 0 ? 5 : 4', Path('source/engine/main/progression.hpp').read_text())
+        navigation=source.split('if (keys_held & KEY_SELECT)',1)[1].split('// START = Esc',1)[0]
+        for key in ('R','L','A','B','X','Y'):
+            self.assertNotRegex(navigation,rf'\bKEY_{key}\b')
+        for shortcut in ('konngara_intro_preview()','konngara_art_preview()','konngara_combat_review('):
+            self.assertNotIn(shortcut,source)
+        self.assertIn('KEY_LEFT',navigation)
+        self.assertIn('KEY_DOWN',navigation)
+        # Actual Stage20 keeps its production intro after shortcuts are removed.
+        self.assertIn('konngara_intro_play()',source)
+        self.assertIn('stage_has_konngara',Path('source/engine/main/progression.hpp').read_text())
 
 
 def run_renderer(binary):

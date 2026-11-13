@@ -11,3 +11,8 @@ bool konngara_intro_asset_valid(const void *data, size_t size);
 // Asset/allocation failure leaves hardware/audio untouched. Playback failure
 // clears the preview and restores ordinary layering before returning false.
 bool konngara_intro_preview();
+
+// Actual Stage20 entrance: no preview-only120-frame hold and no final clear.
+// ALICE continues into combat; caller keeps a foreground mask through the first
+// coherent combat presentation so the final intro image cannot expose old BG3.
+bool konngara_intro_play();
