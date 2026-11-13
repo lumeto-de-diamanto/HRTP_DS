@@ -121,6 +121,8 @@ void player_initialize() {
 	player.x_position = PLAYER_LEFT_START;
 	player.y_position = player_top;
 	player.spritesheet = PLAYER;
+	player.sprite_number = SPRITE_IDLE_LEFT;
+	player.spritesheet = PLAYER;
 
 	switch (rank) {
         case RANK_EASY:
@@ -520,8 +522,8 @@ const PlayerState &player_get_state()
 
 void player_miss()
 {
-	player.x_position = PLAYER_LEFT_START;
-	player.y_position = player_top;
+	// Cancel every swing/slide/special and its deflection flags, not merely X/Y.
+	player_initialize();
 	miss_invincibility_frames = PLAYER_MISS_INVINCIBILITY_FRAMES;
 	player_is_hit = false;
 	// ReC98 player_miss_animate_and_update(): surviving a miss extends the

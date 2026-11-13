@@ -16,6 +16,7 @@ inline u16 *BG_MAP_RAM(int n) { return test_vram.pixels + n * 1024; }
 inline u16 *BG_TILE_RAM(int n) { return test_vram.pixels + n * 8192; }
 inline u16 *BG_BMP_RAM(int n) { return test_vram.pixels + n * 8192; }
 inline size_t test_dma_fill_bytes{}, test_dma_copy_calls{};
+inline void (*test_dma_fill_hook)() = nullptr;
 inline uintptr_t test_dma_clean_start{}, test_dma_clean_end{};
 inline void DC_FlushRange(const void *in, size_t size) {
     test_dma_clean_start = reinterpret_cast<uintptr_t>(in);
@@ -26,6 +27,7 @@ inline void dmaFillHalfWords(u16 v, void *out, size_t size) {
     assert(!(reinterpret_cast<uintptr_t>(out) & 1) && !(size & 1));
     auto *p = static_cast<u16 *>(out);
     for (size_t i = 0; i < size / 2; ++i) p[i] = v;
+    if (test_dma_fill_hook) test_dma_fill_hook();
 }
 inline void dmaCopyHalfWords(int, const void *in, void *out, size_t size) {
     ++test_dma_copy_calls;
@@ -57,7 +59,8 @@ inline int bgInitHidden(int id, int type, int size, int map, int tile) { bgInit(
 inline void bgSetPriority(int id, int priority) { test_bgs[id].priority = priority; }
 inline void bgSetScroll(int id, int x, int y) { test_bgs[id].x = x; test_bgs[id].y = y; }
 inline void bgSetScale(int id, int sx, int sy) { test_bgs[id].sx = sx; test_bgs[id].sy = sy; }
-inline void bgUpdate() {}
+inline void (*test_bg_update_hook)() = nullptr;
+inline void bgUpdate() { if (test_bg_update_hook) test_bg_update_hook(); }
 inline void bgShow(int id) { test_bgs[id].visible=true; }
 inline void bgHide(int id) { test_bgs[id].visible=false; }
 inline void *bgGetGfxPtr(int id) { return BG_BMP_RAM(test_bgs[id].map); }
@@ -66,10 +69,10 @@ inline void *bgGetGfxPtr(int id) { return BG_BMP_RAM(test_bgs[id].map); }
 enum SpriteSize { SpriteSize_8x8, SpriteSize_16x16, SpriteSize_32x16, SpriteSize_32x32, SpriteSize_64x64, SpriteSize_8x16, SpriteSize_32x8, SpriteSize_64x32,
                   SpriteSize_8x32, SpriteSize_16x8, SpriteSize_16x32, SpriteSize_32x64 };
 enum { SpriteColorFormat_16Color, SpriteMapping_1D_32, SpriteColorFormat_256Color };
-struct OamState {};
-inline OamState oamMain;
 struct TestObj { int x{}, y{}, priority{}, palette{}; SpriteSize size{}; bool hidden = true; const u16 *gfx{}; bool hflip{}; int format{}; };
 inline TestObj test_objs[128];
+struct OamState { TestObj *oamMemory; };
+inline OamState oamMain{test_objs};
 alignas(2048) inline u16 test_obj_vram[32768]{};
 // SpriteMapping_1D_32: 1024 addressable 32-byte units, NOT the entire 64KiB
 // physical bank. Model libnds' first-fit, block-size-aligned allocation and
@@ -132,6 +135,7 @@ inline void oamSet(OamState *, int slot, int x, int y, int priority, int palette
 }
 inline void oamSetHidden(OamState *, int slot, bool hidden) { ++test_oam_changes; test_objs[slot].hidden = hidden; }
 inline void oamSetPriority(OamState *, int slot, int priority) { ++test_oam_changes; test_objs[slot].priority = priority; }
+inline void oamSetXY(OamState *, int slot, int x, int y) { ++test_oam_changes; test_objs[slot].x=x; test_objs[slot].y=y; }
 inline void oamUpdate(OamState *) {}
 inline void oamEnable(OamState *) {}
 inline void oamDisable(OamState *) {}

@@ -22,7 +22,7 @@ def layout_bytes(scene):
 class ViewportAssets(unittest.TestCase):
     def test_stage_center_snap_precedes_scene_and_banner_display(self):
         source = Path('source/main.cpp').read_text()
-        load = source.split('static void stage_load(', 1)[1].split('static void gameplay_tick(', 1)[0]
+        load = source.split('static void stage_load(', 1)[1].split('static void start_new_game(', 1)[0]
         self.assertLess(load.index('camera.snap_center()'), load.index('load_boss_background()'))
         self.assertLess(load.index('stage_entrance_prepare()'), load.index('load_boss_background()'))
         self.assertLess(load.index('player_initialize()'), load.index('stage_entrance_animate('))

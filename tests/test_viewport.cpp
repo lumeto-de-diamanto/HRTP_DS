@@ -45,6 +45,7 @@ void mdrv2_se_play(int id) { test_effects.push_back(id); }
 void test_stage_entrances();
 void test_konngara_review();
 void test_konngara_stage20();
+void test_player_death();
 extern PlayerState player;
 
 // Count calls at the real bottom HUD's drawing seam: unchanged frames must
@@ -665,6 +666,7 @@ int main()
     test_stage_entrances();
     test_konngara_review();
     test_konngara_stage20();
+    test_player_death();
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     std::puts("Viewport: center-anchored regular parallax/boss 1:1, both full-size HUD modes, 18HP strips, cached mode handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
 }

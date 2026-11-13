@@ -62,7 +62,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage20.
   * [x] Player controls
   * [x] Orb
   * [ ] Bombs
-  * [ ] Damage and game over (*in progress*, no animation)
+  * [x] Damage and game over
   * [ ] Pause screen and stage results (*in progress*, functional but needs visual refinement)
 * [x] Music and SFX engine
   * [x] Music
@@ -80,7 +80,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage20.
   * [ ] Title screen and menu
   * [ ] Round results
   * [ ] Endings and credits
-  * [ ] Hero Scroll/score table
+  * [ ] Hero Scroll/score table/game over
 * [ ] Miscellanea
   * [ ] Icon
 

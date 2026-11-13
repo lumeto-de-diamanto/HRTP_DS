@@ -3,6 +3,7 @@
 #include "video.hpp"
 #include "camera.hpp"
 #include "obj_gfx.hpp"
+#include "canvas.hpp"
 #include <nds.h>
 
 #include "sprites/Miko.h"
@@ -59,6 +60,7 @@ bool player_render_init() {
 }
 
 void player_render_frame() {
+    for (int i = 0; i < 5; ++i) oamSetHidden(&oamMain, OAM_SLOT_DEATH_EFFECT + i, true);
     const PlayerState &state = player_get_state();
 
     int oam_x, oam_y;
@@ -103,4 +105,51 @@ void player_render_frame() {
            false,
            false, false,
            false);
+}
+
+static void death_puff_put(int left, int top, int cel)
+{
+    const auto *tiles = reinterpret_cast<const u8 *>(Miko_tiles) + cel * REGULAR_FRAME_BYTES;
+    const int x = camera.x(left), y = Camera::y(top);
+    for (int row = 0; row < 16; ++row) {
+        for (int col = 0; col < 16;) {
+            const auto pixel = [&](int px) {
+                const int offset = ((row / 8) * 2 + px / 8) * 32 + (row % 8) * 4 + (px % 8) / 2;
+                return (tiles[offset] >> ((px % 2) * 4)) & 15;
+            };
+            const int color = pixel(col), first = col++;
+            while (col < 16 && pixel(col) == color) ++col;
+            if (color) canvas_hline(x + first, y + row, col - first, SPRITE_PALETTE[color]);
+        }
+    }
+}
+
+void player_render_death(const PlayerDeathFrame &frame)
+{
+    const int x = camera.x(frame.pose_left), y = Camera::y(frame.pose_top);
+    oamSet(&oamMain, 0, x, y, OAM_PRIORITY_GAMEPLAY, 0,
+           SpriteSize_16x16, SpriteColorFormat_16Color, g_regular_gfx[frame.pose],
+           -1, false, !frame.show_pose || !view_visible(x,y,16,16), false, false, false);
+    for (int i = 0; i < 5; ++i) {
+        const int ex = camera.x(frame.left[i]), ey = Camera::y(frame.top[i]);
+        // Source miss effects are put last, above the orb/player and pellets.
+        oamSet(&oamMain, OAM_SLOT_DEATH_EFFECT + i, ex, ey, 0, 0,
+               SpriteSize_16x16, SpriteColorFormat_16Color, g_regular_gfx[frame.cel],
+               -1, false, i >= frame.count || !frame.visible[i] || !view_visible(ex,ey,16,16), false, false, false);
+    }
+    if (frame.burst_step < 0) return;
+    // User-requested deviation from the source's foot-band erasure: preserve
+    // whole puffs in all five trails, not only the portions above Reimu. Rebuild
+    // them on BG2 after scenery/effects so frame clearing cannot erase the sides.
+    for (int step = 0; step < frame.burst_step; ++step) {
+        const int distance = (step + 1) * 8;
+        const int diagonal = ((step + 1) * 370728) / 65536;
+        const int dx[5] = {-distance, -diagonal, 0, diagonal, distance};
+        const int dy[5] = {0, -diagonal, -distance, -diagonal, 0};
+        for (int spoke = 0; spoke < 5; ++spoke) {
+            const int left = frame.pose_left + dx[spoke];
+            if (left < PLAYFIELD_LEFT || left >= PLAYFIELD_RIGHT - PLAYER_W) continue;
+            death_puff_put(left,frame.pose_top + dy[spoke],20 + step % 2);
+        }
+    }
 }

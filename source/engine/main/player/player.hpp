@@ -71,9 +71,8 @@ static inline int player_center_y()
 bool player_is_sliding();
 bool player_is_deflecting();
 
-// Minimal miss handling (the full ReC98 miss sequence comes with the HUD
-// and effects in M3): respawn at the start position with the original
-// PLAYER_MISS_INVINCIBILITY_FRAMES grace period.
+// Post-animation recovery: reset attack/deflection state, respawn at center,
+// extend the current timer and grant PLAYER_MISS_INVINCIBILITY_FRAMES grace.
 void player_miss();
 bool player_is_invincible();
 bool player_is_invincible_to_orb();

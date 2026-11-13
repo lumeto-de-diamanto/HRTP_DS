@@ -71,6 +71,7 @@ static bool wait_for_shot; // ReC98 stage_wait_for_shot_to_begin
 static KonngaraCombat konngara;
 static KonngaraCombatView konngara_view;
 static bool jigoku_cleared;
+static const PlayerDeathFrame *player_death_frame;
 
 static void check_konngara(bool okay,const char *part)
 {
@@ -117,28 +118,40 @@ static void render_frame()
 {
     const bool boss = stage_has_singyoku(current_scene, current_stage);
     const bool final_boss=stage_has_konngara(current_scene,current_stage);
-    if(!final_boss) video_apply_camera();
+    if(!final_boss && !player_death_frame) video_apply_camera();
     stage_render_frame();
     // Erase only previous effects; the background scrolls in hardware and
     // BG0/OAM HUD elements never go through the software canvas.
     canvas_begin_frame();
     canvas_playfield_clip(true);
     if(final_boss) check_konngara(konngara_view.frame(konngara.state()),"frame");
-    player_render_frame();
+    if(!player_death_frame) player_render_frame();
     shots_render_frame();
     orb_render_frame();
     pellet_render_frame();
     item_render_frame();
     item_rings_frame();
-    popup_render_frame();
+    if(!player_death_frame) popup_render_frame(); // rendering normally ages these
     orb_indicator_render();
     if (boss) boss_render_frame();
+    if(player_death_frame) player_render_death(*player_death_frame);
     canvas_playfield_clip(false);
-    render_hud();
+    if(!player_death_frame) render_hud(); // source updates lost-life resources after recovery
+    if(player_death_frame) video_apply_death_shake(player_death_frame->shake_y,final_boss);
     if(final_boss) {
         canvas_buffer_prepare(); // after lasers, pellets and all other effects
         do { swiWaitForVBlank(); } while(!konngara_view.present());
-    } else oamUpdate(&oamMain);
+    } else {
+        if(player_death_frame) {
+            // Full game-over trails can take longer than VBlank to compose.
+            // Writing affine BG reference points afterward, mid-scanout,
+            // restarts the background there and makes it appear to fall down.
+            if(player_death_frame->burst_step>=0)
+                do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
+            bgUpdate();
+        }
+        oamUpdate(&oamMain);
+    }
 }
 
 static const ds_stage_layout_t *scene_layout(int scene, int stage)
@@ -166,6 +179,8 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     // Remove modal/result text before restoring scenery or revealing it through
     // the next entrance's transparent glyphs. Preserve the fixed upper HUD.
     text_layer_clear();
+    player_death_frame=nullptr;
+    bgSetScroll(g_bg_id_canvas,0,0);
     konngara_view.end(); // also releases the temporary OBJ lease on navigation/restart
     jigoku_cleared=false;
     upper_hud_invalidate();
@@ -246,10 +261,33 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
 
 static void start_new_game()
 {
-    lives=START_LIVES;rem_bombs=2;
+    lives=START_LIVES;rem_bombs=2;point_value=0;
     pellet_speed=-4; // ReC98 to_pellet_speed(-0.1)
     frame=0;
     stage_load(0,0);
+}
+
+static void player_death_animate(bool fatal)
+{
+    const auto &player=player_get_state();
+    PlayerDeathAnimation animation(fatal,player.x_position,player.y_position,(irand()%8)==0);
+    PlayerDeathFrame presentation;
+    bool decayed=false;
+    if(fatal) Items.init();
+    while(animation.next(presentation)) {
+        if(presentation.returning && !decayed) {
+            shots_initialize();Pellets.decay();decayed=true;
+        }
+        player_death_frame=&presentation;
+        if(presentation.returning)
+            camera.follow((presentation.left[0]+presentation.left[1]+PLAYER_W)/2);
+        // Game-over composition commits at the END of the frame, as does the
+        // final-boss renderer. Keep the approved miss path's original timing.
+        if(!fatal && !stage_has_konngara(current_scene,current_stage)) swiWaitForVBlank();
+        render_frame();
+        for(int hold=1;hold<presentation.hold;++hold) swiWaitForVBlank();
+    }
+    player_death_frame=nullptr;
 }
 
 // One normal game tick, shared with the existing host viewport integration
@@ -303,16 +341,31 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     }
     if(!entrance && !player_is_hit && orb_hits_player(player_get_state().x_position,
         player_get_state().y_position,OR_NONE,player_is_invincible(),player_is_invincible_to_orb())) player_is_hit=true;
+    if(!boss && stage_is_cleared()) player_is_hit=false; // source stage-clear wins simultaneous contact
     if(player_is_hit) {
-        player_is_hit=false;--lives;
-        if(lives<0) {
-            // Existing placeholder game-over policy: restart this stage/BGM.
-            music_stop();lives=START_LIVES;stage_load(current_scene,current_stage);
-            if(final_boss) return; // its entrance already presented the first frame
+        player_is_hit=false;
+        const bool fatal=lives<=0;
+        if(!fatal) { --lives;mdrv2_se_play(SFX_MISS); }
+        if(stage_score>hiscore) hiscore=stage_score;
+        player_death_animate(fatal);
+        if(fatal) {
+            const bool retry=gameover_menu_run();
+            music_stop();
+            if(retry) {
+                lives=START_LIVES;rem_bombs=1;point_value=0;frame=0;
+                // ReC98 continue_menu: lower the raw speed offset toward -2.
+                pellet_speed=pellet_speed>-2 ? -2 : pellet_speed-5;
+                if(pellet_speed<-15) pellet_speed=-15;
+                stage_load(current_scene,current_stage);
+            } else start_new_game();
+            return;
         } else {
-            mdrv2_se_play(SFX_MISS);player_miss();
-            if(!boss) orb_initialize(); // boss misses preserve the orb/phase/HP
-            shots_initialize();Pellets.init();stage_reset();
+            player_miss(); // full attack-state reset, timer extension and grace
+            if(rem_bombs<5) ++rem_bombs;
+            pellet_speed=pellet_speed>0 ? 0 : pellet_speed-2;
+            if(pellet_speed<-15) pellet_speed=-15;
+            stage_reset(); // reset obstacle/portal clocks, not cards, HP or orb
+            if(!final_boss) swiWaitForVBlank(); // hold the last effect before recovery
         }
     }
     if(!boss && stage_is_cleared()) {

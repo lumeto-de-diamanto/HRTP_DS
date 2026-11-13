@@ -103,6 +103,29 @@ static bool pause_confirm_quit(void)
     }
 }
 
+bool gameover_menu_run()
+{
+    palette_dim(40);
+    text_layer_clear();
+    menu_text(11,3,"GAME OVER",TEXT_PAL_WHITE);
+    menu_text(3,10,"A/START: CHOOSE  B: NEW GAME",TEXT_PAL_RED);
+    int selected=0;
+    bool released=false;
+    while(true) {
+        menu_choice(5,"RETRY STAGE",selected==0);
+        menu_choice(6,"NEW GAME",selected==1);
+        swiWaitForVBlank();scanKeys();
+        const uint16_t held=keysHeld(),down=keysDown();
+        if(!(held&(KEY_A|KEY_B|KEY_START))) released=true;
+        if(!released) continue; // a held attack must not auto-select a new run
+        if(down&(KEY_UP|KEY_DOWN)) selected=1-selected;
+        if(down&(KEY_A|KEY_B|KEY_START)) {
+            const bool retry=!(down&KEY_B) && selected==0;
+            text_layer_clear();palette_restore();return retry;
+        }
+    }
+}
+
 void stagebonus_run(const StageBonus &bonus, int stage_num)
 {
     palette_dim(40);

@@ -50,6 +50,18 @@ void video_apply_camera()
     bgUpdate();
 }
 
+void video_apply_death_shake(int down_pixels, bool konngara)
+{
+    bgSetScroll(g_bg_id_tiles, camera.left, -down_pixels);
+    bgSetScroll(g_bg_id_background, konngara ? camera.left : background_scroll_x(), -down_pixels);
+    bgSetScroll(g_bg_id_canvas, 0, -down_pixels);
+    if (down_pixels) for (int slot = 0; slot < 128; ++slot) {
+        if (slot == OAM_SLOT_ORB_ARROW || (slot >= 48 && slot < 75)) continue;
+        const auto &entry = oamMain.oamMemory[slot];
+        oamSetXY(&oamMain, slot, entry.x, entry.y + down_pixels);
+    }
+}
+
 static void hud_oam_priority(int priority)
 {
     oamSetPriority(&oamMain, OAM_SLOT_ORB_ARROW, priority);

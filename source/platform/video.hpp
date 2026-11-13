@@ -31,6 +31,7 @@ static const int OAM_PRIORITY_GAMEPLAY = 1;
 
 // Overlay OAM: ahead of BG2, separate from gameplay's existing palette banks.
 constexpr int OAM_SLOT_ORB_ARROW = 11;
+constexpr int OAM_SLOT_DEATH_EFFECT = 12; // 12..16; reuse resident MIKO graphics
 constexpr int OAM_SLOT_HUD_LIVES = 48; // 48..59 reserved; five icons or icon+count
 constexpr int OAM_SLOT_HUD_BOMBS = 60; // 60..64
 constexpr int OAM_SLOT_HUD_HP = 72;    // 72..74: eight original-size points per OBJ
@@ -40,6 +41,9 @@ constexpr int OBJ_PAL_OVERLAY = 6;     // 0 transparent, 1 red, 2 white
 
 void video_init();
 void video_apply_camera();
+// Apply after rebuilding gameplay shadow OAM, before its VBlank commit. The
+// fixed HUD stays put; scenery, canvas, boss and player shake together.
+void video_apply_death_shake(int down_pixels, bool konngara);
 
 // Blocking, non-gameplay BG2 animations may cover BG0/HUD OAM as well.
 // Nestable so the stage-title sequence can invoke a shared banner safely.
