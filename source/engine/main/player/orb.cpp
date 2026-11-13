@@ -112,7 +112,11 @@ void orb_update() {
         } else if(orb_velocity_y < fixed(-16.0f)) {
             orb_velocity_y = fixed(-16.0f);
         }
-        orb.y_position += double(gravity_for(orb_force));
+        // ReC98 orb_velocity_y_update() returns pixel_t, truncating the
+        // unclamped displacement before addition. Converting fixed to double
+        // instead goes through its nearest-integer operator and can sustain
+        // full-height ceiling/floor loops. Do not change fixed's global rounding.
+        orb.y_position += gravity_for(orb_force).trunc_to_int();
 
         if (orb_velocity_x == OVX_4_LEFT || orb_velocity_x == OVX_8_LEFT)
             rotation_frame++;

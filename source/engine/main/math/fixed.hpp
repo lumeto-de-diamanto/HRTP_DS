@@ -22,6 +22,10 @@ class fixed {
         //return raw >> 16;
     }
 
+    // Explicit source-style floating-point -> integer conversion. Keep the
+    // established nearest-pixel operator int() semantics for other callers.
+    constexpr int trunc_to_int() const { return raw / 65536; }
+
     constexpr fixed operator-() const { return from_raw(-raw); }
 
     constexpr fixed operator+(fixed o) const { return from_raw(raw + o.raw); }

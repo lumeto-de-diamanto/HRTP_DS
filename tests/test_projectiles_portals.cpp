@@ -8,6 +8,7 @@
 #include "main/player/orb.hpp"
 #include "main/player/player.hpp"
 #include "main/player/shot.hpp"
+#include "main/playfld.hpp"
 #include "main/stage/stageobj.hpp"
 #include "sound_effects.hpp"
 
@@ -29,6 +30,47 @@ int irand() {
     return fallback ? 1 : 0; // select a peer, or force the existing self fallback
 }
 extern fixed orb_force;
+
+static void orb_ceiling_bounces()
+{
+    // ReC98 orb_velocity_y_update() returns pixel_t (int), so truncate each
+    // displacement BEFORE adding it to the integer position. The fixed class's
+    // ordinary int conversion intentionally still rounds to nearest.
+    for (double force : {-20.0, -1.75, -1.5, -0.75, -0.5, 0.5, 0.75, 1.5, 1.75, 20.0}) {
+        orb_initialize(); orb_set_position(300, 200); orb_set_velocity_x(OVX_0);
+        orb_force_new(force, OF_IMMEDIATE); orb_update();
+        assert(orb_get_state().y_position == 200 + int(force));
+    }
+    assert(int(fixed(0.75)) == 1 && int(fixed(-0.75)) == -1);
+
+    // Literal double/integer source oracle; no player, shots or stage obstacles
+    // inject new force. -17.5 used to settle into a perpetual 73-frame full-height
+    // orbit instead of losing energy after the first ceiling contact.
+    for (double initial : {-18.0, -17.5, -16.0, -13.0, -10.0, -8.0}) {
+        orb_initialize(); orb_set_position(300, 368); orb_set_velocity_x(OVX_0);
+        orb_force_new(initial, OF_IMMEDIATE);
+        int y = 368, age = 0, ceiling_contacts = 0, first_floor = 0;
+        double force = initial;
+        for (int frame = 1; frame <= 2000; ++frame) {
+            ++age;
+            const double gravity = age / 5 + force;
+            const double velocity = gravity > 16 ? 16 : gravity < -16 ? -16 : gravity;
+            y += int(gravity); // source's unclamped pixel_t return
+            if (y > PLAYFIELD_BOTTOM - ORB_H) {
+                force = -velocity * 0.78; age = 0; y = PLAYFIELD_BOTTOM - ORB_H;
+                if (!first_floor) first_floor = frame;
+            }
+            if (y < PLAYFIELD_TOP) {
+                force = -velocity - age / 4; age = 0; y = PLAYFIELD_TOP;
+                ++ceiling_contacts;
+            }
+            orb_update();
+            assert(orb_get_state().y_position == y);
+        }
+        if (initial == -17.5) assert(ceiling_contacts == 1 && first_floor == 49);
+    }
+    std::puts("Orb: source truncation/unclamped movement, unchanged fixed rounding, ceiling/floor trajectories and no self-sustaining -17.5 loop passed");
+}
 
 static void pellet_orb_contacts()
 {
@@ -188,6 +230,7 @@ static void portals()
 
 int main(int argc, char **argv)
 {
+    if (argc == 1 || std::strcmp(argv[1], "orb") == 0) orb_ceiling_bounces();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();
     if (argc == 1 || std::strcmp(argv[1], "ofuda") == 0) ofuda_contacts();
     if (argc == 1 || std::strcmp(argv[1], "portals") == 0) portals();
