@@ -9,6 +9,7 @@
 #include "sprites/Miko.h"
 #include "sprites/Miko32.h"
 #include "sprites/Miko48.h"
+#include "sprites/Shape8x8.h"
 
 const int REGULAR_FRAME_SIZE = 16;
 const int REGULAR_FRAME_COUNT = 28;
@@ -105,6 +106,18 @@ void player_render_frame() {
            false,
            false, false,
            false);
+}
+
+void player_invincibility_render_frame()
+{
+    const auto &sparkles = player_invincibility_sparkles();
+    if (!sparkles.active()) return;
+    static const u16 colors[2] = {0, RGB15(31,0,0)};
+    for (int i = 0; i < InvincibilitySparkles::count; ++i) {
+        const auto &p = sparkles.particles()[i];
+        canvas_put_indexed(camera.x(p.left), Camera::y(p.top), 4, 4,
+                           Shape8x8_cels[3 + p.cel], colors);
+    }
 }
 
 static void death_puff_put(int left, int top, int cel)

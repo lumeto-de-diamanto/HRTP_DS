@@ -124,6 +124,7 @@ static void render_frame()
     // BG0/OAM HUD elements never go through the software canvas.
     canvas_begin_frame();
     canvas_playfield_clip(true);
+    if(!player_death_frame) player_invincibility_render_frame();
     if(final_boss) check_konngara(konngara_view.frame(konngara.state()),"frame");
     if(!player_death_frame) player_render_frame();
     shots_render_frame();

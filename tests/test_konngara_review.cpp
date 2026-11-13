@@ -23,6 +23,7 @@
 #include "main/bullet/pellet.hpp"
 #include "main/stage/stageobj.hpp"
 #include "sprites/Miko.h"
+#include "sprites/Shape8x8.h"
 
 extern std::vector<int> test_effects;
 extern std::string test_practice_label;
@@ -376,6 +377,54 @@ void observe_player_death()
 
 void test_player_death()
 {
+    // Existing player lifecycle/render check: source sparkle phase and spawn
+    // bounds, pure red pixels, both moving camera edges, expiry/dirty clearing,
+    // redraw stability and no gameplay-RNG, heap or sprite-slot consumption.
+    initialize_irand(123);const int next_random=irand();initialize_irand(123);
+    const auto sparkle_objects=test_obj_attempts,sparkle_heap=test_heap_attempts,sparkle_oam=test_oam_changes;
+    int seen_cels=0;
+    canvas_clear();
+    for(int direction:{KEY_LEFT,KEY_RIGHT}) {
+        player_initialize();player_miss();
+        for(int tick=0;tick<=PLAYER_MISS_INVINCIBILITY_FRAMES;++tick) {
+            const auto previous=player_invincibility_sparkles();
+            if(tick) player_update(direction,0);
+            const auto &sparkles=player_invincibility_sparkles();
+            assert(sparkles.active()==(tick<PLAYER_MISS_INVINCIBILITY_FRAMES));
+            camera.follow(player_center_x());
+            static u16 expected_sparkles[VIEW_W*VIEW_H];
+            std::fill(std::begin(expected_sparkles),std::end(expected_sparkles),0);
+            if(sparkles.active()) for(int i=0;i<InvincibilitySparkles::count;++i) {
+                const auto &p=sparkles.particles()[i],&old=previous.particles()[i];
+                assert(p.frame>=2 && p.frame<=9 && p.cel>=0 && p.cel<4);
+                const int age=p.frame-1;
+                assert(p.cel==(age<=4?age-1:8-age));seen_cels|=1<<p.cel;
+                if(!tick || old.frame==9) {
+                    assert(p.left>=player_get_state().x_position-8 && p.left<player_get_state().x_position+40);
+                    assert(p.top>=player_top-16 && p.top<player_top+32);
+                } else assert(p.left==old.left && p.top==old.top && p.frame==old.frame+1);
+                for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
+                    const int px=camera.x(p.left)+x,py=Camera::y(p.top)+y;
+                    if(px>=0 && px<VIEW_W && py>=UPPER_HUD_H && py<VIEW_H && Shape8x8_cels[3+p.cel][y*4+x])
+                        expected_sparkles[py*VIEW_W+px]=0x801f;
+                }
+            }
+            const auto frozen=sparkles;
+            for(int redraw=0;redraw<2;++redraw) {
+                canvas_begin_frame();canvas_playfield_clip(true);
+                player_invincibility_render_frame();
+                assert(std::equal(std::begin(expected_sparkles),std::end(expected_sparkles),canvas_at(0,0)));
+                for(int i=0;i<InvincibilitySparkles::count;++i) {
+                    const auto &p=sparkles.particles()[i],&old=frozen.particles()[i];
+                    assert(p.left==old.left && p.top==old.top && p.frame==old.frame && p.cel==old.cel);
+                }
+            }
+        }
+    }
+    assert(seen_cels==15 && irand()==next_random);
+    assert(test_obj_attempts==sparkle_objects && test_heap_attempts==sparkle_heap && test_oam_changes==sparkle_oam);
+    player_initialize();canvas_clear();canvas_playfield_clip(false);camera.snap_center();
+    std::puts("Invincibility sparkles: source eight-particle cycle/spawns, red BG2 pixels, camera/edge clipping,150-frame expiry/cleanup, stable redraws and zero RNG/heap/OBJ impact passed");
     for(bool fatal:{false,true}) for(int left:{0,304,608}) for(bool alternate:{false,true}) {
         PlayerDeathAnimation animation(fatal,left,player_top,alternate);
         PlayerDeathFrame f;
@@ -451,6 +500,7 @@ void test_player_death()
         const int starting_bombs=scene==6 && stage==0 ? 0 : 5;
         wait_for_shot=false;lives=1;rem_bombs=starting_bombs;stage_timer=100;stage_score=12345;
         player_update(KEY_A,KEY_A);assert(player_is_deflecting());
+        assert(!player_invincibility_sparkles().active()); // orb-only immunity is not full invincibility
         orb_set_position(500,100);Pellets.init();Pellets.add_single(100,100,64,16);
         death_probe={};death_probe.allocations=test_heap_attempts;death_probe.objects=test_obj_attempts;
         test_vblank_hook=observe_player_death;
@@ -459,12 +509,14 @@ void test_player_death()
         assert(death_probe.waits==99 && death_probe.returning==50 && lives==0 && rem_bombs==(starting_bombs<5?starting_bombs+1:5));
         assert(player_get_state().x_position==PLAYER_LEFT_START && player_get_state().spritesheet==PLAYER);
         assert(!player_is_deflecting() && !player_is_sliding() && !player_is_invincible_to_orb() && player_is_invincible());
+        assert(player_invincibility_sparkles().active());
         assert(orb_get_state().x_position==death_probe.orb_x && orb_get_state().y_position==death_probe.orb_y);
         assert(stage_timer==death_probe.timer+200 && stage_score==death_probe.score);
         assert(test_bgs[1].y==0 && test_bgs[2].y==0 && test_bgs[3].y==0);
         for(int i=0;i<5;++i) assert(test_objs[OAM_SLOT_DEATH_EFFECT+i].hidden);
         for(int i=0;i<149;++i) player_update(0,0);
         assert(player_is_invincible());player_update(0,0);assert(!player_is_invincible());
+        assert(!player_invincibility_sparkles().active());
 
         // Final life: no recovery bomb/timer grant; prompt, then fresh stage
         // state/resources and no lingering death OAM, buffers or menu text.

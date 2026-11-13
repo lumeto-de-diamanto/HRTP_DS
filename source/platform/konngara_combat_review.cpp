@@ -91,6 +91,7 @@ bool konngara_combat_review(int start_set)
         if (timer_update(++frame) == TIMER_EVENT_HARRYUP) harryup_animate();
         camera.follow(player_center_x());
         canvas_begin_frame(); canvas_playfield_clip(true);
+        player_invincibility_render_frame();
         if (!view.frame(boss.state())) { canvas_clear(); return false; }
         player_render_frame(); shots_render_frame(); orb_render_frame();
         pellet_render_frame(); orb_indicator_render();

@@ -42,7 +42,7 @@ extensions and HURRY UP
 * `make projectile-tests projectile-sanitize`: checks orb/pellet contact and
 portal timelines; viewport tests also verify white bullets and portal rendering
 * `make viewport-tests viewport-sanitize`: checks rendering, original stage-entry
-cel order/timing, sprite allocation rollback/reinitialization and stable usage
+cel order/timing, invincibility sparkles, sprite allocation rollback/reinitialization and stable usage
 across repeated state transitions
 * `make konngara-tests konngara-sanitize`: checks the intro timeline/rendering
 and BOS/GRZ artwork, source phases1–7 combat/lasers and defeat, exact BG/OBJ composition and allocation
@@ -53,7 +53,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage20.
 ## Current status
 
 * [ ] Display
-  * [ ] Bullets and blitter efects (*in progress*, only bullets have been implemented)
+  * [ ] Bullets and blitter efects (*in progress*, bullets and lasers have been implemented)
   * [x] Bitmap background
   * [x] Tiles, turrets and barriers
   * [ ] HUD (*in progress*, functional but needs some visual refinement)

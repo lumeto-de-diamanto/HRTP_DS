@@ -87,6 +87,7 @@ bool combo_enabled;
 bool invincible_to_orb;
 bool invincible;
 int miss_invincibility_frames;
+static InvincibilitySparkles invincibility_sparkles;
 
 bool player_is_hit = false;
 
@@ -117,6 +118,7 @@ void player_initialize() {
 	invincible_to_orb = false;
 	invincible = false;
 	miss_invincibility_frames = 0;
+	invincibility_sparkles.reset();
 
 	player.x_position = PLAYER_LEFT_START;
 	player.y_position = player_top;
@@ -140,7 +142,7 @@ void player_initialize() {
     }
 }
 
-void player_update(uint16_t keys_held, uint16_t keys_down) {
+static void player_update_controls(uint16_t keys_held, uint16_t keys_down) {
 	if (miss_invincibility_frames > 0)
 		miss_invincibility_frames--;
 	bool left_held = (keys_held & KEY_LEFT) != 0;
@@ -515,6 +517,19 @@ void player_update(uint16_t keys_held, uint16_t keys_down) {
         }
 }
 
+void player_update(uint16_t keys_held, uint16_t keys_down)
+{
+    // The control routine has early returns during special attacks. Keep the
+    // cosmetic tick outside it so all invincible movement advances once.
+    player_update_controls(keys_held, keys_down);
+    invincibility_sparkles.update(player_is_invincible(), player.x_position, player.y_position);
+}
+
+const InvincibilitySparkles &player_invincibility_sparkles()
+{
+    return invincibility_sparkles;
+}
+
 const PlayerState &player_get_state()
 {
 	return player;
@@ -525,6 +540,7 @@ void player_miss()
 	// Cancel every swing/slide/special and its deflection flags, not merely X/Y.
 	player_initialize();
 	miss_invincibility_frames = PLAYER_MISS_INVINCIBILITY_FRAMES;
+	invincibility_sparkles.update(true, player.x_position, player.y_position);
 	player_is_hit = false;
 	// ReC98 player_miss_animate_and_update(): surviving a miss extends the
 	// current timer, canceling HURRY UP rather than restarting the stage.
