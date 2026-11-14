@@ -79,10 +79,11 @@ OBSTACLE_TYPES = {
     11: "OT_TURRET_QUICK_3_SPREAD_WIDE_AIMED",
     12: "OT_TURRET_QUICK_4_SPREAD_WIDE_AIMED",
     13: "OT_TURRET_QUICK_5_SPREAD_WIDE_AIMED",
-    # ZUN quirk, preserved: cards with >=1 HP are NOT stored in the
-    # `cards` bitfield at all -- they're stored HERE, in the obstacle
-    # array, at the same (x,y) position, abusing these three obstacle
-    # type values instead. This means a card with HP can never overlap
+    # ZUN quirk, preserved: ALL cards have a presence bit in `cards`, but
+    # extra HP is stored HERE, in the obstacle array at the same (x,y),
+    # abusing these three type values. They modify an existing card only:
+    # leftover HP markers without a presence bit are ignored by the game.
+    # This means a card with HP can never overlap
     # a real obstacle at the same tile -- a real constraint in the
     # original data, not a decoder limitation. See stagedat.hpp's own
     # comment on OT_ACTUALLY_A_CARD.
@@ -139,7 +140,7 @@ def parse_stagedat(data: bytes):
         cards_bytes = stage_bytes[0:CARDS_SIZE]
         obstacles_bytes = stage_bytes[CARDS_SIZE : CARDS_SIZE + OBSTACLES_SIZE]
 
-        cards = []  # list of (x, y) tile positions with a plain (0 HP) card
+        cards = []  # all card positions; matching obstacle markers supply HP
         for row in range(STAGEOBJS_Y):
             for byte_in_row in range(CARD_BYTES_PER_ROW):
                 byte_val = cards_bytes[row * CARD_BYTES_PER_ROW + byte_in_row]

@@ -45,12 +45,11 @@ void stage_init(const uint8_t obstacle[STAGE_ROWS][STAGE_COLS],
             int left = cx * STAGEOBJ_W;
             int top = STAGE_GRID_TOP + ((cy - STAGE_CELL_FIRST_ROW) * STAGEOBJ_H);
 
-            // HP-bearing cards live in the obstacle array (ReC98's
-            // OT_ACTUALLY_A_*FLIP_CARD smuggle, preserved by the stagedat
-            // converter); plain cards use the card bitfield. hp is stored
-            // minus 1: 0 = one more flip to remove.
-            if (type == OT_CARD_2FLIP || type == OT_CARD_3FLIP ||
-                type == OT_CARD_4FLIP || has_card_bit) {
+            // ReC98 creates every card from the card bitfield. Obstacle HP
+            // markers only modify an existing card at the same coordinates;
+            // orphan markers (e.g. Makai18's upper-left cell) create nothing.
+            // hp is stored minus 1: 0 = one more flip to remove.
+            if (has_card_bit) {
                 StageCard &c = stage_cards[stage_card_total++];
                 c.left = left;
                 c.top = top;
@@ -64,7 +63,8 @@ void stage_init(const uint8_t obstacle[STAGE_ROWS][STAGE_COLS],
                 }
                 continue;
             }
-            if (type != OT_NONE) {
+            if (type != OT_NONE &&
+                !(type >= OT_CARD_2FLIP && type <= OT_CARD_4FLIP)) {
                 StageObstacle &o = stage_obstacles[stage_obstacle_total++];
                 o.left = left;
                 o.top = top;

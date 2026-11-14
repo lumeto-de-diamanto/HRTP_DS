@@ -31,6 +31,37 @@ int irand() {
 }
 extern fixed orb_force;
 
+static void card_presence_and_hp()
+{
+    // ReC98 creates cards ONLY from the card bitfield, then looks up obstacle
+    // HP markers at those existing card coordinates. An orphan marker creates
+    // neither a card nor an obstacle (Makai18 has one at column1,row0).
+    uint8_t obstacles[STAGE_ROWS][STAGE_COLS] = {};
+    uint8_t cards[STAGE_ROWS][STAGE_COLS] = {};
+    for(int y=0;y<STAGE_ROWS;++y) for(int x=0;x<STAGE_COLS;++x) {
+        for(int type:{int(OT_NONE),int(OT_CARD_2FLIP),int(OT_CARD_3FLIP),int(OT_CARD_4FLIP)}) {
+            obstacles[y][x]=type;
+            for(int present:{0,1}) {
+                cards[y][x]=present;
+                stage_init(obstacles,cards);stage_reset();
+                assert(stage_card_count()==present && stage_obstacle_count()==0);
+                assert(stage_cards_removed()==0 && !stage_is_cleared());
+                if(present) {
+                    const auto &c=stage_card(0);
+                    assert(c.left==x*32 && c.top==64+y*32);
+                    assert(c.hp==(type ? type-13 : 0));
+                    assert(c.flag==CARD_ALIVE && c.flip_frame==0);
+                    stage_cards_removed_count=1;assert(stage_is_cleared());
+                }
+            }
+            cards[y][x]=0;
+        }
+        obstacles[y][x]=0;
+    }
+    stage_init(obstacles,cards);stage_reset();
+    std::puts("Stage cards: all200 cells, presence-bit authority, plain/2/3/4-flip HP, ignored orphan markers and correct clear counts passed");
+}
+
 static void orb_ceiling_bounces()
 {
     // ReC98 orb_velocity_y_update() returns pixel_t (int), so truncate each
@@ -230,6 +261,7 @@ static void portals()
 
 int main(int argc, char **argv)
 {
+    if (argc == 1) card_presence_and_hp();
     if (argc == 1 || std::strcmp(argv[1], "orb") == 0) orb_ceiling_bounces();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();
     if (argc == 1 || std::strcmp(argv[1], "ofuda") == 0) ofuda_contacts();

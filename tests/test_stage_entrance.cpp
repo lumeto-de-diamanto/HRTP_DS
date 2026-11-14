@@ -50,6 +50,7 @@ int ticks;
 bool title;
 bool boss;
 unsigned timer;
+bool occupied[STAGE_ROWS][STAGE_COLS];
 
 void check_cell(int left, int top, int obj)
 {
@@ -132,6 +133,14 @@ void observe()
         }
         check_cell(o.left, o.top, obj);
     }
+    // Check absent cells too, rather than deriving the oracle solely from the
+    // loader's object lists: that missed the orphan HP marker's phantom card.
+    for(int y=0;y<STAGE_ROWS;++y) for(int x=0;x<STAGE_COLS;++x) if(!occupied[y][x]) {
+        for(int q=0;q<4;++q) {
+            const int mx=x*2+q%2,my=y*2+q/2+3;
+            assert(BG_MAP_RAM(8)[(mx/32)*1024+my*32+mx%32]==0);
+        }
+    }
 }
 
 void run(const ds_stage_layout_t &layout, bool show_title, bool prepare_boss = false)
@@ -145,6 +154,20 @@ void run(const ds_stage_layout_t &layout, bool show_title, bool prepare_boss = f
     assert(std::all_of(BG_MAP_RAM(8), BG_MAP_RAM(8) + 2048, [](u16 v) { return v == 0; }));
     assert(std::all_of(canvas_at(0, 0), canvas_at(0, VIEW_H), [](u16 v) { return v == 0; }));
     stage_init(layout.obstacle, layout.card); stage_reset();
+    int card_count=0,obstacle_count=0;
+    for(int y=0;y<STAGE_ROWS;++y) for(int x=0;x<STAGE_COLS;++x) {
+        const int type=layout.obstacle[y][x];
+        const bool hp_marker=type>=OT_CARD_2FLIP && type<=OT_CARD_4FLIP;
+        const bool actual_obstacle=type!=OT_NONE && !hp_marker;
+        occupied[y][x]=layout.card[y][x] || actual_obstacle;
+        if(layout.card[y][x]) {
+            const auto &c=stage_card(card_count++);
+            assert(c.left==x*32 && c.top==64+y*32);
+            assert(c.hp==(hp_marker ? type-13 : 0));
+        }
+        if(actual_obstacle) ++obstacle_count;
+    }
+    assert(stage_card_count()==card_count && stage_obstacle_count()==obstacle_count);
     player_initialize(); orb_initialize(); shots_initialize();
     stage_score = 12345; stage_cardcombo_cur = 3; stage_cardcombo_max = 7;
     timer_init_for(0, 1); timer = stage_timer;
@@ -190,6 +213,10 @@ void test_stage_entrances()
 {
     const ds_stage_layout_t *scenes[] = {ds_stagedat0, ds_stagedat1, ds_stagedat2,
         ds_stagedat3, ds_stagedat4, ds_stagedat5, ds_stagedat6};
+    // Raw data stays intact: these are unused HP markers, not card bits.
+    assert(ds_stagedat5[2].obstacle[0][1]==OT_CARD_3FLIP && !ds_stagedat5[2].card[0][1]);
+    assert(ds_stagedat3[2].obstacle[0][1]==OT_CARD_3FLIP && !ds_stagedat3[2].card[0][1]);
+    assert(ds_stagedat4[0].obstacle[2][16]==OT_CARD_2FLIP && !ds_stagedat4[0].card[2][16]);
     for (const auto *scene : scenes)
         for (int stage = 0; stage < 4; ++stage)
             for (bool show_title : {false, true}) run(scene[stage], show_title);
@@ -202,5 +229,5 @@ void test_stage_entrances()
         for (bool show_title : {false, true}) run(layout, show_title);
     }
     run(ds_stage_layout_t{}, true, true); // boss palette prepared, OAM still hidden
-    std::puts("Stage entrance: all 28 regular layouts, every reveal frame/cel/order, scene/boss title paths, 0/1/49/50/51/200 cards, orb/player visibility, frozen state/RNG, HUD/camera restoration and zero allocations passed");
+    std::puts("Stage entrance: all28 regular layouts including Makai18's cross, bitfield card counts/HP, empty cells at every reveal frame, scene/boss titles, 0/1/49/50/51/200 cards, frozen state/RNG, HUD/camera restoration and zero allocations passed");
 }
