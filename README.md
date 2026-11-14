@@ -1,6 +1,6 @@
 # Touhou Reiiden ~ The Highly Responsive to Prayers — DS port
 
-A work-in-progress port of *Touhou Reiiden* (東方靈異伝　～ The Highly Responsive to Prayers, 1997)
+A work-in-progress port of *Touhou Reiiden* (東方靈異伝 ～ The Highly Responsive to Prayers, 1997)
 to the Nintendo DS, based on the game's fully decompiled source code at
 [ReC98](https://github.com/nmlgc/ReC98) (`anniversary` branch).
 
