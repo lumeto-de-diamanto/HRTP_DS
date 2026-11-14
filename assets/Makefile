@@ -68,9 +68,13 @@ assets: $(SPRITES_DIR)/OrbArrow.h
 assets: $(SPRITES_DIR)/Shape8x8.h
 assets: $(SPRITES_DIR)/BombKuji.h
 assets: $(BACKGROUND_DIR)/HudPattern.h
+assets: $(BACKGROUND_DIR)/RoundResults.h
 
 $(BACKGROUND_DIR)/HudPattern.h: $(HDI_DUMP_DIR)/CLEAR3.GRP $(TOOLS_DIR)/hud_pattern_to_h.py $(TOOLS_DIR)/grp_to_bin.py
 	$(PYTHON) $(TOOLS_DIR)/hud_pattern_to_h.py $< $@
+
+$(BACKGROUND_DIR)/RoundResults.h: $(HDI_DUMP_DIR)/CLEAR3.GRP $(TOOLS_DIR)/hud_pattern_to_h.py $(TOOLS_DIR)/grp_to_bin.py
+	$(PYTHON) $(TOOLS_DIR)/hud_pattern_to_h.py $< $@ --results
 
 $(SPRITES_DIR)/BombKuji.h: $(PACKFILE_DIR)/KUZI1.GRC $(PACKFILE_DIR)/KUZI2.GRC $(TOOLS_DIR)/bomb_kuji_to_h.py $(TOOLS_DIR)/halve_image.py
 	$(PYTHON) $(TOOLS_DIR)/bomb_kuji_to_h.py $(PACKFILE_DIR)/KUZI1.GRC $(PACKFILE_DIR)/KUZI2.GRC $@

@@ -38,7 +38,9 @@ inline void dmaCopyHalfWords(int, const void *in, void *out, size_t size) {
     ++test_dma_copy_calls;
     test_dma_copy_bytes+=size;
     // Do not silently emulate cache coherence that ARM9 hardware lacks. The
-    // previous stack-DMA background path fails this model unless flushed.
+    // This checks cache handling only: host pointers cannot identify the DS's
+    // DTCM stack. Renderer checks must separately bound DMA sources/transfers;
+    // flushing a DTCM buffer does NOT make it DMA-readable on hardware.
     const auto address = reinterpret_cast<uintptr_t>(in);
     assert(address >= test_dma_clean_start && address + size <= test_dma_clean_end);
     assert(!(reinterpret_cast<uintptr_t>(in) & 1) && !(reinterpret_cast<uintptr_t>(out) & 1) && !(size & 1));
@@ -48,6 +50,13 @@ enum { MODE_5_2D, VRAM_A_MAIN_BG_0x06000000, VRAM_B_MAIN_BG_0x06020000, VRAM_C_L
 enum { BgType_Text4bpp, BgType_Bmp16, BgType_Bmp8, BgSize_T_512x256, BgSize_T_256x256, BgSize_B16_256x256, BgSize_B8_256x256, BgSize_B8_512x256, BgSize_B8_128x128 };
 inline constexpr int DISPLAY_WIN0_ON = 1 << 13, DISPLAY_WIN1_ON = 1 << 14;
 inline u32 REG_DISPCNT{};
+inline u32 REG_DISPCAPCNT{};
+inline constexpr u32 DCAP_ENABLE=1u<<31;
+inline constexpr int DCAP_MODE_A=0,DCAP_SRC_A_COMPOSITED=0,DCAP_SIZE_256x192=3,DCAP_BANK_VRAM_D=3;
+inline constexpr u32 DCAP_MODE(int n) {return (n&3u)<<29;}
+inline constexpr u32 DCAP_SRC_A(int n) {return (n&1u)<<24;}
+inline constexpr u32 DCAP_SIZE(int n) {return (n&3u)<<20;}
+inline constexpr u32 DCAP_BANK(int n) {return (n&3u)<<16;}
 inline u16 REG_VCOUNT = 192;
 inline u16 REG_WIN0H{}, REG_WIN1H{}, REG_WIN0V{}, REG_WIN1V{}, REG_WININ{}, REG_WINOUT{};
 inline u16 REG_BLDCNT{},REG_BLDALPHA{},REG_BLDY{};
@@ -66,9 +75,10 @@ inline void vramSetBankC(int) {}
 inline int test_vram_d_mode;
 inline void vramSetBankD(int mode) { test_vram_d_mode = mode; }
 inline int bgInit(int id, int type, int size, int map, int tile) {
+    if(id<4) REG_DISPCNT|=1<<(8+id);
     test_bgs[id] = {type, size, map, tile}; return id;
 }
-inline int bgInitHidden(int id, int type, int size, int map, int tile) { bgInit(id,type,size,map,tile);test_bgs[id].visible=false;return id; }
+inline int bgInitHidden(int id, int type, int size, int map, int tile) { bgInit(id,type,size,map,tile);test_bgs[id].visible=false;if(id<4) REG_DISPCNT&=~(1<<(8+id));return id; }
 inline int bgInitSub(int id,int type,int size,int map,int tile) { return bgInit(id+4,type,size,map,tile); }
 inline void bgWrapOn(int id) { test_bgs[id].wrap=true; }
 inline void bgSetPriority(int id, int priority) { test_bgs[id].priority = priority; }
@@ -76,8 +86,8 @@ inline void bgSetScroll(int id, int x, int y) { test_bgs[id].x = x; test_bgs[id]
 inline void bgSetScale(int id, int sx, int sy) { test_bgs[id].sx = sx; test_bgs[id].sy = sy; }
 inline void (*test_bg_update_hook)() = nullptr;
 inline void bgUpdate() { if (test_bg_update_hook) test_bg_update_hook(); }
-inline void bgShow(int id) { test_bgs[id].visible=true; }
-inline void bgHide(int id) { test_bgs[id].visible=false; }
+inline void bgShow(int id) { test_bgs[id].visible=true;if(id<4) REG_DISPCNT|=1<<(8+id); }
+inline void bgHide(int id) { test_bgs[id].visible=false;if(id<4) REG_DISPCNT&=~(1<<(8+id)); }
 inline void *bgGetGfxPtr(int id) { return id>=4 ? BG_BMP_RAM_SUB(test_bgs[id].map) : BG_BMP_RAM(test_bgs[id].map); }
 #define TILE_PALETTE(n) ((n) << 12)
 
@@ -155,7 +165,19 @@ inline void oamUpdate(OamState *) {}
 inline void oamEnable(OamState *) {}
 inline void oamDisable(OamState *) {}
 inline void (*test_vblank_hook)() = nullptr;
-inline void swiWaitForVBlank() { REG_VCOUNT=192; if (test_vblank_hook) test_vblank_hook(); }
+inline size_t test_capture_count;
+inline u16 (*test_capture_source)(int,int)=nullptr;
+inline void swiWaitForVBlank() {
+    REG_VCOUNT=192;
+    if(REG_DISPCAPCNT&DCAP_ENABLE) {
+        assert(test_vram_d_mode==VRAM_D_LCD && !(REG_DISPCNT&(1<<10)));
+        assert(REG_DISPCAPCNT==(DCAP_ENABLE|DCAP_SIZE(DCAP_SIZE_256x192)|DCAP_BANK(DCAP_BANK_VRAM_D)));
+        for(int y=0;y<192;++y) for(int x=0;x<256;++x)
+            BG_BMP_RAM(16)[y*256+x]=test_capture_source ? test_capture_source(x,y) : 0x8000;
+        REG_DISPCAPCNT&=~DCAP_ENABLE;++test_capture_count;
+    }
+    if (test_vblank_hook) test_vblank_hook();
+}
 inline void scanKeys() {}
 inline u16 test_keys_held{}, test_keys_down{};
 inline u16 keysHeld() { return test_keys_held; }

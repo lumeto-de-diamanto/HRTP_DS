@@ -233,6 +233,9 @@ void test_konngara_review()
 
 namespace {
 int bonus_from_stage,bonus_expected_score,bonus_visible_frames;
+int route_expected_score,route_result_frames,route_result_timer;
+unsigned route_result_frame;
+size_t route_sfx_start;
 void observe_bonus_award()
 {
     assert(stage_score==bonus_expected_score && hiscore>=bonus_expected_score);
@@ -304,12 +307,26 @@ void test_stage_bonus_awards()
     const auto &entity=singyoku_state().entity;
     orb_set_position(entity.left+24,entity.top+24);
     const int before=stage_score;
-    test_vblank_hook=[](){test_keys_down=KEY_B;};gameplay_tick(0,0);
+    const int round_bonus=roundbonus_compute(5,lives).total;
+    route_expected_score=before+3000+round_bonus;route_result_frames=0;
+    route_result_timer=stage_timer;route_result_frame=frame;route_sfx_start=test_effects.size();
+    test_vblank_hook=[](){
+        test_keys_down=KEY_B;test_keys_held=0;
+        if(test_bgs[0].map==31) {
+            ++route_result_frames;
+            assert(stage_score==route_expected_score && hiscore>=stage_score);
+            assert(frame==route_result_frame && stage_timer==route_result_timer);
+            assert(std::find(test_effects.begin()+route_sfx_start,test_effects.end(),SFX_ROUTE_CONFIRM)!=test_effects.end());
+        }
+    };gameplay_tick(0,0);
     test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
-    if(current_scene!=1 || current_stage!=0 || stage_score!=before+3000 || hiscore<stage_score)
+    if(current_scene!=1 || current_stage!=0 || stage_score!=before+3000+round_bonus || hiscore<stage_score)
         std::fprintf(stderr,"Bonus route carry: scene%d stage%d score%d expected%d high%d\n",
-            current_scene,current_stage,stage_score,before+3000,hiscore);
-    assert(current_scene==1 && current_stage==0 && stage_score==before+3000 && hiscore>=stage_score);
+            current_scene,current_stage,stage_score,before+3000+round_bonus,hiscore);
+    assert(current_scene==1 && current_stage==0 && stage_score==before+3000+round_bonus && hiscore>=stage_score);
+    assert(route_result_frames>200);
+    for(int tick=0;tick<3;++tick) gameplay_tick(0,0);
+    assert(stage_score==before+3000+round_bonus); // no repeat after results/route handoff
     hiscore=std::max(hiscore,saved_high);
     start_new_game();assert(stage_score==0);
     std::puts("Stage bonus: displayed x10 sum credited once before results, high score, held-confirm/no repeat, ordinary/boss/route carry and new-game reset passed");

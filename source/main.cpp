@@ -16,6 +16,7 @@
 #include "pellet_render.hpp"
 #include "subscreen.hpp"
 #include "hud_render.hpp"
+#include "round_results.hpp"
 #include "palette_fx.hpp"
 #include "music.hpp"
 #include "sound_effects.hpp"
@@ -372,6 +373,10 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 music_stop();
                 Pellets.init();shots_initialize();Items.init();render_frame();
                 const RouteChoice route=boss_defeat_and_select_route();
+                const StageBonus bonus=roundbonus_compute(global_stage_num(),lives);
+                stage_score+=bonus.total;
+                if(stage_score>hiscore) hiscore=stage_score;
+                round_results_run(bonus,global_stage_num());
                 stage_load(route_first_scene(route),0,true,true);
                 return;
             }

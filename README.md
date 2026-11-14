@@ -45,6 +45,7 @@ portal timelines; viewport tests also verify white bullets and portal rendering
 cel order/timing, invincibility sparkles, sprite allocation rollback/reinitialization and stable usage
 across repeated state transitions, plus bottom-HUD colours/pattern and full-world radar
 mapping, clipping, overlap restoration and zero idle writes
+  (also round-results crop/zipper, fullwidth tally, input gating and state restoration)
 * `make konngara-tests konngara-sanitize`: checks the intro timeline/rendering
 and BOS/GRZ artwork, source phases 1–7 combat/lasers and defeat, exact BG/OBJ composition and allocation
 cleanup on replay/failure (camera/flash changes must not upload bitmaps)
@@ -83,7 +84,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
 * [ ] Other screens
   * [ ] Start-up screen
   * [ ] Title screen and menu
-  * [ ] Round results
+  * [x] Round results
   * [ ] Endings and credits
   * [ ] Hero Scroll/score table/game over
 * [ ] Miscellanea

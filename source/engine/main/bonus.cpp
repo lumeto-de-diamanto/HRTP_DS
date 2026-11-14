@@ -20,3 +20,15 @@ StageBonus stagebonus_compute(int stage_num, int lives)
     b.total = (b.time + b.combo + b.resources + b.stage) * 10;
     return b;
 }
+
+StageBonus roundbonus_compute(int stage_num, int lives)
+{
+    StageBonus b;
+    b.time = bonus_clamp(stage_timer * 5);
+    b.combo = bonus_clamp(stage_cardcombo_max * 200);
+    b.resources = bonus_clamp(lives * 500 + rem_bombs * 200);
+    b.stage = stage_num * 1000;
+    if(b.stage > 65530) b.stage = 65530;
+    b.total = (b.time + b.combo + b.resources + b.stage) * 10;
+    return b;
+}

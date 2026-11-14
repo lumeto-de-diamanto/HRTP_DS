@@ -11,7 +11,7 @@ import unittest
 from grp_to_bin import decode_grp, halve_background
 from ptn_to_h import decode_ptn
 from nds_files import nitro_files
-from hud_pattern_to_h import pattern
+from hud_pattern_to_h import pattern, results_crop
 
 
 def layout_bytes(scene):
@@ -90,6 +90,19 @@ class ViewportAssets(unittest.TestCase):
         self.assertEqual(actual, expected)
 
 
+    def test_round_results_crop_and_palette_are_unscaled_source(self):
+        data = Path('assets/hdi_dump/CLEAR3.GRP').read_bytes()
+        image, palette, _ = decode_grp(data)
+        expected = bytes(pixel for row in image[64:256] for pixel in row[384:640])
+        self.assertEqual(results_crop(data), (expected, palette))
+        text = Path('assets/processed/backgrounds/RoundResults.h').read_text()
+        body = text.split('= {', 1)[1].split('};', 1)[0]
+        actual = bytes(int(n) for n in re.findall(r'\b\d+\b', body))
+        self.assertEqual(actual, expected)
+        colors = [int(n) for n in re.findall(r'\b\d+\b', text.split('= {', 2)[2])]
+        self.assertEqual(colors, [(r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10) for r, g, b in palette])
+
+
 def check_rom():
     rom = Path('hrtp_ds.nds').read_bytes()
     files = nitro_files(rom)
@@ -99,6 +112,7 @@ def check_rom():
     size = struct.unpack_from('<I', rom, 0x2c)[0]
     arm9 = rom[offset:offset + size]
     assert pattern(Path('assets/hdi_dump/CLEAR3.GRP').read_bytes()) in arm9, 'missing/stale bottom HUD pattern'
+    assert results_crop(Path('assets/hdi_dump/CLEAR3.GRP').read_bytes())[0] in arm9, 'missing/stale unscaled results crop'
     # Scene7 is unused beta content, intentionally unreachable in production.
     # All eight source files are checked above; only scenes0..6 must ship.
     for scene in range(7):

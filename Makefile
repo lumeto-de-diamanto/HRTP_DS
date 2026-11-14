@@ -155,6 +155,7 @@ VIEWPORT_TEST_SOURCES += tests/test_konngara_review.cpp $(addprefix source/platf
 VIEWPORT_TEST_SOURCES += source/platform/konngara_defeat_render.cpp
 VIEWPORT_TEST_SOURCES += source/platform/konngara_intro_render.cpp source/platform/menu_render.cpp source/engine/main/bonus.cpp
 VIEWPORT_TEST_SOURCES += source/platform/bomb_render.cpp
+VIEWPORT_TEST_SOURCES += source/platform/round_results.cpp
 HEAP_PROBE_LDFLAGS := -Wl,--wrap=malloc,--wrap=free
 viewport-tests: assets native-soundtrack
 	@mkdir -p build/viewport/tests
