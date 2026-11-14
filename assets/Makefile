@@ -29,7 +29,7 @@ HDI_DUMP_STAMP   := $(HDI_DUMP_DIR)/.stamp
 # under -j. A stamp alone cannot describe an implicit rule's missing input.
 HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
 HDI_FILES := $(PACKFILE) $(addprefix $(HDI_DUMP_DIR)/,$(addsuffix .GRP,$(HDI_GRP_NAMES))) $(HDI_DUMP_DIR)/BOSS8.GRZ
-PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
+PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN KUZI1.GRC KUZI2.GRC BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
 PACKFILE_FILES := $(addprefix $(PACKFILE_DIR)/,$(PACKFILE_NAMES))
 BACKGROUND_BINS := $(addprefix $(NITROFS_DIR)/,$(addsuffix .bin,st0 st1 st2 st3 st4 st5 st6 boss1))
 
@@ -66,6 +66,10 @@ assets: $(NITROFS_DIR)/konngara_defeat.bin
 assets: $(BACKGROUND_BINS)
 assets: $(SPRITES_DIR)/OrbArrow.h
 assets: $(SPRITES_DIR)/Shape8x8.h
+assets: $(SPRITES_DIR)/BombKuji.h
+
+$(SPRITES_DIR)/BombKuji.h: $(PACKFILE_DIR)/KUZI1.GRC $(PACKFILE_DIR)/KUZI2.GRC $(TOOLS_DIR)/bomb_kuji_to_h.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/bomb_kuji_to_h.py $(PACKFILE_DIR)/KUZI1.GRC $(PACKFILE_DIR)/KUZI2.GRC $@
 
 $(SPRITES_DIR)/Shape8x8.h: $(ASSETS_DIR)/sprites/shape8x8.bmp $(TOOLS_DIR)/mono_bmp_to_h.py $(TOOLS_DIR)/halve_image.py
 	$(PYTHON) $(TOOLS_DIR)/mono_bmp_to_h.py $< $(SPRITES_DIR) --name Shape8x8 --halve rare

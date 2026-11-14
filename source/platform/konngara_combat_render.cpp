@@ -218,7 +218,6 @@ bool KonngaraCombatView::present()
     if(!active_ || defeated_ || !pending_ || !canvas_buffer_ready() || REG_VCOUNT<192 || REG_VCOUNT>=200) return false;
     // Gate the whole commit once, before any live writes. Texture/palette work
     // must not push a second early-VBlank gate past its window mid-commit.
-    if(!canvas_buffer_present()) return false;
     bool palette_changed=last_siddham_!=pending_shade_ || last_flash_!=pending_flash_;
     if(pending_post_ && !post_slash_) {
         const u8 *p=slash_data_+le32(slash_data_+16);unsigned n=le32(slash_data_+20);
@@ -228,6 +227,7 @@ bool KonngaraCombatView::present()
     if(palette_changed) {
         const u8 *p=data_+48+(pending_shade_*2+int(pending_flash_))*208*2;
         for(unsigned i=0;i<208;++i) BG_PALETTE[i]=le16(p+i*2);
+        video_bomb_palette_changed();
         work_.palette_writes+=208;
     }
     if(pending_slash_>=0) {
@@ -235,6 +235,7 @@ bool KonngaraCombatView::present()
         if(last_slash_!=pending_slash_ || palette_changed) {
             const u8 *p=slash_data_+le32(d+8)+(pending_flash_?288:0);
             for(unsigned i=0;i<144;++i) SPRITE_PALETTE[112+i]=le16(p+i*2);
+            video_bomb_obj_palette_changed();
             work_.palette_writes+=144;
         }
         if(last_slash_!=pending_slash_) {
@@ -253,12 +254,17 @@ bool KonngaraCombatView::present()
         if(changed || palette_changed) {
             const u8 *p=head+(pending_shade_*2+int(pending_flash_))*144*2;
             for(unsigned i=0;i<144;++i) SPRITE_PALETTE[112+i]=le16(p+i*2);
+            video_bomb_obj_palette_changed();
             work_.palette_writes+=144;
         }
         if(changed) { copy_words(boss_gfx(),head+144*64,4096);++work_.head_uploads; }
         last_pose_=pending_pose_;last_post_=post_slash_;
     }
+    // Register/texture changes precede the potentially full-playfield stream;
+    // never reset affine references after a long canvas transfer mid-scanout.
+    video_bomb_commit(true);
     bgUpdate();oamUpdate(&oamMain);bgShow(g_bg_id_background);
+    canvas_buffer_present(true);
     last_slash_=pending_slash_;last_flash_=pending_flash_;last_siddham_=pending_shade_;pending_=false;
     return true;
 }
@@ -269,7 +275,7 @@ void KonngaraCombatView::end()
         bgHide(g_bg_id_background);
         for(int i=0;i<slash_slots;++i) oamSetHidden(&oamMain,slash_slot+i,true);
         oamSetHidden(&oamMain,BOSS_OAM_SLOT,true);oamUpdate(&oamMain);
-        canvas_buffer_end();canvas_clear();
+        canvas_buffer_end();canvas_clear();video_bomb_reset();
         for(size_t i=0;i<65536;++i) BG_BMP_RAM(4)[i]=background_backup_[i];
         for(unsigned i=0;i<256;++i) BG_PALETTE[i]=bg_palette_[i];
         for(unsigned i=0;i<144;++i) SPRITE_PALETTE[112+i]=obj_palette_[i];

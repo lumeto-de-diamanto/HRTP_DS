@@ -4,6 +4,7 @@
 
 #include "palette_fx.hpp"
 #include "canvas.hpp"
+#include "video.hpp"
 
 // The background/tile palette and the sprite palette dim via palette RAM;
 // the effects canvas is 15bpp direct color, so it is snapshotted and
@@ -51,6 +52,7 @@ void palette_dim(int tone)
             px[i] = 0x8000 | dim_color(c & 0x7FFF, tone);
         }
     }
+    video_bomb_pause(true); // pause must dim even a fully white recovery frame
     if(g_canvas_target) {
         // Publish the RAM effects and indexed palettes in the same VBlank.
         present_buffered_canvas();
@@ -76,6 +78,7 @@ void palette_restore()
         memcpy(BG_PALETTE,bg_snap,256*sizeof(u16));
         memcpy(SPRITE_PALETTE,obj_snap,256*sizeof(u16));
     }
+    video_bomb_pause(false);
 }
 
 void palette_toward_white(int amount)

@@ -192,7 +192,7 @@ void singyoku_init()
     slam_phase = SLAM_DONE;
 }
 
-void singyoku_update()
+void singyoku_update(bool bomb_damage)
 {
     if (state.phase == SG_DEFEATED)
         return;
@@ -220,7 +220,7 @@ void singyoku_update()
         if (state.frame == 0) state.pattern = state.pattern == 4 ? irand() % 4 : 4;
     }
     boss_hit_update(state.health, state.entity, 3000,
-        state.entity.left + 16, state.entity.top + 32, 112, 64);
+        state.entity.left + 16, state.entity.top + 32, 112, 64, bomb_damage);
     if (state.hp_displayed > state.health.hp)
         state.hp_displayed = state.health.hp;
     if (state.phase == SG_SPHERE && state.health.hp <= 6 &&

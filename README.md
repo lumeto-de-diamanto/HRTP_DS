@@ -45,15 +45,16 @@ portal timelines; viewport tests also verify white bullets and portal rendering
 cel order/timing, invincibility sparkles, sprite allocation rollback/reinitialization and stable usage
 across repeated state transitions
 * `make konngara-tests konngara-sanitize`: checks the intro timeline/rendering
-and BOS/GRZ artwork, source phases1–7 combat/lasers and defeat, exact BG/OBJ composition and allocation
+and BOS/GRZ artwork, source phases 1–7 combat/lasers and defeat, exact BG/OBJ composition and allocation
 cleanup on replay/failure (camera/flash changes must not upload bitmaps)
 * `make konngara-hybrid-tests`: offline slash-sprite packing and independent
-source-pixel packing checks. The hybrid is used by practice and real Stage20.
+source-pixel packing checks. The hybrid is used by practice and real Stage 20.
 
 ## Current status
 
 * [ ] Display
-  * [ ] Bullets and blitter efects (*in progress*, bullets and lasers have been implemented)
+  * [ ] Bullets and blitter effects (pellets, shootout lasers, Konngara patterns,
+    player effects implemented; other boss effects remain)
   * [x] Bitmap background
   * [x] Tiles, turrets and barriers
   * [ ] HUD (*in progress*, functional but needs some visual refinement)
@@ -61,7 +62,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage20.
 * [ ] Core gameplay
   * [x] Player controls
   * [x] Orb
-  * [ ] Bombs
+  * [x] Bombs
   * [x] Damage and game over
   * [ ] Pause screen and stage results (*in progress*, functional but needs visual refinement)
 * [x] Music and SFX engine
@@ -102,6 +103,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage20.
 Current controls:
 * **Left/Right** — move Reimu; **A** — swing gohei; **B** — shoot ofuda
   (and serve the orb at the start of a card stage)
+* **X**, or **A + B twice** — bomb.
 * **START** — pause (RESUME / QUIT; QUIT restarts at stage 1 until the
   title screen exists)
 * **SELECT + d-pad** — dev stage navigator (←/→: stage, ↑/↓: scene;

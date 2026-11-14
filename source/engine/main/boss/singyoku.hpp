@@ -13,5 +13,5 @@ struct SinGyokuState {
 };
 
 void singyoku_init();
-void singyoku_update();
+void singyoku_update(bool bomb_damage = false);
 const SinGyokuState &singyoku_state();

@@ -2,6 +2,7 @@
 
 #include "canvas.hpp"
 #include "camera.hpp"
+#include "video.hpp"
 
 static int clip_top;
 static u32 dirty_rows[CANVAS_H / 8];
@@ -107,10 +108,10 @@ bool canvas_buffer_begin(u16 *pixels)
     return true;
 }
 
-void canvas_buffer_end()
+void canvas_buffer_end(bool preserve_ink)
 {
     g_canvas_target = nullptr;
-    memset(dirty_rows,0,sizeof(dirty_rows));
+    if(!preserve_ink) memset(dirty_rows,0,sizeof(dirty_rows));
     memset(present_rows,0,sizeof(present_rows));
     prepared = false;
 }
@@ -136,13 +137,24 @@ void canvas_buffer_dirty_all()
     prepared=false;
 }
 
-bool canvas_buffer_present()
+bool canvas_buffer_present(bool already_gated)
 {
-    if (!canvas_buffer_ready() || REG_VCOUNT < 192 || REG_VCOUNT >= 200) return false;
+    if (!canvas_buffer_ready() || (!already_gated && (REG_VCOUNT < 192 || REG_VCOUNT >= 200))) return false;
+    if(!already_gated) video_canvas_effect_commit();
     for (int row=0;row<CANVAS_H/8;++row) {
         const u32 mask = dirty_rows[row] | present_rows[row];
         present_rows[row] = 0;
         if (!mask) continue;
+        if(mask==~u32(0)) {
+            // Batch contiguous full-width bands for modal/large effects too.
+            const int first=row;
+            while(row+1<CANVAS_H/8 && (dirty_rows[row+1]|present_rows[row+1])==~u32(0)) {
+                ++row;present_rows[row]=0;
+            }
+            dmaCopyHalfWords(3,canvas_at(0,first*8),BG_BMP_RAM(CANVAS_BMP_BLOCK)+first*8*256,
+                             (row-first+1)*8*CANVAS_W*sizeof(u16));
+            continue;
+        }
         int first=0,last=31;
         while (!(mask & (u32(1)<<first))) ++first;
         while (!(mask & (u32(1)<<last))) --last;

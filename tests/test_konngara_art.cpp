@@ -442,6 +442,37 @@ int main()
         }
         canvas_begin_frame();assert(view.frame(state));present(view);
         assert(std::all_of(BG_BMP_RAM(CANVAS_BMP_BLOCK),BG_BMP_RAM(CANVAS_BMP_BLOCK)+256*192,[](u16 p){return !p;}));
+        // The bomb must follow NEW native boss palette states, never compound
+        // its own tint or restore a stale pre-bomb flash/shade snapshot.
+        state.bos_head=true; // deterministic native centre/neutral pose
+        const u8 *native_head=gpu_asset.data()+dword(gpu_asset.data()+48+208*64+(int(KonngaraDirection::Center)*4)*8+4);
+        video_bomb_prepare(true,60,1000);
+        for(int shade:{0,15,4}) for(bool flash:{false,true}) {
+            state.siddham_white=shade;state.health.flashing=flash;
+            assert(view.frame(state));present(view);
+            for(unsigned i=0;i<208;++i)
+                assert(BG_PALETTE[i]==video_bomb_indigo(word(gpu_asset.data()+48+((shade*2+int(flash))*208+i)*2)));
+            assert(std::equal(bgpal.begin()+208,bgpal.end(),BG_PALETTE+208));
+            for(unsigned i=0;i<144;++i)
+                assert(SPRITE_PALETTE[112+i]==video_bomb_indigo(word(native_head+((shade*2+int(flash))*144+i)*2)));
+            assert(std::equal(objpal.begin(),objpal.begin()+112,SPRITE_PALETTE));
+        }
+        video_bomb_prepare(false,140,1090);
+        for(unsigned age=0;age<=32;++age) {
+            video_bomb_prepare(false,140,1090+age);assert(view.frame(state));present(view);
+            for(unsigned i=0;i<208;++i) {
+                const u16 normal=word(gpu_asset.data()+48+((4*2+1)*208+i)*2);
+                assert(BG_PALETTE[i]==(age<16 ? video_bomb_indigo(normal) : normal));
+            }
+            for(unsigned i=0;i<144;++i) {
+                const u16 normal=word(native_head+((4*2+1)*144+i)*2);
+                const u16 c=age<16 ? video_bomb_indigo(normal) : normal;
+                const int t=age<=16 ? int(age) : 32-int(age),r=c&31,g=(c>>5)&31,b=(c>>10)&31;
+                assert(SPRITE_PALETTE[112+i]==RGB15(r+(31-r)*t/16,g+(31-g)*t/16,b+(31-b)*t/16));
+            }
+            assert(std::equal(objpal.begin(),objpal.begin()+112,SPRITE_PALETTE));
+        }
+        assert(!video_bomb_effect_active());
         // Only explicit end/begin resets reallocate; all camera/pose/flash
         // frames are allocation-free and reuse the same ROM-lifetime boss OBJ.
         assert(test_heap_attempts == attempts + 6 && test_obj_attempts == obj_allocations + 2);
@@ -505,6 +536,23 @@ int main()
         }
         assert(view.work().slash_uploads==14);
         assert(view.work().background_bytes==61440+1342);
+        // All seven slash cels and both native damage-flash palettes use the
+        // same treatment as BG3/head, without tinting any other OBJ bank.
+        const u16 previous_master=REG_MASTER_BRIGHT;
+        video_bomb_prepare(true,65,1000);
+        state.siddham_white=0;state.slash_cycles=1;state.expression=KonngaraExpression::Closed;
+        for(int cel=0;cel<7;++cel) for(bool flash:{false,true}) {
+            state.slash_cel=cel;state.health.flashing=flash;
+            assert(view.frame(state));present(view);
+            const u8 *native=asset.data()+dword(asset.data()+32+cel*24+8)+(flash?288:0);
+            for(unsigned i=0;i<144;++i) assert(SPRITE_PALETTE[112+i]==video_bomb_indigo(word(native+i*2)));
+            assert(std::equal(objpal.begin(),objpal.begin()+112,SPRITE_PALETTE));
+            assert(REG_MASTER_BRIGHT==0x4005);
+        }
+        video_bomb_reset();
+        const u8 *last_native=asset.data()+dword(asset.data()+32+6*24+8)+288;
+        for(unsigned i=0;i<144;++i) assert(SPRITE_PALETTE[112+i]==word(last_native+i*2));
+        assert(REG_MASTER_BRIGHT==previous_master);
         view.end();assert(test_obj_attempts==allocations+2 && test_heap_count==0);
         for(int slot=75;slot<107;++slot) assert(test_objs[slot].hidden);
         assert(test_obj_count==1 && test_obj_used==4096 && !g_canvas_target);
@@ -523,9 +571,16 @@ int main()
         }
         KonngaraCombatView view;assert(view.begin());
         const auto bytes=test_heap_bytes,blocks=test_heap_count;
+        const u16 previous_blend=REG_BLDCNT,previous_alpha=REG_BLDALPHA,previous_y=REG_BLDY,previous_window=REG_WINOUT;
+        const u16 previous_master=REG_MASTER_BRIGHT;
+        video_bomb_prepare(true,65,65);video_bomb_commit(true); // a bomb can supply the lethal hit
+        const u16 active_blend=REG_BLDCNT;
+        const std::vector<u16> active_palette(BG_PALETTE,BG_PALETTE+256);
+        const std::vector<u16> active_objects(SPRITE_PALETTE,SPRITE_PALETTE+256);
         const std::vector<u16> live(BG_BMP_RAM(4),BG_BMP_RAM(4)+65536);
         const int before_stop=stops;
         test_heap_fail_after=0;assert(!view.defeat());test_heap_fail_after=-1;
+        assert(REG_BLDCNT==active_blend); // failed playback leaves the live composition intact
         assert(test_heap_bytes==bytes && test_heap_count==blocks && stops==before_stop+1);
         assert(std::rename("nitro:/konngara_defeat.bin","nitro:/konngara_defeat.saved")==0);
         assert(!view.defeat());
@@ -533,9 +588,12 @@ int main()
         assert(!view.defeat());
         assert(std::rename("nitro:/konngara_defeat.saved","nitro:/konngara_defeat.bin")==0);
         assert(std::equal(live.begin(),live.end(),BG_BMP_RAM(4)));
-        assert(std::equal(bgpal.begin(),bgpal.end(),BG_PALETTE));
+        assert(std::equal(active_palette.begin(),active_palette.end(),BG_PALETTE));
+        assert(std::equal(active_objects.begin(),active_objects.end(),SPRITE_PALETTE) && REG_MASTER_BRIGHT==0x4005);
         defeat_reference=read("defeat.bin");defeat_testing=true;test_vblank_hook=observe_defeat;
         assert(view.defeat());test_vblank_hook=nullptr;defeat_testing=false;
+        assert(REG_BLDCNT==previous_blend && REG_BLDALPHA==previous_alpha && REG_BLDY==previous_y && REG_WINOUT==previous_window);
+        assert(REG_MASTER_BRIGHT==previous_master);
         check_defeat_frame(420);
         assert(defeat_ticks==421 && unsigned(defeat_checked)==dword(defeat_reference.data()));
         std::vector<int> expected_sounds;

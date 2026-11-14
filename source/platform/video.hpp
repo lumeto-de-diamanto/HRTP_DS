@@ -44,6 +44,21 @@ void video_apply_camera();
 // Apply after rebuilding gameplay shadow OAM, before its VBlank commit. The
 // fixed HUD stays put; scenery, canvas, boss and player shake together.
 void video_apply_death_shake(int down_pixels, bool konngara);
+// Cosmetic bomb timeline, independent of damage/protection. Preparation uses
+// gameplay time (pause/repeated rendering cannot advance the recovery).
+void video_bomb_prepare(bool active, int bomb_frame, unsigned gameplay_frame);
+bool video_bomb_effect_active();
+int video_bomb_shake();
+u16 video_bomb_indigo(u16 color);
+// Called after a renderer replaces BG3's normal palette, before the VBlank
+// commit. Keep current boss palette animation underneath the bomb treatment.
+void video_bomb_palette_changed();
+// Konngara owns OBJ entries112..255. No other gameplay/HUD OBJ palette changes.
+void video_bomb_obj_palette_changed();
+void video_bomb_commit(bool konngara = false);
+void video_bomb_reset();
+void video_bomb_pause(bool paused);
+void video_canvas_effect_commit();
 
 // Blocking, non-gameplay BG2 animations may cover BG0/HUD OAM as well.
 // Nestable so the stage-title sequence can invoke a shared banner safely.

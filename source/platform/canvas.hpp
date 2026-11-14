@@ -29,10 +29,14 @@ void canvas_begin_frame();
 // Optional buffered presentation for combat. Compose ALL effects, flush once,
 // then present in VBlank. No allocation; the owner supplies128KiB of RAM.
 bool canvas_buffer_begin(u16 *pixels);
-void canvas_buffer_end();
+// Preserve the published ink map when handing an ordinary stage back to direct
+// drawing, so its next begin_frame can erase the last buffered effects.
+void canvas_buffer_end(bool preserve_ink = false);
 void canvas_buffer_prepare();
 bool canvas_buffer_ready();
-bool canvas_buffer_present();
+// already_gated is for a grouped early-VBlank commit that publishes BG/OAM
+// registers first, then streams pixels top-to-bottom without a second gate.
+bool canvas_buffer_present(bool already_gated = false);
 // Direct RAM writers (e.g. pause snapshot/dim/restore) must publish their writes.
 void canvas_buffer_dirty_all();
 // Gameplay draw calls clip below the transparent HUD; screen-space menus and

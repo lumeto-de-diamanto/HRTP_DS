@@ -39,6 +39,7 @@
 #include "text_layer.hpp"
 #include "boss_render.hpp"
 #include "canvas.hpp"
+#include "bomb_render.hpp"
 #include <main/boss/singyoku.hpp>
 #include <main/boss/konngara.hpp>
 #include <main/progression.hpp>
@@ -72,6 +73,8 @@ static KonngaraCombat konngara;
 static KonngaraCombatView konngara_view;
 static bool jigoku_cleared;
 static const PlayerDeathFrame *player_death_frame;
+alignas(4) static u16 regular_bomb_canvas[256*256];
+static bool regular_bomb_canvas_owned;
 
 static void check_konngara(bool okay,const char *part)
 {
@@ -118,7 +121,10 @@ static void render_frame()
 {
     const bool boss = stage_has_singyoku(current_scene, current_stage);
     const bool final_boss=stage_has_konngara(current_scene,current_stage);
-    if(!final_boss && !player_death_frame) video_apply_camera();
+    video_bomb_prepare(!player_death_frame && player_bomb().active(),player_bomb().frame(),frame);
+    if(!final_boss && (player_bomb().active() || video_bomb_effect_active()) && !g_canvas_target)
+        regular_bomb_canvas_owned=canvas_buffer_begin(regular_bomb_canvas);
+    if(!final_boss && !player_death_frame && !g_canvas_target) video_apply_camera();
     stage_render_frame();
     // Erase only previous effects; the background scrolls in hardware and
     // BG0/OAM HUD elements never go through the software canvas.
@@ -135,14 +141,34 @@ static void render_frame()
     if(!player_death_frame) popup_render_frame(); // rendering normally ages these
     orb_indicator_render();
     if (boss) boss_render_frame();
+    if(!player_death_frame) bomb_render_frame();
     if(player_death_frame) player_render_death(*player_death_frame);
     canvas_playfield_clip(false);
     if(!player_death_frame) render_hud(); // source updates lost-life resources after recovery
     if(player_death_frame) video_apply_death_shake(player_death_frame->shake_y,final_boss);
+    else {
+        bgSetScroll(g_bg_id_canvas,0,0);
+        bgSetScroll(g_bg_id_tiles,camera.left,0);
+        if(!final_boss) bgSetScroll(g_bg_id_background,background_scroll_x(),0);
+        if(player_bomb().active() || video_bomb_effect_active())
+            video_apply_death_shake(video_bomb_shake(),final_boss);
+    }
     if(final_boss) {
         canvas_buffer_prepare(); // after lasers, pellets and all other effects
         do { swiWaitForVBlank(); } while(!konngara_view.present());
+    } else if(g_canvas_target) {
+        canvas_buffer_prepare();
+        do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
+        video_bomb_commit();
+        if(player_death_frame || player_bomb().active() || regular_bomb_canvas_owned) bgUpdate();
+        else video_apply_camera();
+        oamUpdate(&oamMain);
+        canvas_buffer_present(true);
+        if(regular_bomb_canvas_owned && !player_bomb().active() && !video_bomb_effect_active()) {
+            canvas_buffer_end(true);regular_bomb_canvas_owned=false;
+        }
     } else {
+        video_bomb_commit();
         if(player_death_frame) {
             // Full game-over trails can take longer than VBlank to compose.
             // Writing affine BG reference points afterward, mid-scanout,
@@ -181,8 +207,12 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     // the next entrance's transparent glyphs. Preserve the fixed upper HUD.
     text_layer_clear();
     player_death_frame=nullptr;
+    if(regular_bomb_canvas_owned) {
+        canvas_buffer_end();canvas_clear();regular_bomb_canvas_owned=false;
+    }
     bgSetScroll(g_bg_id_canvas,0,0);
     konngara_view.end(); // also releases the temporary OBJ lease on navigation/restart
+    video_bomb_reset();
     jigoku_cleared=false;
     upper_hud_invalidate();
     // Route confirmation must survive into the new scene's title glyphs.
@@ -270,6 +300,7 @@ static void start_new_game()
 
 static void player_death_animate(bool fatal)
 {
+    video_bomb_reset(); // recovery is cosmetic; do not tint the approved miss
     const auto &player=player_get_state();
     PlayerDeathAnimation animation(fatal,player.x_position,player.y_position,(irand()%8)==0);
     PlayerDeathFrame presentation;
@@ -284,7 +315,7 @@ static void player_death_animate(bool fatal)
             camera.follow((presentation.left[0]+presentation.left[1]+PLAYER_W)/2);
         // Game-over composition commits at the END of the frame, as does the
         // final-boss renderer. Keep the approved miss path's original timing.
-        if(!fatal && !stage_has_konngara(current_scene,current_stage)) swiWaitForVBlank();
+        if(!fatal && !g_canvas_target && !stage_has_konngara(current_scene,current_stage)) swiWaitForVBlank();
         render_frame();
         for(int hold=1;hold<presentation.hold;++hold) swiWaitForVBlank();
     }
@@ -303,12 +334,15 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     const bool entrance=stage_has_singyoku(current_scene,current_stage) && singyoku_state().phase==SG_ENTRANCE;
     if(entrance) singyoku_update();
     else player_update(keys_held,keys_down);
+    if(!entrance && (player_bomb().pending() || player_bomb().active())) wait_for_shot=serving=false;
+    const bool bomb_damage=boss_bomb_damage_allowed(player_bomb().damaging(),lives,frame+1);
     if(!serving && !entrance) {
         // Boss collision uses the previous orb point, before orb movement.
         if(final_boss) {
-            konngara.update();
+            konngara.update(bomb_damage);
             if(konngara.state().complete) {
                 player_is_hit=false; // victory wins a simultaneous player hit
+                player_bomb_cancel();
                 Pellets.init();shots_initialize();Items.init();
                 if(stage_score>hiscore) hiscore=stage_score;
                 hud_render(lives,20); // includes the lethal-hit50000 immediately
@@ -323,9 +357,11 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
             }
             konngara.update_lasers();
         } else if(boss) {
-            singyoku_update();
+            singyoku_update(bomb_damage);
             if(singyoku_state().phase==SG_DEFEATED) {
                 player_is_hit=false;
+                player_bomb_cancel();
+                video_bomb_reset();
                 music_stop();
                 Pellets.init();shots_initialize();Items.init();render_frame();
                 const RouteChoice route=boss_defeat_and_select_route();
@@ -334,7 +370,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
             }
         }
         shots_update();orb_update();
-        if(!boss) { cards_hittest();stage_obstacles_update();cards_update(); }
+        if(!boss) { cards_hittest(player_bomb().damaging(),player_bomb().card_frame());stage_obstacles_update();cards_update(); }
         Items.update();
         // Only active gameplay advances the shared timer cadence.
         if(timer_update(++frame)==TIMER_EVENT_HARRYUP) harryup_animate();
@@ -370,6 +406,9 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         }
     }
     if(!boss && stage_is_cleared()) {
+        if(player_bomb().active() || video_bomb_effect_active()) {
+            player_bomb_cancel();video_bomb_reset();render_frame();
+        }
         stagebonus_run(stagebonus_compute(global_stage_num(),lives),global_stage_num());
         int next=current_stage+1;
         if(next>=scene_stage_count(current_scene)) next=0; // other unported bosses remain gated
@@ -426,7 +465,7 @@ int main(int argc, char **argv)
         }
         // Konngara composes during visible time and commits at the END of the
         // frame. Do not add a second VBlank wait and halve its gameplay rate.
-        if(!stage_has_konngara(current_scene,current_stage)) swiWaitForVBlank();
+        if(!stage_has_konngara(current_scene,current_stage) && !g_canvas_target && !player_bomb().pending()) swiWaitForVBlank();
 
         scanKeys();
         uint16_t keys_held = keysHeld();

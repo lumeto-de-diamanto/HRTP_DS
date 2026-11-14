@@ -103,6 +103,7 @@ bool KonngaraCombatView::defeat(bool hit_flash)
             for(int i=0;i<128;++i) oamSetHidden(&oamMain,i,true);
             oamUpdate(&oamMain);
             bgHide(0);bgHide(g_bg_id_tiles);bgHide(g_bg_id_canvas);
+            video_bomb_reset(); // no palette/brightness ownership into the cinematic
             bgSetScroll(g_bg_id_background,0,0);bgUpdate();
         }
         if(image) for(int y=0;y<VIEW_H;++y)

@@ -8,10 +8,11 @@
 #include "main/stage/item.hpp"
 #include "popup.hpp"
 #include "sound_effects.hpp"
+#include "main/random.hpp"
 
 static int card_flip_cycle;
 
-void cards_hittest()
+void cards_hittest(bool bomb_damaging, unsigned bomb_frame)
 {
     const OrbState &orb = orb_get_state();
 
@@ -20,8 +21,9 @@ void cards_hittest()
         int dx = abs(c.left - orb.x_position);
         int dy = abs(c.top - orb.y_position);
 
-        if (dx < STAGEOBJ_ORB_DISTANCE_X && dy < STAGEOBJ_ORB_DISTANCE_Y &&
-            c.flag == CARD_ALIVE) {
+        if ((dx < STAGEOBJ_ORB_DISTANCE_X && dy < STAGEOBJ_ORB_DISTANCE_Y && c.flag == CARD_ALIVE) ||
+            (bomb_damaging && bomb_frame % unsigned(stage_card_total) == unsigned(i) &&
+             irand()%4 != 0 && c.flag == CARD_ALIVE)) {
             c.flag = CARD_FLIPPING;
             c.flip_frame = 0;
 
@@ -40,7 +42,8 @@ void cards_hittest()
             if (((card_flip_cycle++) % 10) == 0) {
                 if (card_flip_cycle >= CARD_FLIP_CYCLE_MAX) {
                     card_flip_cycle = 1;
-                    Items.add_bomb(c.left, c.top);
+                    if(bomb_damaging) Items.add_point(c.left,c.top);
+                    else Items.add_bomb(c.left, c.top);
                 } else {
                     Items.add_point(c.left, c.top);
                 }

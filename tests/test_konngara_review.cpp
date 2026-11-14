@@ -554,3 +554,204 @@ void test_player_death()
     camera.snap_center();
     std::puts("Player death: original cels/edge clipping,99-frame miss/31-frame fatal burst, frozen gameplay, full attack reset/grace, resource recovery, retry/new-run input gating and boss buffer/OBJ cleanup passed");
 }
+
+void test_bombs()
+{
+    const u16 original_control=REG_BLDCNT,original_alpha=REG_BLDALPHA,original_y=REG_BLDY,original_window=REG_WINOUT;
+    const u16 original_master=REG_MASTER_BRIGHT,original_sub_master=REG_MASTER_BRIGHT_SUB;
+    const std::vector<u16> initial_palette(BG_PALETTE,BG_PALETTE+256);
+    assert(video_bomb_indigo(0)==0x7fff && video_bomb_indigo(0x7fff)==RGB15(12,12,31));
+    int previous=32;
+    for(int grey=0;grey<32;++grey) {
+        const u16 color=video_bomb_indigo(RGB15(grey,grey,grey));
+        assert((color&31)<=previous && (color&31)==((color>>5)&31) && (color>>10)==31);
+        previous=color&31;
+    }
+    // Exact restore of non-default colour state. The only fade targets are
+    // BG3 and its index0 backdrop; never stage objects, player, bullets or HUD.
+    REG_BLDCNT=0x0123;REG_BLDALPHA=0x0506;REG_BLDY=7;REG_WINOUT=0x401f;
+    REG_MASTER_BRIGHT=0x8003;REG_MASTER_BRIGHT_SUB=0x4002;
+    BG_PALETTE[0]=0;BG_PALETTE[1]=0x7fff;
+    video_bomb_prepare(true,50,1000);video_bomb_commit();
+    assert(BG_PALETTE[0]==0x7fff && BG_PALETTE[1]==RGB15(12,12,31));
+    assert(REG_BLDCNT==0 && REG_BLDALPHA==0x0506 && REG_WINOUT==0x403f);
+    assert(!(REG_WININ&0x2020));
+    assert(REG_MASTER_BRIGHT==0 && REG_MASTER_BRIGHT_SUB==0x4002);
+    video_bomb_prepare(true,55,1005);video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4005);
+    { CanvasForegroundScope foreground;video_canvas_effect_commit();assert(REG_MASTER_BRIGHT==0x8003); }
+    video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4005);
+    video_bomb_pause(true);assert(REG_MASTER_BRIGHT==0x8003);
+    video_bomb_pause(false);assert(REG_MASTER_BRIGHT==0x4005);
+    video_bomb_prepare(false,140,1090);video_bomb_commit();
+    assert(REG_MASTER_BRIGHT==0x8003);
+    for(int age=1;age<=32;++age) {
+        video_bomb_prepare(false,140,1090+age);video_bomb_commit();
+        if(age<32) {
+            assert(REG_BLDY==(age<=16 ? age : 32-age));
+            assert(REG_BLDCNT==(BLEND_FADE_WHITE|BLEND_SRC_BG3|BLEND_SRC_BACKDROP));
+            assert(BG_PALETTE[0]==(age<16 ? 0x7fff : 0));
+            if(age==16) {
+                assert(REG_BLDY==16 && BG_PALETTE[1]==0x7fff); // swap hidden by full white
+                { CanvasForegroundScope foreground;video_canvas_effect_commit();assert(REG_BLDCNT==0); }
+                video_bomb_commit();assert(REG_BLDCNT);
+            }
+        }
+    }
+    assert(!video_bomb_effect_active());
+    assert(REG_BLDCNT==0x0123 && REG_BLDALPHA==0x0506 && REG_BLDY==7 && REG_WINOUT==0x401f);
+    assert(REG_MASTER_BRIGHT==0x8003 && REG_MASTER_BRIGHT_SUB==0x4002);
+    REG_BLDCNT=original_control;REG_BLDALPHA=original_alpha;REG_BLDY=original_y;REG_WINOUT=original_window;
+    REG_MASTER_BRIGHT=original_master;REG_MASTER_BRIGHT_SUB=original_sub_master;
+    std::copy(initial_palette.begin(),initial_palette.end(),BG_PALETTE);
+    // Interrupting recovery with another invocation restores normal colours
+    // immediately; its first50 frames must not inherit brightness or tint.
+    video_bomb_prepare(true,60,2000);video_bomb_commit();
+    video_bomb_prepare(false,140,2080);video_bomb_commit();
+    video_bomb_prepare(false,140,2088);video_bomb_commit();assert(REG_BLDY==8);
+    video_bomb_prepare(true,0,2089);video_bomb_commit();
+    assert(!video_bomb_effect_active() && REG_BLDY==original_y);
+    assert(REG_MASTER_BRIGHT==original_master);
+    assert(std::equal(initial_palette.begin(),initial_palette.end(),BG_PALETTE));
+    PlayerBomb input;
+    assert(!input.input(true,true,false,false,false));
+    assert(!input.input(false,false,false,false,false));
+    assert(input.input(true,true,false,false,false)); // original double-tap pair
+    assert(input.input(false,false,false,false,false)); // source input latch survives the first-special gate
+    input.arm();assert(!input.input(false,false,false,false,false));
+    input.reset();assert(!input.input(true,true,false,false,false));
+    for(int i=0;i<20;++i) assert(!input.input(false,false,false,false,false));
+    assert(!input.input(true,true,false,false,false)); // expired first pair
+    assert(!input.input(false,false,true,false,true)); // navigator must not bomb
+    input.reset();assert(input.input(true,false,false,true,false));
+
+    test_vblank_hook=nullptr;stage_load(0,0);
+    player_initialize();rem_bombs=0;player_update(KEY_X,KEY_X);
+    assert(!player_bomb().pending() && !player_bomb().active());
+    rem_bombs=2;player_update(0,0);assert(!player_bomb().pending());
+    orb_set_position(10000,200);pellet_speed=-4;Pellets.init();
+    Pellets.add_single(100,100,0,16);Pellets.at(0).velocity.x.v=9;Pellets.at(0).velocity.y.v=6;
+    const size_t sounds=test_effects.size(),objects=test_obj_attempts,heap=test_heap_attempts;
+    const std::vector<u16> bg(BG_PALETTE,BG_PALETTE+256),obj(SPRITE_PALETTE,SPRITE_PALETTE+256);
+    player_update(KEY_X,KEY_X);
+    assert(player_bomb().pending() && rem_bombs==2 && pellet_speed==-3);
+    int previous_x=player_get_state().x_position;
+    for(int f=0;f<=140;++f) {
+        player_update(KEY_X|KEY_LEFT|KEY_B,KEY_X); // even repeated direct presses cannot retrigger
+        assert(player_bomb().frame()==f && player_bomb().active()==(f<140));
+        assert(player_bomb().damaging()==(f>=50 && f<140));
+        assert(rem_bombs==1 && player_is_invincible() && player_get_state().x_position==previous_x);
+        if(f==0) assert(Pellets.at(0).decay_frame==1 && Pellets.at(0).velocity.x.v==6 && Pellets.at(0).velocity.y.v==4);
+        if(f==5) { Pellets.add_single(100,120,0,16);assert(!Pellets.at(1).decay_frame); }
+        if(f==10) assert(Pellets.at(1).decay_frame==1);
+        if(f==51) { Pellets.add_single(100,140,0,16);assert(!Pellets.at(2).decay_frame); }
+        if(f>51) assert(!Pellets.at(2).decay_frame); // source's late decay branch is unreachable
+        canvas_begin_frame();canvas_playfield_clip(true);bomb_render_frame();
+        video_bomb_prepare(player_bomb().active(),f,f);video_bomb_commit();
+        assert(video_bomb_effect_active()==(f>=50));
+        assert(REG_BLDCNT==(f>=50 ? 0 : original_control));
+        static const int shakes[]={4,0,8,0};
+        assert(video_bomb_shake()==(f>=52 && f<140 ? shakes[(f/4)%4] : 0));
+        assert(REG_MASTER_BRIGHT==(f>=50 && f<140 ? (((f-50)/5)%2 ? 0x4005 : 0) : original_master));
+        assert(REG_MASTER_BRIGHT_SUB==original_sub_master);
+        for(int y=0;y<VIEW_H;++y) for(int x=0;x<VIEW_W;++x) {
+            const u16 c=*canvas_at(x,y);
+            if(y<UPPER_HUD_H) assert(!c);
+            if(f>=50) assert(!c); // no software discharge pixels at all
+        }
+        if(f==100) {
+            const size_t bytes=test_dma_fill_bytes,copies=test_dma_copy_bytes;
+            bomb_render_frame();video_bomb_prepare(true,f,f);video_bomb_commit();
+            assert(bytes==test_dma_fill_bytes && copies==test_dma_copy_bytes); // register/palette-only redraw
+            canvas_fill_rect(10,40,1,1,0x7fff);bomb_render_frame();assert(*canvas_at(10,40)==0xffff);
+        }
+        for(int i=0;i<256;++i) assert(BG_PALETTE[i]==(f>=50 && i<208 ? video_bomb_indigo(bg[i]) : bg[i]));
+        assert(std::equal(obj.begin(),obj.end(),SPRITE_PALETTE));
+    }
+    assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_BOMB_START)==1);
+    assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_BOMB_ACTIVE)==8);
+    assert(test_obj_attempts==objects && test_heap_attempts==heap);
+    for(int age=1;age<=32;++age) { video_bomb_prepare(false,140,140+age);video_bomb_commit(); }
+    assert(std::equal(bg.begin(),bg.end(),BG_PALETTE));
+    assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY==original_y && REG_WINOUT==original_window);
+    assert(REG_MASTER_BRIGHT==original_master);
+    for(int i=0;i<99;++i) player_update(0,0);
+    assert(player_is_invincible());player_update(0,0);assert(!player_is_invincible());
+    canvas_clear();canvas_playfield_clip(false);
+
+    // Actual serve/cards and sparse uploads; recovery never extends mechanics.
+    stage_load(0,0);rem_bombs=2;lives=3;frame=0;
+    for(int i=0;i<stage_card_total;++i) stage_cards[i].hp=CARD_HP_MAX-1; // keep the fixture stage alive
+    gameplay_tick(KEY_X,KEY_X);assert(!wait_for_shot && player_bomb().pending());
+    const int hud_y=test_objs[OAM_SLOT_HUD_LIVES].y;
+    for(int f=0;f<=172;++f) {
+        const size_t bytes=test_dma_copy_bytes;
+        test_bg_update_hook=[](){if(player_bomb().frame()>=50) assert(REG_VCOUNT>=192 && REG_VCOUNT<200);};
+        orb_set_position(10000,200);gameplay_tick(0,0);
+        test_bg_update_hook=nullptr;
+        assert(player_bomb().frame()==(f<140?f:140) && rem_bombs==1 && lives==3 && current_stage==0);
+        assert(player_bomb().active()==(f<140) && player_bomb().damaging()==(f>=50 && f<140));
+        assert(bool(g_canvas_target)==(f<172) && regular_bomb_canvas_owned==(f<172));
+        assert(REG_MASTER_BRIGHT==(f>=50 && f<140 ? (((f-50)/5)%2 ? 0x4005 : 0) : original_master));
+        if(f>=52) assert(test_dma_copy_bytes-bytes<86016); // no compulsory84KiB stream
+        if(f>=50 && f<172) {
+            assert(REG_BLDALPHA==original_alpha && (REG_WINOUT&0x20));
+            assert(REG_BLDY==(f<=140 ? 0 : f<=156 ? f-140 : 172-f));
+            assert(test_bgs[g_bg_id_canvas].y==-video_bomb_shake());
+            assert(test_bgs[g_bg_id_tiles].y==-video_bomb_shake());
+            assert(test_bgs[g_bg_id_background].y==-video_bomb_shake());
+            assert(test_objs[0].y==Camera::y(player_get_state().y_position)+video_bomb_shake());
+            assert(test_objs[OAM_SLOT_HUD_LIVES].y==hud_y);
+        } else assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY==original_y && REG_WINOUT==original_window);
+        if(f==49) assert(stage_cardcombo_cur==0);
+        if(f==85 || f==148 || f==156) {
+            const unsigned paused_frame=frame,paused_timer=stage_timer;
+            const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,brightness=REG_BLDY,window=REG_WINOUT;
+            const u16 master=REG_MASTER_BRIGHT;
+            const std::vector<u16> pixels(BG_BMP_RAM(CANVAS_BMP_BLOCK),BG_BMP_RAM(CANVAS_BMP_BLOCK)+VIEW_W*VIEW_H);
+            const std::vector<u16> palette(BG_PALETTE,BG_PALETTE+256);
+            test_vblank_hook=[](){assert(REG_BLDCNT==0 && REG_MASTER_BRIGHT==0);test_keys_down=KEY_B;};assert(!pause_menu_run());
+            test_vblank_hook=nullptr;test_keys_down=0;
+            assert(player_bomb().frame()==(f<140?f:140) && frame==paused_frame && stage_timer==paused_timer);
+            assert(REG_BLDCNT==blend && REG_BLDALPHA==alpha && REG_BLDY==brightness && REG_WINOUT==window);
+            assert(REG_MASTER_BRIGHT==master);
+            assert(std::equal(pixels.begin(),pixels.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
+            assert(std::equal(palette.begin(),palette.end(),BG_PALETTE));
+        }
+    }
+    assert(stage_cardcombo_cur>0);
+    Pellets.init();Items.init();shots_initialize();popup_clear();player_initialize();
+    canvas_begin_frame();assert(std::all_of(canvas_at(0,0),canvas_at(0,0)+VIEW_W*VIEW_H,[](u16 c){return c==0;}));
+
+    // Both production bosses: source last-life restriction and GLOBAL frame
+    // cadence, not bomb-local %50. Two damage events land at global100/150.
+    for(int scene:{0,6}) for(int remaining_lives:{1,0}) {
+        stage_load(scene,4);
+        if(scene==0) for(int i=0;i<200;++i) singyoku_update();
+        lives=remaining_lives;rem_bombs=1;frame=48;
+        const int hp=scene==0 ? singyoku_state().health.hp : konngara.state().health.hp;
+        const auto allocation_count=test_heap_attempts,obj_count=test_obj_attempts;
+        orb_set_position(10000,200);gameplay_tick(KEY_X,KEY_X);
+        for(int f=0;f<=172;++f) {
+            const size_t bytes=test_dma_copy_bytes;
+            test_bg_update_hook=[](){if(player_bomb().frame()>=50) assert(REG_VCOUNT>=192 && REG_VCOUNT<200);};
+            orb_set_position(10000,200);gameplay_tick(0,0);
+            test_bg_update_hook=nullptr;
+            if(f>=52) assert(test_dma_copy_bytes-bytes<86016);
+            assert(REG_MASTER_BRIGHT==(f>=50 && f<140 ? (((f-50)/5)%2 ? 0x4005 : 0) : original_master));
+        }
+        assert((scene==0?singyoku_state().health.hp:konngara.state().health.hp)==hp-(remaining_lives==0?2:0));
+        assert(rem_bombs==0 && lives==remaining_lives && player_is_invincible());
+        assert(test_heap_attempts==allocation_count && test_obj_attempts==obj_count);
+        assert(!regular_bomb_canvas_owned && bool(g_canvas_target)==(scene==6));
+        rem_bombs=1;orb_set_position(10000,200);gameplay_tick(KEY_X,KEY_X);
+        for(int f=0;f<=65;++f) { orb_set_position(10000,200);gameplay_tick(0,0); }
+        assert(REG_MASTER_BRIGHT==0x4005);
+        assert(player_bomb().active() && video_bomb_effect_active());stage_load(0,0);
+        assert(!player_bomb().active() && !player_bomb().pending() && !g_canvas_target && !regular_bomb_canvas_owned);
+        assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY==original_y && REG_WINOUT==original_window);
+        assert(REG_MASTER_BRIGHT==original_master && REG_MASTER_BRIGHT_SUB==original_sub_master);
+    }
+    start_new_game();camera.snap_center();
+    assert(test_obj_count==79 && test_heap_count==baseline_blocks && test_heap_bytes==baseline_heap);
+    std::puts("Bombs: unchanged mechanics/kuji, white/indigo palettes,5-frame0/5 master pulse, source shake, white recovery, sparse uploads, frozen pause and exact brightness/boss/navigation cleanup passed");
+}

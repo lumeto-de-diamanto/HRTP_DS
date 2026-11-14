@@ -16,6 +16,7 @@ inline u16 *BG_MAP_RAM(int n) { return test_vram.pixels + n * 1024; }
 inline u16 *BG_TILE_RAM(int n) { return test_vram.pixels + n * 8192; }
 inline u16 *BG_BMP_RAM(int n) { return test_vram.pixels + n * 8192; }
 inline size_t test_dma_fill_bytes{}, test_dma_copy_calls{};
+inline size_t test_dma_copy_bytes{};
 inline void (*test_dma_fill_hook)() = nullptr;
 inline uintptr_t test_dma_clean_start{}, test_dma_clean_end{};
 inline void DC_FlushRange(const void *in, size_t size) {
@@ -31,6 +32,7 @@ inline void dmaFillHalfWords(u16 v, void *out, size_t size) {
 }
 inline void dmaCopyHalfWords(int, const void *in, void *out, size_t size) {
     ++test_dma_copy_calls;
+    test_dma_copy_bytes+=size;
     // Do not silently emulate cache coherence that ARM9 hardware lacks. The
     // previous stack-DMA background path fails this model unless flushed.
     const auto address = reinterpret_cast<uintptr_t>(in);
@@ -44,6 +46,11 @@ inline constexpr int DISPLAY_WIN0_ON = 1 << 13, DISPLAY_WIN1_ON = 1 << 14;
 inline u32 REG_DISPCNT{};
 inline u16 REG_VCOUNT = 192;
 inline u16 REG_WIN0H{}, REG_WIN1H{}, REG_WIN0V{}, REG_WIN1V{}, REG_WININ{}, REG_WINOUT{};
+inline u16 REG_BLDCNT{},REG_BLDALPHA{},REG_BLDY{};
+inline u16 REG_MASTER_BRIGHT{},REG_MASTER_BRIGHT_SUB{};
+inline constexpr int BLEND_ALPHA=1<<6,BLEND_SRC_BG2=1<<2,
+    BLEND_DST_BG1=1<<9,BLEND_DST_BG3=1<<11,BLEND_DST_SPRITE=1<<12,BLEND_DST_BACKDROP=1<<13;
+inline constexpr int BLEND_FADE_WHITE=2<<6,BLEND_SRC_BG3=1<<3,BLEND_SRC_BACKDROP=1<<5;
 struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; bool visible = true; };
 inline TestBg test_bgs[4];
 inline void videoSetMode(int) {}

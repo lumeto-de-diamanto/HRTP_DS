@@ -46,6 +46,7 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertIn('nitrofs/konngara_combat.bin', before)
                 self.assertIn('nitrofs/konngara_slash.bin', before)
                 self.assertIn('nitrofs/konngara_defeat.bin', before)
+                self.assertIn('assets/processed/sprites/BombKuji.h', before)
                 for scene in range(7):
                     self.assertEqual((root / f'nitrofs/st{scene}.bin').stat().st_size, 61440)
                 self.assertIn('FONT16X16_GLYPH_COUNT 272',
@@ -65,7 +66,8 @@ class AssetBuildTests(unittest.TestCase):
                 for path in ('nitrofs/st0.bin', 'assets/processed/backgrounds/boss1.h',
                              'assets/packfile/STAGE0.DAT', 'assets/hdi_dump/BOSS8_D2.GRP',
                              'nitrofs/konngara_art.bin', 'nitrofs/konngara_combat.bin', 'nitrofs/konngara_slash.bin', 'assets/packfile/BOSS8_E1.BOS',
-                             'assets/hdi_dump/BOSS8.GRZ', 'nitrofs/konngara_defeat.bin'):
+                              'assets/hdi_dump/BOSS8.GRZ', 'nitrofs/konngara_defeat.bin',
+                              'assets/packfile/KUZI1.GRC', 'assets/processed/sprites/BombKuji.h'):
                     (root / path).unlink()
                 self.make_assets(root, jobs)
                 after = self.snapshot(root)

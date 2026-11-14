@@ -2,6 +2,7 @@
 
 #include "main/playfld.hpp"
 #include "main/player/invincibility.hpp"
+#include "main/player/bomb.hpp"
 
 static const int PLAYER_W = 32;
 static const int PLAYER_H = 32;
@@ -78,3 +79,5 @@ void player_miss();
 bool player_is_invincible();
 bool player_is_invincible_to_orb();
 const InvincibilitySparkles &player_invincibility_sparkles();
+const PlayerBomb &player_bomb();
+void player_bomb_cancel();

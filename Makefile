@@ -121,7 +121,7 @@ sfx-tests: native-sfx
 	@mkdir -p build/native_sfx/tests
 	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I. -Inative_audio/service_stubs -Itools tests/test_native_sfx.cpp -o build/native_sfx/tests/player
 	build/native_sfx/tests/player nitrofs/audio/sfx.bin
-	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform tests/test_sfx_gameplay_hooks.cpp source/engine/main/player/shot.cpp source/engine/main/stage/card.cpp source/engine/main/stage/item.cpp -o build/native_sfx/tests/hooks
+	$(HOST_CXX) -O2 -std=c++17 -Wall -Wextra -I$(BLOCKSDS)/libs/libnds/include -Isource/engine -Isource/platform tests/test_sfx_gameplay_hooks.cpp source/engine/main/player/shot.cpp source/engine/main/stage/card.cpp source/engine/main/stage/item.cpp source/engine/main/random.cpp -o build/native_sfx/tests/hooks
 	build/native_sfx/tests/hooks
 
 native-tests: native-soundtrack
@@ -154,6 +154,7 @@ VIEWPORT_TEST_SOURCES += tests/heap_probe.cpp tests/test_stage_entrance.cpp sour
 VIEWPORT_TEST_SOURCES += tests/test_konngara_review.cpp $(addprefix source/platform/,konngara_art_render.cpp konngara_combat_render.cpp konngara_combat_review.cpp)
 VIEWPORT_TEST_SOURCES += source/platform/konngara_defeat_render.cpp
 VIEWPORT_TEST_SOURCES += source/platform/konngara_intro_render.cpp source/platform/menu_render.cpp source/engine/main/bonus.cpp
+VIEWPORT_TEST_SOURCES += source/platform/bomb_render.cpp
 HEAP_PROBE_LDFLAGS := -Wl,--wrap=malloc,--wrap=free
 viewport-tests: assets native-soundtrack
 	@mkdir -p build/viewport/tests

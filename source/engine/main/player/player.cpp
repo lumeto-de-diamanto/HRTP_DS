@@ -2,6 +2,8 @@
 #include "shot.hpp"
 #include "orb.hpp"
 #include "main/stage/timer.hpp"
+#include "main/stage/item.hpp"
+#include "main/bullet/pellet.hpp"
 #include "rank.h"
 #include "nds/input.h"
 #include "sound_effects.hpp"
@@ -88,6 +90,7 @@ bool invincible_to_orb;
 bool invincible;
 int miss_invincibility_frames;
 static InvincibilitySparkles invincibility_sparkles;
+static PlayerBomb bomb;
 
 bool player_is_hit = false;
 
@@ -119,6 +122,7 @@ void player_initialize() {
 	invincible = false;
 	miss_invincibility_frames = 0;
 	invincibility_sparkles.reset();
+	bomb.reset();
 
 	player.x_position = PLAYER_LEFT_START;
 	player.y_position = player_top;
@@ -155,6 +159,29 @@ static void player_update_controls(uint16_t keys_held, uint16_t keys_down) {
 
 	run_cycle++;
 	if (run_cycle >= RUN_FRAMES) run_cycle = 0;
+
+    const bool bomb_pressed = bomb.input(b_down,a_down,(keys_down & KEY_X)!=0,
+        left_held && right_held,(keys_held & KEY_SELECT)!=0);
+    if(rem_bombs<=0) bomb.discard_request(); // do not auto-use a later pickup
+    if(bomb.pending() || bomb.active()) {
+        bomb.advance();
+        mode=M_REGULAR;submode=STATIONARY;mode_timer=0;
+        sliding=false;combo_enabled=false;invincible_to_orb=false;
+        deflecting=bomb.active();
+        player.spritesheet=PLAYER;
+        player.sprite_number=bomb.active() ? SPRITE_SHOOT_LEFT : SPRITE_IDLE_LEFT;
+        orb_hits_player(player.x_position,player.y_position,1,player_is_invincible(),false);
+        const int f=bomb.frame();
+        if(f==0) --rem_bombs;
+        if(f==0 || (f<50 && f%10==0)) Pellets.decay();
+        if(f==30) mdrv2_se_play(SFX_BOMB_START);
+        if(f>50 && f<140 && f%10==0) mdrv2_se_play(SFX_BOMB_ACTIVE);
+        if(f==140) miss_invincibility_frames=100;
+        return;
+    }
+    if(bomb_pressed && mode!=M_SPECIAL_FIRST && rem_bombs>0) {
+        bomb.arm();pellet_speed_raise(0.025f);return;
+    }
 
 	if (mode == M_REGULAR) {
 		if (left_held && !right_held) {
@@ -530,6 +557,9 @@ const InvincibilitySparkles &player_invincibility_sparkles()
     return invincibility_sparkles;
 }
 
+const PlayerBomb &player_bomb() { return bomb; }
+void player_bomb_cancel() { bomb.reset();deflecting=false; }
+
 const PlayerState &player_get_state()
 {
 	return player;
@@ -549,7 +579,7 @@ void player_miss()
 
 bool player_is_invincible()
 {
-	return invincible || (miss_invincibility_frames > 0);
+	return invincible || bomb.active() || (miss_invincibility_frames > 0);
 }
 
 bool player_is_invincible_to_orb()

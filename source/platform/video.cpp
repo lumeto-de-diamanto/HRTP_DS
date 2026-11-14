@@ -7,10 +7,22 @@ int g_bg_id_tiles;
 int g_bg_id_canvas;
 static unsigned canvas_foreground_depth;
 static u16 saved_window_in;
+static bool bomb_effect_owned,bomb_paused,bomb_palette_dirty,bomb_palette_inverted;
+static u16 bomb_saved_control,bomb_saved_alpha,bomb_saved_y,bomb_saved_window,bomb_saved_master;
+static u16 bomb_normal[208],bomb_indigo[208]; // BG3 only; BG0/BG1 use208..255
+static u16 bomb_obj_normal[144],bomb_obj_indigo[144];
+static bool bomb_obj_owned,bomb_obj_dirty,bomb_obj_inverted;
+static int bomb_obj_brightness;
+static unsigned bomb_recovery_start;
+static int bomb_phase,bomb_brightness,bomb_shake_y,bomb_master;
+static bool bomb_inverted;
 
 void video_init()
 {
     canvas_foreground_depth = 0;
+    bomb_effect_owned=bomb_paused=false;bomb_phase=bomb_brightness=bomb_shake_y=0;
+    bomb_obj_owned=false;bomb_master=0;
+    REG_BLDCNT=0;REG_BLDALPHA=0;REG_BLDY=0;REG_MASTER_BRIGHT=0;
     videoSetMode(MODE_5_2D);
     // Main sprite VRAM is only available on banks A, B and E; A+B hold the
     // main BGs; D adds a separate effects canvas, E supplies 64KB OBJ VRAM.
@@ -60,6 +72,127 @@ void video_apply_death_shake(int down_pixels, bool konngara)
         const auto &entry = oamMain.oamMemory[slot];
         oamSetXY(&oamMain, slot, entry.x, entry.y + down_pixels);
     }
+}
+
+u16 video_bomb_indigo(u16 color)
+{
+    // Inverse luminance, colourised white -> source flash palette's (6,6,F).
+    // This deliberately is neither a component-wise negative nor index XOR.
+    const int light=(77*(color&31)+150*((color>>5)&31)+29*((color>>10)&31)+128)>>8;
+    const int component=31-(19*light+15)/31;
+    return RGB15(component,component,31);
+}
+
+void video_bomb_palette_changed()
+{
+    if(!bomb_effect_owned) return;
+    for(unsigned i=0;i<208;++i) {
+        bomb_normal[i]=BG_PALETTE[i];bomb_indigo[i]=video_bomb_indigo(bomb_normal[i]);
+    }
+    bomb_palette_dirty=true;
+}
+
+void video_bomb_obj_palette_changed()
+{
+    if(!bomb_obj_owned) return;
+    for(unsigned i=0;i<144;++i) {
+        bomb_obj_normal[i]=SPRITE_PALETTE[112+i];
+        bomb_obj_indigo[i]=video_bomb_indigo(bomb_obj_normal[i]);
+    }
+    bomb_obj_dirty=true;
+}
+
+void video_bomb_prepare(bool active,int local_frame,unsigned gameplay_frame)
+{
+    bomb_shake_y=0;bomb_brightness=0;bomb_inverted=false;bomb_master=0;
+    if(active) {
+        // A second bomb can interrupt cosmetic recovery without extending or
+        // retriggering gameplay damage. Its approved kuji intro is unmodified.
+        bomb_phase=local_frame>=50 ? 1 : 0;
+        bomb_inverted=bomb_phase==1;
+        if(bomb_phase && ((local_frame-50)/5)%2) bomb_master=(1<<14)|5;
+        if(bomb_phase && local_frame>=52) {
+            static const int shake[]={4,0,8,0};
+            bomb_shake_y=shake[(local_frame/4)%4];
+        }
+    } else {
+        if(bomb_phase==1) { bomb_phase=2;bomb_recovery_start=gameplay_frame; }
+        if(bomb_phase==2) {
+            const unsigned age=gameplay_frame-bomb_recovery_start;
+            if(age>=32) bomb_phase=0;
+            else {
+                bomb_inverted=age<16;
+                bomb_brightness=age<=16 ? int(age) : 32-int(age);
+            }
+        }
+    }
+}
+
+bool video_bomb_effect_active() { return bomb_phase!=0 || bomb_effect_owned; }
+int video_bomb_shake() { return bomb_shake_y; }
+
+void video_bomb_reset()
+{
+    if(bomb_effect_owned) {
+        for(unsigned i=0;i<208;++i) BG_PALETTE[i]=bomb_normal[i];
+        if(bomb_obj_owned) for(unsigned i=0;i<144;++i) SPRITE_PALETTE[112+i]=bomb_obj_normal[i];
+        REG_BLDCNT=bomb_saved_control;REG_BLDALPHA=bomb_saved_alpha;
+        REG_BLDY=bomb_saved_y;REG_WINOUT=bomb_saved_window;
+        REG_MASTER_BRIGHT=bomb_saved_master;
+    }
+    bomb_effect_owned=bomb_paused=bomb_obj_owned=false;
+    bomb_phase=bomb_brightness=bomb_shake_y=0;bomb_inverted=false;
+}
+
+void video_canvas_effect_commit()
+{
+    if(!bomb_effect_owned) return;
+    // BG3's transparent index0 reveals the backdrop, so fade that too. No
+    // foreground layer is a brightness target; HUD windows keep effects off.
+    REG_BLDCNT=(!bomb_paused && !canvas_foreground_depth && bomb_brightness) ?
+        BLEND_FADE_WHITE|BLEND_SRC_BG3|BLEND_SRC_BACKDROP : 0;
+    REG_BLDY=bomb_brightness;
+    // Master brightness is a final-output effect: intentionally includes HUD
+    // and foreground ink. No pulse in the approved intro or cosmetic recovery.
+    REG_MASTER_BRIGHT=(!bomb_paused && !canvas_foreground_depth && bomb_phase==1) ? bomb_master : bomb_saved_master;
+}
+
+void video_bomb_commit(bool konngara)
+{
+    if(!bomb_phase) { video_bomb_reset();return; }
+    if(!bomb_effect_owned) {
+        bomb_saved_control=REG_BLDCNT;bomb_saved_alpha=REG_BLDALPHA;
+        bomb_saved_y=REG_BLDY;bomb_saved_window=REG_WINOUT;
+        bomb_saved_master=REG_MASTER_BRIGHT;
+        bomb_effect_owned=true;video_bomb_palette_changed();
+    }
+    if(konngara && !bomb_obj_owned) {
+        bomb_obj_owned=true;video_bomb_obj_palette_changed();
+    }
+    if(bomb_palette_dirty || bomb_palette_inverted!=bomb_inverted) {
+        const u16 *palette=bomb_inverted ? bomb_indigo : bomb_normal;
+        for(unsigned i=0;i<208;++i) BG_PALETTE[i]=palette[i];
+        bomb_palette_dirty=false;bomb_palette_inverted=bomb_inverted;
+    }
+    if(bomb_obj_owned && (bomb_obj_dirty || bomb_obj_inverted!=bomb_inverted || bomb_obj_brightness!=bomb_brightness)) {
+        const u16 *palette=bomb_inverted ? bomb_obj_indigo : bomb_obj_normal;
+        // Fade only the boss's private OBJ palette through white alongside BG3.
+        // Selecting OBJ in BLDY would also whiten Reimu, items and the HUD.
+        for(unsigned i=0;i<144;++i) {
+            const u16 c=palette[i];
+            const int r=c&31,g=(c>>5)&31,b=(c>>10)&31,t=bomb_brightness;
+            SPRITE_PALETTE[112+i]=RGB15(r+((31-r)*t)/16,g+((31-g)*t)/16,b+((31-b)*t)/16);
+        }
+        bomb_obj_dirty=false;bomb_obj_inverted=bomb_inverted;bomb_obj_brightness=bomb_brightness;
+    }
+    REG_WINOUT=bomb_saved_window|0x20;
+    video_canvas_effect_commit();
+}
+
+void video_bomb_pause(bool paused)
+{
+    bomb_paused=paused;
+    video_canvas_effect_commit();
 }
 
 static void hud_oam_priority(int priority)
