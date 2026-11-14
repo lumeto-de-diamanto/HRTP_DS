@@ -6,6 +6,11 @@
 #include "sprites/HudIcons.h"
 
 namespace {
+constexpr int regular_bombs_x = 104, boss_bombs_x = 32, boss_hp_x = 64;
+static_assert(UPPER_HUD_MAX_LIVES * 16 + 8 <= regular_bombs_x, "life/bomb icon rows overlap");
+static_assert(regular_bombs_x + UPPER_HUD_MAX_BOMBS * 16 <= TEXT_HUD_TIMER_X, "bomb row overlaps timer");
+static_assert(boss_hp_x + UPPER_HUD_MAX_BOSS_HP * 8 <= TEXT_HUD_TIMER_X, "maximum boss HP overlaps timer");
+static_assert(UPPER_HUD_MAX_BOSS_HP <= OAM_HUD_HP_COUNT * 8, "insufficient HP strips");
 u16 *icons[2];
 u16 *health[OAM_HUD_HP_COUNT];
 int last_lives = -1, last_bombs = -1;
@@ -44,11 +49,12 @@ bool upper_hud_init()
         SPRITE_PALETTE[OBJ_PAL_HUD_ICONS * 16 + i] = HudIcons_palette[i];
     SPRITE_PALETTE[OBJ_PAL_OVERLAY * 16 + 1] = RGB15(31, 0, 0);
     SPRITE_PALETTE[OBJ_PAL_OVERLAY * 16 + 2] = RGB15(31, 31, 31);
-    // Compact boss resources leave144px for all original bosses' <=18 HP.
+    // Compact boss resources leave144px for all original bosses' <=18 HP,
+    // plus a16px gap before the halfwidth timer.
     // Eight points per64px OBJ keeps the scanline budget comfortably small.
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) {
         obj4_clear(health[i], 1024);
-        oamSet(&oamMain, OAM_SLOT_HUD_HP + i, 48 + i * 64, 0,
+        oamSet(&oamMain, OAM_SLOT_HUD_HP + i, boss_hp_x + i * 64, 0,
             0, OBJ_PAL_OVERLAY, SpriteSize_64x32, SpriteColorFormat_16Color,
             health[i], -1, false, true, false, false, false);
     }
@@ -68,7 +74,7 @@ void upper_hud_invalidate()
 void upper_hud_render(int lives, int bombs, unsigned timer, UpperHudMode mode)
 {
     lives = view_clamp(lives, 0, 12);
-    bombs = view_clamp(bombs, 0, 5);
+    bombs = view_clamp(bombs, 0, UPPER_HUD_MAX_BOMBS);
     if (!mode_valid || mode != last_mode) {
         text_layer_hud_resources_clear();
         upper_hud_boss_hide();
@@ -79,20 +85,20 @@ void upper_hud_render(int lives, int bombs, unsigned timer, UpperHudMode mode)
             // Icons remain visible at zero; their adjacent numbers carry the
             // actual resource state. Only a mode change needs to position them.
             icon_row(OAM_SLOT_HUD_LIVES, 0, 1, 12, 1, icons[0]);
-            icon_row(OAM_SLOT_HUD_BOMBS, 24, 1, 5, 1, icons[1]);
+            icon_row(OAM_SLOT_HUD_BOMBS, boss_bombs_x, 1, UPPER_HUD_MAX_BOMBS, 1, icons[1]);
         }
     }
     if (lives != last_lives) {
         if (mode == UpperHudMode::Regular) {
-            icon_row(OAM_SLOT_HUD_LIVES, 0, lives, 12, 5, icons[0]);
+            icon_row(OAM_SLOT_HUD_LIVES, 0, lives, 12, UPPER_HUD_MAX_LIVES, icons[0]);
             text_layer_hud_lives_count(lives);
         } else text_layer_hud_resource_number(2, lives);
         last_lives = lives;
     }
     if (bombs != last_bombs) {
         if (mode == UpperHudMode::Regular)
-            icon_row(OAM_SLOT_HUD_BOMBS, 88, bombs, 5, 5, icons[1]);
-        else text_layer_hud_resource_number(5, bombs);
+            icon_row(OAM_SLOT_HUD_BOMBS, regular_bombs_x, bombs, UPPER_HUD_MAX_BOMBS, UPPER_HUD_MAX_BOMBS, icons[1]);
+        else text_layer_hud_resource_number(boss_bombs_x / 8 + 2, bombs);
         last_bombs = bombs;
     }
     text_layer_hud_timer(timer);
@@ -109,7 +115,7 @@ void upper_hud_boss_hide()
 void upper_hud_boss(int hp, int displayed, int first_redwhite, int first_white)
 {
     if (!mode_valid || last_mode != UpperHudMode::Boss) return;
-    const int points = view_clamp(hp < displayed ? hp : displayed, 0, 18);
+    const int points = view_clamp(hp < displayed ? hp : displayed, 0, UPPER_HUD_MAX_BOSS_HP);
     if (points != last_hp || first_redwhite != last_redwhite || first_white != last_white) {
         // Source hp.cpp: 8px pitch, 7px FE mask, 15px height. Its A7 pattern
         // alternates red/white columns, not checkerboard rows.

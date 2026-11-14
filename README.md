@@ -57,7 +57,9 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
     player effects implemented; other boss effects remain)
   * [x] Bitmap background
   * [x] Tiles, turrets and barriers
-  * [ ] HUD (*in progress*, functional but needs some visual refinement)
+  * [ ] HUD
+    * [x] Top screen HUD
+    * [ ] Bottom screen HUD (*in progress*, functional but needs visual refinement)
   * [x] Font
 * [ ] Core gameplay
   * [x] Player controls

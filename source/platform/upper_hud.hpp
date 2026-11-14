@@ -1,6 +1,10 @@
 #pragma once
 
-// Original-size BG0 timer and OAM icons/HP. All HUD drawing is BG0/OAM.
+// Halfwidth8x16 BG0 timer; original-size OAM icons/HP. No software canvas ink.
+// Source caps, not the larger diagnostic count range accepted by the renderer.
+constexpr int UPPER_HUD_MAX_LIVES = 6;
+constexpr int UPPER_HUD_MAX_BOMBS = 5;
+constexpr int UPPER_HUD_MAX_BOSS_HP = 18;
 enum class UpperHudMode { Regular, Boss };
 bool upper_hud_init();
 // After an external fullscreen OAM hide, republish cached icons/HP next draw.

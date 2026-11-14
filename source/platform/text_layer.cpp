@@ -3,7 +3,7 @@
 
 #include "text_layer.hpp"
 #include "palette.hpp"
-#include "font16x16.hpp"
+#include "upper_hud.hpp"
 
 #include "fonts/font8x16.h"
 
@@ -14,8 +14,7 @@
 #define TEXT_SCREENBLOCK 30
 #define TEXT_FIRST_TILE 1
 #define TEXT_MAP_W 32 // tiles
-#define HUD_DIGIT_FIRST (TEXT_FIRST_TILE + 96 * 2)
-#define HUD_DIVIDER_TILE (HUD_DIGIT_FIRST + 10 * 4)
+#define HUD_DIVIDER_TILE (TEXT_FIRST_TILE + 96 * 2)
 #define HUD_COUNT_FIRST (HUD_DIVIDER_TILE + 1)
 static unsigned last_hud_timer = ~0u;
 
@@ -54,25 +53,9 @@ void text_layer_init()
     BG_PALETTE[TEXT_PAL_RED * 16 + 1] = RGB15(31, 0, 0);
     BG_PALETTE[TEXT_PAL_RED * 16 + 2] = RGB15(31, 0, 0);
 
-    // Original 16x16 fullwidth digits, four 8x8 BG0 tiles per digit.
+    // Timer digits reuse the native8x16 ANK tiles above. No squeezed fullwidth
+    // glyphs or second digit atlas: alternate font inputs stay supported.
     u16 *base = BG_TILE_RAM(TEXT_TILE_BASE);
-    for (int digit = 0; digit < 10; ++digit) {
-        const u16 *glyph = font16x16_find(JIS_FULLWIDTH_DIGIT_0 + digit);
-        for (int qy = 0; qy < 2; ++qy) {
-            for (int qx = 0; qx < 2; ++qx) {
-                u16 *tile = base + (HUD_DIGIT_FIRST + digit * 4 + qy * 2 + qx) * 16;
-                for (int y = 0; y < 8; ++y) {
-                    for (int half = 0; half < 2; ++half) {
-                        u16 packed = 0;
-                        for (int x = 0; x < 4; ++x)
-                            if (glyph && (glyph[qy * 8 + y] & (0x8000 >> (qx * 8 + half * 4 + x))))
-                                packed |= 1 << (x * 4);
-                        tile[y * 2 + half] = packed;
-                    }
-                }
-            }
-        }
-    }
     u16 *divider = base + HUD_DIVIDER_TILE * 16;
     for (int i = 0; i < 16; ++i) divider[i] = i >= 14 ? 0x2222 : 0;
     // Normal resource limits fit one ANK digit. Preserve exact values for
@@ -109,12 +92,11 @@ void text_layer_hud_timer(unsigned value)
     last_hud_timer = value;
     const int bank = value < 200 ? TEXT_PAL_RED : TEXT_PAL_WHITE;
     unsigned divisor = 1000;
-    for (int i = 0; i < 4; ++i, divisor /= 10) {
-        const int tile = HUD_DIGIT_FIRST + ((value / divisor) % 10) * 4;
+    for (int i = 0; i < TEXT_HUD_TIMER_DIGITS; ++i, divisor /= 10) {
+        const int tile = TEXT_FIRST_TILE + ('0' + ((value / divisor) % 10) - 0x20) * 2;
         for (int y = 0; y < 2; ++y)
-            for (int x = 0; x < 2; ++x)
-                BG_MAP_RAM(TEXT_SCREENBLOCK)[y * 32 + 24 + i * 2 + x] =
-                    (tile + y * 2 + x) | TILE_PALETTE(bank);
+            BG_MAP_RAM(TEXT_SCREENBLOCK)[y * 32 + TEXT_HUD_TIMER_X / 8 + i] =
+                (tile + y) | TILE_PALETTE(bank);
     }
 }
 
@@ -126,7 +108,7 @@ void text_layer_hud_lives_count(int count)
     for (int i = 0; i < 3; ++i) {
         const int tile = TEXT_FIRST_TILE + (text[i] - 0x20) * 2;
         for (int y = 0; y < 2; ++y)
-            BG_MAP_RAM(TEXT_SCREENBLOCK)[y * 32 + gx + i] = count > 5 ?
+            BG_MAP_RAM(TEXT_SCREENBLOCK)[y * 32 + gx + i] = count > UPPER_HUD_MAX_LIVES ?
                 (tile + y) | TILE_PALETTE(TEXT_PAL_WHITE) : 0;
     }
 }
@@ -134,7 +116,7 @@ void text_layer_hud_lives_count(int count)
 void text_layer_hud_resources_clear()
 {
     for (int y = 0; y < 2; ++y)
-        dmaFillHalfWords(0, BG_MAP_RAM(TEXT_SCREENBLOCK) + y * 32, 24 * sizeof(u16));
+        dmaFillHalfWords(0, BG_MAP_RAM(TEXT_SCREENBLOCK) + y * 32, (TEXT_HUD_TIMER_X / 8) * sizeof(u16));
 }
 
 void text_layer_hud_resource_number(int gx, int count)

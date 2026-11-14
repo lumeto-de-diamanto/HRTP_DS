@@ -490,21 +490,21 @@ int main()
     boss_render_frame(); assert(test_objs[40].x == 64 && test_objs[40].y == 24 && test_objs[40].priority == 1);
 
     // HUD/arrow issue zero software canvas writes; BG0 tile rows + OAM only.
-    canvas_playfield_clip(false); canvas_clear(); upper_hud_render(5, 5, 1000);
+    canvas_playfield_clip(false); canvas_clear(); upper_hud_render(6, 5, 1000);
     assert(ink_count() == 0);
-    assert(!test_objs[OAM_SLOT_HUD_LIVES + 4].hidden && test_objs[OAM_SLOT_HUD_LIVES + 5].hidden);
+    assert(!test_objs[OAM_SLOT_HUD_LIVES + 5].hidden && test_objs[OAM_SLOT_HUD_LIVES + 6].hidden);
     assert(!test_objs[OAM_SLOT_HUD_BOMBS + 4].hidden);
-    assert(test_objs[OAM_SLOT_HUD_LIVES + 4].x == 64 && test_objs[OAM_SLOT_HUD_BOMBS + 4].x == 152);
+    assert(test_objs[OAM_SLOT_HUD_LIVES + 5].x == 80 && test_objs[OAM_SLOT_HUD_BOMBS + 4].x == 168);
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) assert(test_objs[OAM_SLOT_HUD_HP + i].hidden);
     assert(test_objs[OAM_SLOT_HUD_LIVES].size == SpriteSize_16x16);
     for (int y = 0; y < 16; ++y)
         for (int x = 0; x < 16; ++x)
             assert(obj_pixel(OAM_SLOT_HUD_LIVES, x, y) == HudIcons_pixels[0][y * 16 + x]);
     // Switching modes MUST redraw resources even when counts/timer are identical.
-    upper_hud_render(5, 5, 1000, UpperHudMode::Boss); upper_hud_boss(8, 8);
+    upper_hud_render(6, 5, 1000, UpperHudMode::Boss); upper_hud_boss(8, 8);
     assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && test_objs[OAM_SLOT_HUD_LIVES + 1].hidden);
     assert(!test_objs[OAM_SLOT_HUD_BOMBS].hidden && test_objs[OAM_SLOT_HUD_BOMBS + 1].hidden);
-    assert(test_objs[OAM_SLOT_HUD_BOMBS].x == 24 && test_objs[OAM_SLOT_HUD_HP].x == 48);
+    assert(test_objs[OAM_SLOT_HUD_BOMBS].x == 32 && test_objs[OAM_SLOT_HUD_HP].x == 64);
     assert(obj_pixel(OAM_SLOT_HUD_HP, 0, 0) == 1 && obj_pixel(OAM_SLOT_HUD_HP, 48, 0) == 2);
     assert(obj_pixel(OAM_SLOT_HUD_HP, 7, 0) == 0); // source FE mask gap
     assert(obj_pixel(OAM_SLOT_HUD_HP, 0, 14) == 1 && obj_pixel(OAM_SLOT_HUD_HP, 0, 15) == 0);
@@ -512,16 +512,23 @@ int main()
     assert(obj_pixel(OAM_SLOT_HUD_HP, 17, 1) == 2); // source A7 columns, not checkerboard
     auto *text_map = BG_MAP_RAM(30);
     const auto divider = text_map[64];
-    assert(divider && text_map[24]);
+    assert(divider && text_map[28]);
     // Warning ink is pure red below 200, including zero as in timer_put().
     // Check the actual palette bank used by all four displayed digits.
     assert(BG_PALETTE[TEXT_PAL_RED * 16 + 1] == RGB15(31, 0, 0));
-    for (unsigned remaining : {1000u, 200u, 198u, 2u, 0u, 1000u}) {
+    for (unsigned remaining : {1000u, 9999u, 10000u, ~0u, 200u, 199u, 198u, 42u, 2u, 0u, 1000u}) {
         text_layer_hud_timer(remaining);
         for (int y = 0; y < 2; ++y)
-            for (int x = 24; x < 32; ++x)
+            for (int x = 28; x < 32; ++x)
                 assert((text_map[y * 32 + x] >> 12) ==
                        (remaining < 200 ? TEXT_PAL_RED : TEXT_PAL_WHITE));
+        // Every digit is an unmodified native ANK glyph, including leading
+        // zeroes and9999 saturation. No baked/squeezed fullwidth digits remain.
+        const unsigned shown=remaining>9999 ? 9999 : remaining;
+        unsigned divisor=1000;
+        for(int digit=0;digit<4;++digit,divisor/=10)
+            for(int y=0;y<16;++y) for(int x=0;x<8;++x)
+                assert(bg0_pixel(224+digit*8+x,y)==!!(font8x16['0'+(shown/divisor)%10-0x20][y]&(0x80>>x)));
     }
     palette_dim(40);
     assert(BG_PALETTE[TEXT_PAL_RED * 16 + 1] == RGB15(12, 0, 0));
@@ -536,26 +543,26 @@ int main()
     upper_hud_render(0, 0, 0, UpperHudMode::Boss); upper_hud_boss(0, 0);
     assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && !test_objs[OAM_SLOT_HUD_BOMBS].hidden);
     assert(test_objs[OAM_SLOT_HUD_HP].hidden);
-    assert((text_map[24] & 1023) == (hud_map[24] & 1023) - 4); // timer 1000 -> 0000
+    assert((text_map[28] & 1023) == (hud_map[28] & 1023) - 2); // timer 1000 -> 0000
     for (unsigned digit = 0; digit < 10; ++digit) {
         text_layer_hud_timer(digit * 1111);
-        const u16 *glyph = font16x16_find(JIS_FULLWIDTH_DIGIT_0 + digit);
+        const u8 *glyph = font8x16['0' + digit - 0x20];
         for (int y = 0; y < 16; ++y)
-            for (int x = 0; x < 16; ++x)
-                assert(bg0_pixel(192 + x, y) == !!(glyph[y] & (0x8000 >> x)));
+            for (int x = 0; x < 8; ++x)
+                assert(bg0_pixel(224 + x, y) == !!(glyph[y] & (0x80 >> x)));
     }
     upper_hud_render(12, 5, 100); // regular-stage overflow is still represented exactly
     assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && test_objs[OAM_SLOT_HUD_LIVES + 1].hidden);
     assert(!test_objs[OAM_SLOT_HUD_BOMBS + 4].hidden);
     assert(text_map[2] && text_map[3] && text_map[4]); // x12 beside one life icon
-    assert(test_objs[OAM_SLOT_HUD_BOMBS + 4].x == 152);
-    upper_hud_render(6, 5, 100);
+    assert(test_objs[OAM_SLOT_HUD_BOMBS + 4].x == 168);
+    upper_hud_render(7, 5, 100);
     assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && test_objs[OAM_SLOT_HUD_LIVES + 1].hidden && text_map[2]);
-    upper_hud_render(5, 5, 100);
-    assert(!test_objs[OAM_SLOT_HUD_LIVES + 4].hidden && !text_map[2] && !text_map[3] && !text_map[4]);
+    upper_hud_render(6, 5, 100);
+    assert(!test_objs[OAM_SLOT_HUD_LIVES + 5].hidden && !text_map[2] && !text_map[3] && !text_map[4]);
     std::vector<u16> timer_map;
     for (int y = 0; y < 2; ++y)
-        for (int x = 24; x < 32; ++x) timer_map.push_back(text_map[y * 32 + x]);
+        for (int x = 28; x < 32; ++x) timer_map.push_back(text_map[y * 32 + x]);
     for (int count = 0; count <= 12; ++count) {
         upper_hud_render(count, 5, 100, UpperHudMode::Boss);
         for (int y = 0; y < 16; ++y)
@@ -569,7 +576,7 @@ int main()
     upper_hud_boss(18, 18);
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) {
         assert(!test_objs[OAM_SLOT_HUD_HP + i].hidden);
-        assert(test_objs[OAM_SLOT_HUD_HP + i].x == 48 + i * 64);
+        assert(test_objs[OAM_SLOT_HUD_HP + i].x == 64 + i * 64);
     }
     assert(obj_pixel(OAM_SLOT_HUD_HP + 2, 8, 14) == 2);
     assert(obj_pixel(OAM_SLOT_HUD_HP + 2, 15, 0) == 0 && obj_pixel(OAM_SLOT_HUD_HP + 2, 16, 0) == 0);
@@ -585,7 +592,32 @@ int main()
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) assert(!test_objs[OAM_SLOT_HUD_HP + i].hidden);
     int timer_index = 0;
     for (int y = 0; y < 2; ++y)
-        for (int x = 24; x < 32; ++x) assert(timer_map[timer_index++] == text_map[y * 32 + x]);
+        for (int x = 28; x < 32; ++x) assert(timer_map[timer_index++] == text_map[y * 32 + x]);
+    // Maxima: six lives/five bombs, every boss health value through18, timer
+    //9999. Check ACTUAL ink (not64px HP sprite bounds with transparent padding).
+    const auto check_separation=[]() {
+        for(int y=0;y<16;++y) for(int x=0;x<256;++x) {
+            int ink=bg0_pixel(x,y)!=0;
+            for(int slot=OAM_SLOT_HUD_LIVES;slot<OAM_SLOT_HUD_HP+OAM_HUD_HP_COUNT;++slot) {
+                if(slot>=OAM_SLOT_HUD_BOMBS+5 && slot<OAM_SLOT_HUD_HP) continue;
+                const auto &obj=test_objs[slot];
+                const int width=slot>=OAM_SLOT_HUD_HP ? 64 : 16;
+                if(!obj.hidden && x>=obj.x && x<obj.x+width && y>=obj.y)
+                    ink+=obj_pixel(slot,x-obj.x,y-obj.y)!=0;
+            }
+            assert(ink<=1);
+        }
+    };
+    for(int count:{0,6,12}) for(int bombs:{0,5}) {
+        upper_hud_render(count,bombs,9999,UpperHudMode::Regular);check_separation();
+        for(int hp=0;hp<=18;++hp) {
+            upper_hud_render(count,bombs,9999,UpperHudMode::Boss);upper_hud_boss(hp,hp);check_separation();
+        }
+    }
+    // Re-enter maximum-HP mode with the same timer, including invalidation
+    // after cinematic OAM hiding. Preserve the cache and clean every old cell.
+    upper_hud_invalidate();upper_hud_render(12,5,100,UpperHudMode::Boss);upper_hud_boss(18,18);
+    for(int x=26;x<28;++x) for(int y=0;y<2;++y) assert(!text_map[y*32+x]);
     const auto idle_fills = test_dma_fill_bytes, idle_oam = test_oam_changes;
     for (int i = 0; i < 120; ++i) {
         upper_hud_render(12, 5, 100, UpperHudMode::Boss); upper_hud_boss(18, 18);
@@ -670,5 +702,5 @@ int main()
     test_player_death();
     test_bombs();
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
-    std::puts("Viewport: center-anchored regular parallax/boss 1:1, both full-size HUD modes, 18HP strips, cached mode handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
+    std::puts("Viewport: center-anchored parallax/boss 1:1, native halfwidth timer, six-life/five-bomb and18HP ink separation, cached HUD handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
 }

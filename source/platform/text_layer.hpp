@@ -12,9 +12,12 @@
 void text_layer_init();
 // Clear menu rows only; the upper three tile rows belong to the fixed HUD.
 void text_layer_clear();
+// Four native8x16 ANK digits, right-aligned; shared with HUD layout bounds.
+constexpr int TEXT_HUD_TIMER_DIGITS = 4;
+constexpr int TEXT_HUD_TIMER_X = 256 - TEXT_HUD_TIMER_DIGITS * 8;
 void text_layer_hud_timer(unsigned value);
 void text_layer_hud_resources_clear(); // preserves divider and timer/cache
-void text_layer_hud_lives_count(int count); // regular-stage fallback for >5 lives
+void text_layer_hud_lives_count(int count); // diagnostic fallback for >6 lives
 void text_layer_hud_resource_number(int gx, int count); // 8x16 boss count cell, 0..12
 
 // Glyph-grid coordinates: gx in 8px columns (0..31), gy in 16px rows
