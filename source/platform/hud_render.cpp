@@ -11,12 +11,15 @@
 #include "main/stage/item.hpp"
 #include "main/stage/timer.hpp"
 #include "rank.h"
+#include "main/player/player.hpp"
+#include "main/player/orb.hpp"
+#include <cstring>
 
 #include "fonts/font8x16.h"
 #include "font16x16.hpp"
 
-// Simple bottom-screen HUD; final styling remains M6. Values right-align to
-// shared edges per the project head's feedback.
+// Mockup layout: compact statistics down the left, small upper-right radar,
+// native fullwidth stage/rank below. The source-art pattern stays unchanged.
 
 static const char *rank_name()
 {
@@ -27,18 +30,18 @@ static const char *rank_name()
 
 namespace {
 bool initialized;
+bool radar_valid;
 struct HudValues { int score, hi, combo, maximum, stage, rank; } previous;
 
-void number_if_changed(int x, int y, int value, int old, int digits, bool wide, bool force)
+void number_if_changed(int x, int y, int value, int old, int digits, bool force)
 {
     if (!force && value == old) return;
-    subscreen_fill_rect(x, y, digits * (wide ? 16 : 8), 16, SUB_COL_BG);
-    if (wide) subscreen_fullwidth_number(x, y, value, digits, SUB_COL_FG);
-    else subscreen_number(x, y, value, digits, SUB_COL_FG);
+    subscreen_fill_rect(x, y, digits * 8, 16, SUB_COL_BG);
+    subscreen_number(x, y, value, digits, SUB_COL_FG);
 }
 }
 
-void hud_invalidate() { initialized = false; }
+void hud_invalidate() { initialized = false;radar_valid=false; }
 
 void hud_render(int /*lives*/, int stage)
 {
@@ -47,28 +50,128 @@ void hud_render(int /*lives*/, int stage)
     if (force) {
         subscreen_clear(SUB_COL_BG);
         // Static frame and labels are drawn once, not every game frame.
-        subscreen_fill_rect(0, 0, 256, 4, SUB_COL_FG);
-        subscreen_fill_rect(0, 188, 256, 4, SUB_COL_FG);
-        subscreen_fill_rect(0, 0, 4, 192, SUB_COL_FG);
-        subscreen_fill_rect(252, 0, 4, 192, SUB_COL_FG);
-        subscreen_text(8, 8, "SCORE", SUB_COL_DIM);
-        subscreen_text(8, 48, "HI", SUB_COL_DIM);
-        subscreen_text(8, 88, "COMBO", SUB_COL_DIM);
-        subscreen_text(8, 112, "MAX", SUB_COL_DIM);
-        subscreen_text(8, 160, "RANK", SUB_COL_DIM);
-        subscreen_text(152, 104, "STAGE", SUB_COL_DIM);
+        subscreen_fill_rect(HUD_RADAR_LEFT-1,HUD_RADAR_TOP-1,HUD_RADAR_W+2,1,SUB_COL_ACCENT);
+        subscreen_fill_rect(HUD_RADAR_LEFT-1,HUD_RADAR_TOP+HUD_RADAR_H,HUD_RADAR_W+2,1,SUB_COL_ACCENT);
+        subscreen_fill_rect(HUD_RADAR_LEFT-1,HUD_RADAR_TOP,1,HUD_RADAR_H,SUB_COL_ACCENT);
+        subscreen_fill_rect(HUD_RADAR_LEFT+HUD_RADAR_W,HUD_RADAR_TOP,1,HUD_RADAR_H,SUB_COL_ACCENT);
+        subscreen_text(8,16,"SCORE",SUB_COL_DIM);
+        subscreen_text(8,56,"HI SCORE",SUB_COL_DIM);
+        subscreen_text(8,96,"COMBO",SUB_COL_DIM);
+        subscreen_text(8,136,"MAX COMBO",SUB_COL_DIM);
+        subscreen_fullwidth_text(104,112,"STAGE",SUB_COL_DIM);
+        subscreen_fullwidth_text(104,144,"RANK",SUB_COL_DIM);
     }
-    number_if_changed(8, 24, now.score, previous.score, 7, true, force);
-    number_if_changed(8, 64, now.hi, previous.hi, 7, true, force);
-    number_if_changed(80, 88, now.combo, previous.combo, 3, true, force);
-    number_if_changed(80, 112, now.maximum, previous.maximum, 3, true, force);
-    number_if_changed(232, 124, now.stage, previous.stage, 2, false, force);
+    number_if_changed(24,32,now.score,previous.score,7,force);
+    number_if_changed(24,72,now.hi,previous.hi,7,force);
+    number_if_changed(56,112,now.combo,previous.combo,3,force);
+    number_if_changed(56,152,now.maximum,previous.maximum,3,force);
+    if (force || now.stage != previous.stage) {
+        subscreen_fill_rect(200,128,32,16,SUB_COL_BG);
+        subscreen_fullwidth_number(200,128,now.stage,2,SUB_COL_FG);
+    }
     if (force || now.rank != previous.rank) {
-        subscreen_fill_rect(56, 160, 56, 16, SUB_COL_BG);
-        subscreen_text(56, 160, rank_name(), SUB_COL_FG);
+        subscreen_fill_rect(136,160,112,16,SUB_COL_BG);
+        subscreen_fullwidth_text(136,160,rank_name(),SUB_COL_FG);
     }
     previous = now;
     initialized = true;
+}
+
+namespace {
+enum RadarShape { R_NONE,R_CARD,R_CROSS,R_BAR,R_PORTAL,R_POINT,R_BOMB,R_BOSS,R_PLAYER,R_ORB };
+struct RadarMark { int16_t x,y;u8 w,h,shape,color; };
+static_assert(sizeof(RadarMark)==8,"radar snapshots must stay compact");
+constexpr int item_first=STAGE_MAX_CELLS*2,boss_slot=item_first+ITEM_BOMB_COUNT+ITEM_POINT_COUNT;
+constexpr int player_slot=boss_slot+1,orb_slot=boss_slot+2,mark_count=orb_slot+1;
+RadarMark previous_marks[mark_count],marks[mark_count];
+u32 radar_dirty[(HUD_RADAR_H+7)/8];
+
+int radar_x(int x) { return (view_clamp(x,PLAYFIELD_LEFT,PLAYFIELD_RIGHT-1)-PLAYFIELD_LEFT)*(HUD_RADAR_W-1)/(PLAYFIELD_W-1); }
+int radar_y(int y) { return (view_clamp(y,PLAYFIELD_TOP,PLAYFIELD_BOTTOM-1)-PLAYFIELD_TOP)*(HUD_RADAR_H-1)/(PLAYFIELD_H-1); }
+
+RadarMark marker(int x,int y,int w,int h,RadarShape shape,u8 color)
+{
+    return {int16_t(radar_x(x)-w/2),int16_t(radar_y(y)-h/2),u8(w),u8(h),u8(shape),color};
+}
+
+void dirty_mark(const RadarMark &m)
+{
+    if(!m.shape) return;
+    const int left=view_clamp(m.x,0,HUD_RADAR_W),right=view_clamp(m.x+m.w,0,HUD_RADAR_W);
+    const int top=view_clamp(m.y,0,HUD_RADAR_H),bottom=view_clamp(m.y+m.h,0,HUD_RADAR_H);
+    if(right<=left || bottom<=top) return;
+    for(int y=top/8;y<=(bottom-1)/8;++y) for(int x=left/8;x<=(right-1)/8;++x)
+        radar_dirty[y]|=u32(1)<<x;
+}
+
+bool mark_ink(const RadarMark &m,int x,int y)
+{
+    const int dx=x-int(m.w)/2,dy=y-int(m.h)/2;
+    const int distance=(dx<0?-dx:dx)+(dy<0?-dy:dy);
+    switch(m.shape) {
+    case R_CARD:case R_BOSS: return x==0 || y==0 || x==m.w-1 || y==m.h-1;
+    case R_CROSS: return dx==0 || dy==0;
+    case R_PORTAL: return distance==2;
+    case R_POINT: return distance<=1;
+    case R_PLAYER: return (dx<0?-dx:dx)<=y/2;
+    case R_ORB: return dx*dx+dy*dy<=1;
+    default: return true;
+    }
+}
+}
+
+void hud_radar_render(const HudRadarBoss &boss)
+{
+    std::memset(marks,0,sizeof(marks));
+    for(int i=0;i<stage_card_total && i<STAGE_MAX_CELLS;++i) {
+        const auto &c=stage_cards[i];
+        if(c.flag!=CARD_REMOVED) marks[i]=marker(c.left+16,c.top+16,5,3,R_CARD,SUB_COL_RADAR_CARD);
+    }
+    for(int i=0;i<stage_obstacle_total && i<STAGE_MAX_CELLS;++i) {
+        const auto &o=stage_obstacles[i];
+        auto &m=marks[STAGE_MAX_CELLS+i];
+        m=marker(o.left+16,o.top+16,3,3,R_CROSS,SUB_COL_RADAR_OBSTACLE);
+        if(o.type==OT_PORTAL) m=marker(o.left+16,o.top+16,5,5,R_PORTAL,SUB_COL_RADAR_PORTAL);
+        else if(o.type>=OT_BAR_TOP && o.type<=OT_BAR_RIGHT) {
+            m=marker(o.left+16,o.top+16,8,8,R_BAR,SUB_COL_RADAR_OBSTACLE);
+            if(o.type==OT_BAR_TOP) m.h=2;
+            if(o.type==OT_BAR_BOTTOM) { m.y+=6;m.h=2; }
+            if(o.type==OT_BAR_LEFT) m.w=2;
+            if(o.type==OT_BAR_RIGHT) { m.x+=6;m.w=2; }
+        } else if(o.type==OT_NONE) m={};
+    }
+    for(int i=0;i<ITEM_BOMB_COUNT;++i) if(CItems::is_visible(Items.bomb[i]))
+        marks[item_first+i]=marker(Items.bomb[i].left+16,Items.bomb[i].top+16,3,3,R_BOMB,SUB_COL_RADAR_ITEM);
+    for(int i=0;i<ITEM_POINT_COUNT;++i) if(CItems::is_visible(Items.point[i]))
+        marks[item_first+ITEM_BOMB_COUNT+i]=marker(Items.point[i].left+16,Items.point[i].top+16,3,3,R_POINT,SUB_COL_RADAR_ITEM);
+    if(boss.visible) marks[boss_slot]=marker(boss.x,boss.y,5,3,R_BOSS,SUB_COL_RADAR_BOSS);
+    const auto &player=player_get_state();const auto &orb=orb_get_state();
+    marks[player_slot]=marker(player.x_position+PLAYER_W/2,player.y_position+PLAYER_H/2,3,3,R_PLAYER,SUB_COL_RADAR_PLAYER);
+    marks[orb_slot]=marker(orb.x_position+ORB_W/2,orb.y_position+ORB_H/2,3,3,R_ORB,SUB_COL_FG);
+    bool changed=!radar_valid;
+    std::memset(radar_dirty,0,sizeof(radar_dirty));
+    if(!radar_valid) for(auto &row:radar_dirty) row=(u32(1)<<(HUD_RADAR_W/8))-1;
+    else for(int i=0;i<mark_count;++i) if(std::memcmp(&marks[i],&previous_marks[i],sizeof(RadarMark))) {
+        dirty_mark(previous_marks[i]);dirty_mark(marks[i]);changed=true;
+    }
+    if(!changed) return;
+    u16 active[mark_count];int active_count=0;
+    for(int i=0;i<mark_count;++i) if(marks[i].shape) active[active_count++]=i;
+    for(int row=0;row<int(sizeof(radar_dirty)/sizeof(*radar_dirty));++row) for(int col=0;col<HUD_RADAR_W/8;++col) {
+        if(!(radar_dirty[row]&(u32(1)<<col))) continue;
+        const int left=col*8,top=row*8,height=top+8>HUD_RADAR_H ? HUD_RADAR_H-top : 8;
+        u8 tile[64];std::memset(tile,SUB_COL_RADAR_BG,sizeof(tile));
+        for(int i=0;i<active_count;++i) {
+            const auto &m=marks[active[i]];
+            if(m.x<left+8 && m.x+m.w>left && m.y<top+height && m.y+m.h>top)
+            for(int y=0;y<height;++y) for(int x=0;x<8;++x) {
+                const int mx=left+x-m.x,my=top+y-m.y;
+                if(mx>=0 && mx<m.w && my>=0 && my<m.h && mark_ink(m,mx,my)) tile[y*8+x]=m.color;
+            }
+        }
+        subscreen_put_indexed(HUD_RADAR_LEFT+left,HUD_RADAR_TOP+top,8,height,tile,0);
+    }
+    std::memcpy(previous_marks,marks,sizeof(marks));radar_valid=true;
 }
 
 // ReC98's banners (harryup_animate, stage_num_animate): blocking two-phase

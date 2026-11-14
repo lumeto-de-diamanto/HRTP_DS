@@ -12,9 +12,13 @@ inline u16 RGB15(int r, int g, int b) { return r | (g << 5) | (b << 10); }
 struct GuardedVram { u32 before = 0xDEADBEEF; alignas(4) u16 pixels[384 * 1024 / 2]{}; u32 after = 0xDEADBEEF; };
 inline GuardedVram test_vram;
 inline u16 BG_PALETTE[256]{}, SPRITE_PALETTE[256]{};
+struct GuardedSubVram { u32 before=0xC0FFEE11;alignas(4) u16 pixels[128*1024/2]{};u32 after=0xC0FFEE11; };
+inline GuardedSubVram test_sub_vram;
+inline u16 BG_PALETTE_SUB[256]{};
 inline u16 *BG_MAP_RAM(int n) { return test_vram.pixels + n * 1024; }
 inline u16 *BG_TILE_RAM(int n) { return test_vram.pixels + n * 8192; }
 inline u16 *BG_BMP_RAM(int n) { return test_vram.pixels + n * 8192; }
+inline u16 *BG_BMP_RAM_SUB(int n) { return test_sub_vram.pixels+n*8192; }
 inline size_t test_dma_fill_bytes{}, test_dma_copy_calls{};
 inline size_t test_dma_copy_bytes{};
 inline void (*test_dma_fill_hook)() = nullptr;
@@ -40,8 +44,8 @@ inline void dmaCopyHalfWords(int, const void *in, void *out, size_t size) {
     assert(!(reinterpret_cast<uintptr_t>(in) & 1) && !(reinterpret_cast<uintptr_t>(out) & 1) && !(size & 1));
     std::memcpy(out, in, size);
 }
-enum { MODE_5_2D, VRAM_A_MAIN_BG_0x06000000, VRAM_B_MAIN_BG_0x06020000, VRAM_C_LCD, VRAM_D_LCD, VRAM_E_MAIN_SPRITE, VRAM_D_MAIN_BG_0x06040000 };
-enum { BgType_Text4bpp, BgType_Bmp16, BgType_Bmp8, BgSize_T_512x256, BgSize_T_256x256, BgSize_B16_256x256, BgSize_B8_256x256, BgSize_B8_512x256 };
+enum { MODE_5_2D, VRAM_A_MAIN_BG_0x06000000, VRAM_B_MAIN_BG_0x06020000, VRAM_C_LCD, VRAM_D_LCD, VRAM_E_MAIN_SPRITE, VRAM_D_MAIN_BG_0x06040000, VRAM_C_SUB_BG };
+enum { BgType_Text4bpp, BgType_Bmp16, BgType_Bmp8, BgSize_T_512x256, BgSize_T_256x256, BgSize_B16_256x256, BgSize_B8_256x256, BgSize_B8_512x256, BgSize_B8_128x128 };
 inline constexpr int DISPLAY_WIN0_ON = 1 << 13, DISPLAY_WIN1_ON = 1 << 14;
 inline u32 REG_DISPCNT{};
 inline u16 REG_VCOUNT = 192;
@@ -51,18 +55,22 @@ inline u16 REG_MASTER_BRIGHT{},REG_MASTER_BRIGHT_SUB{};
 inline constexpr int BLEND_ALPHA=1<<6,BLEND_SRC_BG0=1,BLEND_SRC_BG2=1<<2,
     BLEND_DST_BG1=1<<9,BLEND_DST_BG2=1<<10,BLEND_DST_BG3=1<<11,BLEND_DST_SPRITE=1<<12,BLEND_DST_BACKDROP=1<<13;
 inline constexpr int BLEND_FADE_WHITE=2<<6,BLEND_SRC_BG3=1<<3,BLEND_SRC_BACKDROP=1<<5;
-struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; bool visible = true; };
-inline TestBg test_bgs[4];
+struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; bool visible = true,wrap=false; };
+inline TestBg test_bgs[8];
 inline void videoSetMode(int) {}
+inline void videoSetModeSub(int) {}
 inline void consoleDemoInit() { assert(false && "unexpected fatal game console"); }
 inline void vramSetPrimaryBanks(int, int, int, int) {}
 inline void vramSetBankE(int) {}
+inline void vramSetBankC(int) {}
 inline int test_vram_d_mode;
 inline void vramSetBankD(int mode) { test_vram_d_mode = mode; }
 inline int bgInit(int id, int type, int size, int map, int tile) {
     test_bgs[id] = {type, size, map, tile}; return id;
 }
 inline int bgInitHidden(int id, int type, int size, int map, int tile) { bgInit(id,type,size,map,tile);test_bgs[id].visible=false;return id; }
+inline int bgInitSub(int id,int type,int size,int map,int tile) { return bgInit(id+4,type,size,map,tile); }
+inline void bgWrapOn(int id) { test_bgs[id].wrap=true; }
 inline void bgSetPriority(int id, int priority) { test_bgs[id].priority = priority; }
 inline void bgSetScroll(int id, int x, int y) { test_bgs[id].x = x; test_bgs[id].y = y; }
 inline void bgSetScale(int id, int sx, int sy) { test_bgs[id].sx = sx; test_bgs[id].sy = sy; }
@@ -70,7 +78,7 @@ inline void (*test_bg_update_hook)() = nullptr;
 inline void bgUpdate() { if (test_bg_update_hook) test_bg_update_hook(); }
 inline void bgShow(int id) { test_bgs[id].visible=true; }
 inline void bgHide(int id) { test_bgs[id].visible=false; }
-inline void *bgGetGfxPtr(int id) { return BG_BMP_RAM(test_bgs[id].map); }
+inline void *bgGetGfxPtr(int id) { return id>=4 ? BG_BMP_RAM_SUB(test_bgs[id].map) : BG_BMP_RAM(test_bgs[id].map); }
 #define TILE_PALETTE(n) ((n) << 12)
 
 enum SpriteSize { SpriteSize_8x8, SpriteSize_16x16, SpriteSize_32x16, SpriteSize_32x32, SpriteSize_64x64, SpriteSize_8x16, SpriteSize_32x8, SpriteSize_64x32,

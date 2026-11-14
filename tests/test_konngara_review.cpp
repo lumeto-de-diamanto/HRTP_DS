@@ -265,6 +265,10 @@ void observe_stage20()
         if(!stage20_defeat_waits) {
             stage20_frozen_score=stage_score;stage20_frozen_timer=stage_timer;stage20_frozen_frame=frame;
             assert(stage_score>=stage20_carry_score+230000 && stage_score<stage20_carry_score+240000 && hiscore>=stage_score);
+            const auto *sub=reinterpret_cast<const u8*>(BG_BMP_RAM_SUB(0));
+            for(int y=HUD_RADAR_TOP;y<HUD_RADAR_TOP+HUD_RADAR_H;++y)
+                for(int x=HUD_RADAR_LEFT;x<HUD_RADAR_LEFT+HUD_RADAR_W;++x)
+                    assert(sub[y*256+x]!=SUB_COL_RADAR_BOSS && sub[y*256+x]!=SUB_COL_RADAR_ITEM);
         }
         assert(++stage20_defeat_waits<=541);
         assert(stage_score==stage20_frozen_score && stage_timer==unsigned(stage20_frozen_timer) && frame==unsigned(stage20_frozen_frame));

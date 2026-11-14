@@ -106,15 +106,19 @@ static int global_stage_num()
 static void render_hud()
 {
     const bool boss = stage_has_boss(current_scene, current_stage);
+    HudRadarBoss radar_boss;
     upper_hud_render(lives, rem_bombs, stage_timer, boss ? UpperHudMode::Boss : UpperHudMode::Regular);
     if (stage_has_singyoku(current_scene,current_stage)) {
         const auto &s = singyoku_state();
         upper_hud_boss(s.health.hp, s.hp_displayed);
+        radar_boss={s.entity.left+s.entity.width/2,s.entity.top+s.entity.height/2,s.phase!=SG_DEFEATED};
     } else if(stage_has_konngara(current_scene,current_stage)) {
         const auto &s=konngara.state();
         upper_hud_boss(s.health.hp,s.hp_displayed,10,16);
+        radar_boss={344,156,!s.complete}; // centre of the source112x72 Konngara hitbox
     } else upper_hud_boss_hide();
     hud_render(lives, global_stage_num());
+    hud_radar_render(radar_boss);
 }
 
 static void render_frame()
@@ -262,6 +266,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         konngara.reset(); // real18HP encounter; no practice HP/resource presets
         wait_for_shot=false;
         hud_invalidate();hud_render(lives,20);
+        hud_radar_render({344,156,true});
         // Source Konngara has its own entrance, not STAGE NN/title banners.
         // Keep the final opaque intro image over old scenery until the first
         // buffered combat frame commits its BG, actors and fixed HUD together.
@@ -346,6 +351,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 Pellets.init();shots_initialize();Items.init();
                 if(stage_score>hiscore) hiscore=stage_score;
                 hud_render(lives,20); // includes the lethal-hit50000 immediately
+                hud_radar_render(); // clear the defeated boss and collected items
                 check_konngara(konngara_view.defeat(konngara.state().health.invincible),"defeat");
                 for(int f=0;f<120;++f) swiWaitForVBlank(); // source ending handoff delay
                 text_layer_clear();
@@ -416,6 +422,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         stage_score+=bonus.total;
         if(stage_score>hiscore) hiscore=stage_score;
         hud_render(lives,global_stage_num());
+        hud_radar_render(); // remove the final card before the blocking tally
         stagebonus_run(bonus,global_stage_num());
         int next=current_stage+1;
         if(next>=scene_stage_count(current_scene)) next=0; // other unported bosses remain gated

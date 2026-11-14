@@ -27,7 +27,7 @@ HDI_DUMP_STAMP   := $(HDI_DUMP_DIR)/.stamp
 # Extraction creates multiple files at once. Explicit grouped targets let Make
 # find these inputs on the FIRST build and recover a deleted member safely
 # under -j. A stamp alone cannot describe an implicit rule's missing input.
-HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
+HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 CLEAR3 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
 HDI_FILES := $(PACKFILE) $(addprefix $(HDI_DUMP_DIR)/,$(addsuffix .GRP,$(HDI_GRP_NAMES))) $(HDI_DUMP_DIR)/BOSS8.GRZ
 PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN KUZI1.GRC KUZI2.GRC BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
 PACKFILE_FILES := $(addprefix $(PACKFILE_DIR)/,$(PACKFILE_NAMES))
@@ -67,6 +67,10 @@ assets: $(BACKGROUND_BINS)
 assets: $(SPRITES_DIR)/OrbArrow.h
 assets: $(SPRITES_DIR)/Shape8x8.h
 assets: $(SPRITES_DIR)/BombKuji.h
+assets: $(BACKGROUND_DIR)/HudPattern.h
+
+$(BACKGROUND_DIR)/HudPattern.h: $(HDI_DUMP_DIR)/CLEAR3.GRP $(TOOLS_DIR)/hud_pattern_to_h.py $(TOOLS_DIR)/grp_to_bin.py
+	$(PYTHON) $(TOOLS_DIR)/hud_pattern_to_h.py $< $@
 
 $(SPRITES_DIR)/BombKuji.h: $(PACKFILE_DIR)/KUZI1.GRC $(PACKFILE_DIR)/KUZI2.GRC $(TOOLS_DIR)/bomb_kuji_to_h.py $(TOOLS_DIR)/halve_image.py
 	$(PYTHON) $(TOOLS_DIR)/bomb_kuji_to_h.py $(PACKFILE_DIR)/KUZI1.GRC $(PACKFILE_DIR)/KUZI2.GRC $@

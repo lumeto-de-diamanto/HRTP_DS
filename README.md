@@ -43,7 +43,8 @@ extensions and HURRY UP
 portal timelines; viewport tests also verify white bullets and portal rendering
 * `make viewport-tests viewport-sanitize`: checks rendering, original stage-entry
 cel order/timing, invincibility sparkles, sprite allocation rollback/reinitialization and stable usage
-across repeated state transitions
+across repeated state transitions, plus bottom-HUD colours/pattern and full-world radar
+mapping, clipping, overlap restoration and zero idle writes
 * `make konngara-tests konngara-sanitize`: checks the intro timeline/rendering
 and BOS/GRZ artwork, source phases 1–7 combat/lasers and defeat, exact BG/OBJ composition and allocation
 cleanup on replay/failure (camera/flash changes must not upload bitmaps)
@@ -59,7 +60,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
   * [x] Tiles, turrets and barriers
   * [ ] HUD
     * [x] Top screen HUD
-    * [ ] Bottom screen HUD (*in progress*, functional but needs visual refinement)
+    * [x] Bottom screen HUD
   * [x] Font
 * [x] Core gameplay
   * [x] Player controls
@@ -90,6 +91,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
   * [ ] Smooth transitions
     * [ ] Between two regular stages
     * [ ] Between a regular stage and a boss stage
+    * [ ] Resetting a boss stage
 
 ## Layout
 

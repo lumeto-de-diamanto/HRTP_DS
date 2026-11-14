@@ -51,19 +51,30 @@ void test_player_death();
 void test_bombs();
 extern PlayerState player;
 
-// Count calls at the real bottom HUD's drawing seam: unchanged frames must
-// issue NO writes, not merely rewrite bytes to the same values.
+// Exercise the actual sub-screen VRAM backend while counting its drawing seam:
+// unchanged frames must issue NO writes, not just rewrite equal bytes.
+namespace sub_backend {
+#include "../source/platform/subscreen.cpp"
+}
 struct SubCall { char type; int x, y, w, h; };
 static std::vector<SubCall> sub_calls;
 std::string test_practice_label;
-void subscreen_clear(u8) { sub_calls.push_back({'C',0,0,256,192}); }
-void subscreen_fill_rect(int x, int y, int w, int h, u8) { sub_calls.push_back({'F',x,y,w,h}); }
-void subscreen_text(int x, int y, const char *s, u8) {
+void subscreen_init() { sub_backend::subscreen_init(); }
+void subscreen_clear(u8 c) { sub_calls.push_back({'C',0,0,256,192});sub_backend::subscreen_clear(c); }
+void subscreen_fill_rect(int x, int y, int w, int h, u8 c) { sub_calls.push_back({'F',x,y,w,h});sub_backend::subscreen_fill_rect(x,y,w,h,c); }
+void subscreen_text(int x, int y, const char *s, u8 color) {
     sub_calls.push_back({'T',x,y,0,16});
     if (x == 8 && y == 140) test_practice_label = s;
+    sub_backend::subscreen_text(x,y,s,color);
 }
-void subscreen_number(int x, int y, int, int digits, u8) { sub_calls.push_back({'N',x,y,digits*8,16}); }
-void subscreen_fullwidth_number(int x, int y, int, int digits, u8) { sub_calls.push_back({'W',x,y,digits*16,16}); }
+void subscreen_number(int x, int y, int value, int digits, u8 c) { sub_calls.push_back({'N',x,y,digits*8,16});sub_backend::subscreen_number(x,y,value,digits,c); }
+void subscreen_fullwidth_number(int x, int y, int value, int digits, u8 c) { sub_calls.push_back({'W',x,y,digits*16,16});sub_backend::subscreen_fullwidth_number(x,y,value,digits,c); }
+void subscreen_fullwidth_text(int x,int y,const char *s,u8 c) {
+    sub_calls.push_back({'L',x,y,int(std::strlen(s))*16,16});sub_backend::subscreen_fullwidth_text(x,y,s,c);
+}
+void subscreen_put_indexed(int x,int y,int w,int h,const u8 *pixels,int pal) {
+    sub_calls.push_back({'I',x,y,w,h});sub_backend::subscreen_put_indexed(x,y,w,h,pixels,pal);
+}
 
 static std::vector<u8> read_bytes(const char *path) {
     std::ifstream input(path, std::ios::binary);
@@ -84,6 +95,157 @@ static int obj_pixel(int slot, int x, int y) {
     const int width = widths[obj.size];
     const int word = ((y / 8) * (width / 8) + x / 8) * 16 + (y % 8) * 2 + (x % 8) / 4;
     return (obj.gfx[word] >> ((x % 4) * 4)) & 15;
+}
+
+static u8 sub_index(int x,int y) {
+    return reinterpret_cast<const u8*>(BG_BMP_RAM_SUB(0))[y*256+x];
+}
+
+static void check_sub_text(int x,int y,const char *s,u8 color) {
+    for(;*s;++s,x+=8) for(int gy=0;gy<16;++gy) for(int gx=0;gx<8;++gx)
+        assert(sub_index(x+gx,y+gy)==((font8x16[*s-0x20][gy]&(0x80>>gx)) ? color : SUB_COL_BG));
+}
+
+static void check_sub_wide(int x,int y,const char *s,u8 color) {
+    for(;*s;++s,x+=16) {
+        const auto *glyph=font16x16_find(*s=='?' ? 0x2129 : 0x2300+*s);
+        assert(glyph);
+        for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx)
+            assert(sub_index(x+gx,y+gy)==((glyph[gy]&(0x8000>>gx)) ? color : SUB_COL_BG));
+    }
+}
+
+static void check_bottom_hud() {
+    assert(HUD_RADAR_LEFT==88 && HUD_RADAR_TOP==19 && HUD_RADAR_W==160 && HUD_RADAR_H==84);
+    assert(test_bgs[6].type==BgType_Bmp8 && test_bgs[6].size==BgSize_B8_256x256 && test_bgs[6].map==0);
+    assert(test_bgs[7].type==BgType_Bmp8 && test_bgs[7].size==BgSize_B8_128x128 && test_bgs[7].map==4);
+    assert(test_bgs[6].priority==0 && test_bgs[7].priority==3 && test_bgs[7].wrap);
+    assert(BG_PALETTE_SUB[SUB_COL_DIM]==RGB15(31,0,0) && BG_PALETTE_SUB[SUB_COL_FG]==RGB15(31,31,31));
+    assert(BG_PALETTE_SUB[4]==RGB15(1,1,1) && BG_PALETTE_SUB[5]==RGB15(3,2,2));
+    const auto *pattern=reinterpret_cast<const u8*>(BG_BMP_RAM_SUB(4));
+    assert(std::equal(pattern,pattern+128*128,sub_backend::HudPattern_pixels));
+    const auto *vram=reinterpret_cast<const u8*>(BG_BMP_RAM_SUB(0));
+    const std::vector<u8> tail(vram+256*192,vram+128*1024);
+    const auto old_player=player;const auto old_orb=orb_get_state();const auto old_items=Items;const auto old_pellets=Pellets;
+    const auto old_card_total=stage_card_total,old_obstacle_total=stage_obstacle_total;
+    const std::vector<StageCard> old_cards(stage_cards,stage_cards+STAGE_MAX_CELLS);
+    const std::vector<StageObstacle> old_obstacles(stage_obstacles,stage_obstacles+STAGE_MAX_CELLS);
+    const int old_score=stage_score,old_hi=hiscore,old_combo=stage_cardcombo_cur,old_max=stage_cardcombo_max;
+    const auto old_rank=rank;
+    stage_score=1234567;hiscore=7654321;stage_cardcombo_cur=123;stage_cardcombo_max=456;rank=RANK_LUNATIC;
+    hud_invalidate();hud_render(3,20);
+    for(const auto &label:std::vector<std::pair<int,const char*>>{{16,"SCORE"},{56,"HI SCORE"},{96,"COMBO"},{136,"MAX COMBO"}})
+        check_sub_text(8,label.first,label.second,SUB_COL_DIM);
+    check_sub_wide(104,112,"STAGE",SUB_COL_DIM);check_sub_wide(104,144,"RANK",SUB_COL_DIM);
+    check_sub_text(24,32,"1234567",SUB_COL_FG);check_sub_text(24,72,"7654321",SUB_COL_FG);
+    check_sub_text(56,112,"123",SUB_COL_FG);check_sub_text(56,152,"456",SUB_COL_FG);
+    check_sub_wide(200,128,"20",SUB_COL_FG);check_sub_wide(136,160,"LUNATIC",SUB_COL_FG);
+    stage_score=0;hud_render(3,20);check_sub_text(24,32,"0000000",SUB_COL_FG);
+    rank=RANK_EASY;hud_render(3,20);check_sub_wide(136,160,"EASY",SUB_COL_FG);
+    for(int y=160;y<176;++y) for(int x=200;x<248;++x) assert(sub_index(x,y)==0);
+
+    // Odd/even paired writes, transparency and clipping must not touch the
+    // neighbour pixel, hidden overlay rows, resident tile or remaining VRAM C.
+    subscreen_fill_rect(0,0,256,192,13);
+    subscreen_fill_rect(-3,-2,6,4,14);subscreen_fill_rect(255,191,8,8,15);
+    assert(sub_index(2,1)==14 && sub_index(3,1)==13 && sub_index(255,191)==15 && sub_index(254,191)==13);
+    const u8 pixels[]={1,2,0,3,4,5};
+    subscreen_put_indexed(-1,190,3,2,pixels,10);
+    assert(sub_index(0,190)==12 && sub_index(1,190)==13 && sub_index(0,191)==14 && sub_index(1,191)==15);
+    subscreen_put_indexed(254,191,3,2,pixels,10);
+    assert(sub_index(254,191)==11 && sub_index(255,191)==12);
+    subscreen_text(-4,-8,"EDGE",SUB_COL_FG);subscreen_text(252,188,"EDGE",SUB_COL_FG);
+    subscreen_fullwidth_text(-4,-8,"EDGE",SUB_COL_FG);subscreen_fullwidth_text(252,188,"EDGE",SUB_COL_FG);
+    assert(std::equal(tail.begin(),tail.end(),vram+256*192));
+
+    hud_invalidate();hud_render(3,20);
+    const std::vector<u8> outside(vram,vram+256*192);
+    stage_card_total=stage_obstacle_total=0;Items.init();
+    player.x_position=48;player.y_position=344;orb_set_position(544,104);
+    HudRadarBoss boss{320,160,true};
+    constexpr int w=HUD_RADAR_W,h=HUD_RADAR_H;
+    std::vector<u8> expected(w*h);
+    auto center_x=[](int x) { return std::max(0,std::min(639,x))*159/639; };
+    auto center_y=[](int y) { return (std::max(64,std::min(399,y))-64)*83/335; };
+    auto draw=[&](int wx,int wy,int mw,int mh,u8 color,auto ink) {
+        const int left=center_x(wx)-mw/2,top=center_y(wy)-mh/2;
+        for(int y=0;y<mh;++y) for(int x=0;x<mw;++x)
+            if(left+x>=0 && left+x<w && top+y>=0 && top+y<h && ink(x,y)) expected[(top+y)*w+left+x]=color;
+    };
+    auto rebuild=[&] {
+        std::fill(expected.begin(),expected.end(),SUB_COL_RADAR_BG);
+        if(stage_card_total && stage_cards[0].flag!=CARD_REMOVED)
+            draw(stage_cards[0].left+16,stage_cards[0].top+16,5,3,SUB_COL_RADAR_CARD,[](int x,int y){return x==0||x==4||y==0||y==2;});
+        for(int i=0;i<stage_obstacle_total;++i) {
+            const auto &o=stage_obstacles[i];
+            if(o.type>=OT_BAR_TOP && o.type<=OT_BAR_RIGHT)
+                draw(o.left+16,o.top+16,8,8,SUB_COL_RADAR_OBSTACLE,[&](int x,int y){
+                    return o.type==OT_BAR_TOP ? y<2 : o.type==OT_BAR_BOTTOM ? y>=6 : o.type==OT_BAR_LEFT ? x<2 : x>=6;
+                });
+            else if(o.type==OT_PORTAL) draw(o.left+16,o.top+16,5,5,SUB_COL_RADAR_PORTAL,[](int x,int y){return abs(x-2)+abs(y-2)==2;});
+            else if(o.type==OT_NONE) continue;
+            else draw(o.left+16,o.top+16,3,3,SUB_COL_RADAR_OBSTACLE,[](int x,int y){return x==1||y==1;});
+        }
+        if(CItems::is_visible(Items.bomb[0])) draw(Items.bomb[0].left+16,Items.bomb[0].top+16,3,3,SUB_COL_RADAR_ITEM,[](int,int){return true;});
+        if(CItems::is_visible(Items.point[0])) draw(Items.point[0].left+16,Items.point[0].top+16,3,3,SUB_COL_RADAR_ITEM,[](int x,int y){return abs(x-1)+abs(y-1)<=1;});
+        if(boss.visible) draw(boss.x,boss.y,5,3,SUB_COL_RADAR_BOSS,[](int x,int y){return x==0||x==4||y==0||y==2;});
+        draw(player.x_position+16,player.y_position+16,3,3,SUB_COL_RADAR_PLAYER,[](int x,int y){return abs(x-1)<=y/2;});
+        const auto &orb=orb_get_state();
+        draw(orb.x_position+16,orb.y_position+16,3,3,SUB_COL_FG,[](int x,int y){return (x-1)*(x-1)+(y-1)*(y-1)<=1;});
+    };
+    auto verify=[&] {
+        rebuild();
+        for(int y=0;y<192;++y) for(int x=0;x<256;++x) {
+            const bool inside=x>=HUD_RADAR_LEFT && x<HUD_RADAR_LEFT+w && y>=HUD_RADAR_TOP && y<HUD_RADAR_TOP+h;
+            assert(sub_index(x,y)==(inside ? expected[(y-HUD_RADAR_TOP)*w+x-HUD_RADAR_LEFT] : outside[y*256+x]));
+        }
+        assert(std::equal(tail.begin(),tail.end(),vram+256*192));
+    };
+    sub_calls.reserve(1024);sub_calls.clear();hud_radar_render(boss);verify();
+    assert(sub_calls.size()==20*11); // one initial opaque raster, no camera frame
+    const auto copies=test_dma_copy_calls,fills=test_dma_fill_bytes;
+    sub_calls.clear();
+    initialize_irand(4567);const int next_random=irand();initialize_irand(4567);
+    const auto attempts=test_heap_attempts;
+    for(int frame=0;frame<120;++frame) {camera.left=frame%65;hud_radar_render(boss);}
+    assert(sub_calls.empty() && irand()==next_random && test_heap_attempts==attempts);
+    assert(test_dma_copy_calls==copies && test_dma_fill_bytes==fills);
+
+    // Populate scenery/items, then overlap every priority at the card centre.
+    stage_card_total=1;stage_cards[0]={112,128,CARD_ALIVE,0,0};
+    stage_obstacle_total=2;stage_obstacles[0]={240,192,OT_BUMPER,0,0,0};stage_obstacles[1]={400,224,OT_PORTAL,0,0,0};
+    Items.bomb[0]={176,256,0,IF_FALL,0,0};Items.point[0]={336,288,0,IF_BOUNCE,0,0};
+    // engine states must remain read-only
+    const auto card=stage_cards[0];const auto obstacle=stage_obstacles[1];const auto items=Items;
+    hud_radar_render(boss);verify();
+    assert(!std::memcmp(&card,&stage_cards[0],sizeof(card)) && !std::memcmp(&obstacle,&stage_obstacles[1],sizeof(obstacle)) && !std::memcmp(&items,&Items,sizeof(items)));
+    for(int type:{OT_BAR_TOP,OT_BAR_BOTTOM,OT_BAR_LEFT,OT_BAR_RIGHT,OT_TURRET_SLOW_1_AIMED,OT_NONE,OT_BUMPER}) {
+        stage_obstacles[0].type=type;hud_radar_render(boss);verify();
+    }
+    boss={128,144,true};player.x_position=112;player.y_position=128;orb_set_position(112,128);
+    hud_radar_render(boss);verify();
+    orb_set_position(608,368);hud_radar_render(boss);verify(); // exposes player/boss/card beneath orb
+    player.x_position=0;player.y_position=368;boss.visible=false;
+    stage_cards[0].flag=CARD_REMOVED;stage_obstacle_total=0;
+    Items.bomb[0].flag=IF_SPLASH;Items.point[0].flag=IF_COLLECTED;
+    sub_calls.clear();hud_radar_render(boss);verify();
+    assert(!sub_calls.empty() && sub_calls.size()<60);
+    for(const auto &call:sub_calls) assert(call.type=='I' && call.w==8 && call.h<=8);
+    for(int x:{-100,0,639,800}) for(int y:{0,64,399,500}) {
+        orb_set_position(x-16,y-16);player.x_position=623-x;player.y_position=447-y;
+        boss={x,y,true};hud_radar_render(boss);verify();
+    }
+    sub_calls.clear();Pellets.add_single(300,200,0,TO_SP(2));hud_radar_render(boss);
+    assert(sub_calls.empty()); // projectiles never enter the snapshot
+    Pellets.init();
+    hud_invalidate();hud_render(3,20);sub_calls.clear();hud_radar_render(boss);verify();
+    assert(sub_calls.size()==20*11); // correct full restoration after reinitialization
+    player=old_player;orb_set_position(old_orb.x_position,old_orb.y_position);Items=old_items;Pellets=old_pellets;
+    std::copy(old_cards.begin(),old_cards.end(),stage_cards);std::copy(old_obstacles.begin(),old_obstacles.end(),stage_obstacles);
+    stage_card_total=old_card_total;stage_obstacle_total=old_obstacle_total;
+    stage_score=old_score;hiscore=old_hi;stage_cardcombo_cur=old_combo;stage_cardcombo_max=old_max;rank=old_rank;
+    camera.snap_center();hud_invalidate();
+    std::puts("Bottom HUD: source pattern/layer bounds, red labels/white values, exact world radar shapes/priority, removal/overlap/edge restoration, camera-independent idle writes and read-only/RNG/heap checks passed");
 }
 
 static int ink_count() {
@@ -503,7 +665,7 @@ int main()
     camera.follow(624); assert(camera.left == 64);
     camera.snap_center(); assert(camera.left == 32);
 
-    video_init(); text_layer_init(); tiles_init();
+    video_init();text_layer_init();subscreen_init();tiles_init();
     check_obj_allocator_model();
     assert(test_bgs[1].size == BgSize_T_512x256);
     assert(test_bgs[3].size == BgSize_B8_512x256 && test_bgs[2].map == 16);
@@ -520,6 +682,7 @@ int main()
         const auto source = boss ? read_bytes("nitro:/boss1.bin") : full;
         const std::vector<u16> resident(BG_BMP_RAM(4), BG_BMP_RAM(4) + 512 * 256 / 2);
         const auto upload_bytes = test_dma_fill_bytes;
+        const auto upload_copies = test_dma_copy_calls;
         for (int pass = 0; pass < 4; ++pass) {
             for (int step = 0; step <= 64; ++step) {
                 const int left = pass & 1 ? 64 - step : step;
@@ -533,7 +696,7 @@ int main()
                 assert(std::equal(resident.begin(), resident.end(), BG_BMP_RAM(4)));
             }
         }
-        assert(test_dma_fill_bytes == upload_bytes && test_dma_copy_calls == 0);
+        assert(test_dma_fill_bytes == upload_bytes && test_dma_copy_calls == upload_copies);
         camera.snap_center(); video_apply_camera();
         assert(test_bgs[1].x == 32 && test_bgs[3].x == 32); // unchanged entrance framing
     }
@@ -814,15 +977,16 @@ int main()
     for (int frame = 0; frame < 120; ++frame) hud_render(3, 1);
     assert(sub_calls.empty());
     stage_score += 10; hud_render(3, 1);
-    assert(sub_calls.size() == 2 && sub_calls[0].type == 'F' && sub_calls[0].w == 112 && sub_calls[1].type == 'W');
+    assert(sub_calls.size() == 2 && sub_calls[0].type == 'F' && sub_calls[0].w == 56 && sub_calls[1].type == 'N');
     sub_calls.clear(); stage_cardcombo_cur = 0; stage_cardcombo_max = 0; hud_render(3, 1); sub_calls.clear();
     stage_cardcombo_cur = 12; hud_render(3, 1);
-    assert(sub_calls.size() == 2 && sub_calls[0].w == 48);
-    sub_calls.clear(); hud_render(3, 6); assert(sub_calls.size() == 2 && sub_calls[0].w == 16);
+    assert(sub_calls.size() == 2 && sub_calls[0].w == 24);
+    sub_calls.clear(); hud_render(3, 6); assert(sub_calls.size() == 2 && sub_calls[0].w == 32 && sub_calls[1].type=='W');
     sub_calls.clear(); rank = RANK_LUNATIC; hud_render(3, 6);
-    assert(sub_calls.size() == 2 && sub_calls[0].w == 56 && sub_calls[1].type == 'T');
+    assert(sub_calls.size() == 2 && sub_calls[0].w == 112 && sub_calls[1].type == 'L');
     sub_calls.clear(); hud_render(3, 6); assert(sub_calls.empty());
     hud_invalidate(); hud_render(3, 6); assert(sub_calls.front().type == 'C');
+    check_bottom_hud();
 
     // BG2 only erases tiles touched by the previous frame, not all 98KB.
     canvas_clear(); canvas_playfield_clip(true);
@@ -849,5 +1013,6 @@ int main()
     test_player_death();
     test_bombs();
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
+    assert(test_sub_vram.before==0xC0FFEE11 && test_sub_vram.after==0xC0FFEE11);
     std::puts("Viewport: center-anchored parallax/boss 1:1, native halfwidth timer, six-life/five-bomb and18HP ink separation, cached HUD handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");
 }
