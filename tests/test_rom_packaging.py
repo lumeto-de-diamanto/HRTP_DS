@@ -10,6 +10,8 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from nds_files import nitro_files
+from hud_pattern_to_h import pattern, results_crop
+from test_viewport_assets import layout_bytes
 
 
 def crc16(data):
@@ -25,6 +27,8 @@ class RomPackagingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.rom = Path('hrtp_ds.nds').read_bytes()
+        position, _, _, size = struct.unpack_from('<4I', cls.rom, 0x20)
+        cls.arm9 = cls.rom[position:position + size]
 
     def test_ds_only_header_and_checksums(self):
         self.assertEqual(self.rom[0x12], 0, 'ROM must identify as DS-only, not DS+DSi')
@@ -65,11 +69,26 @@ class RomPackagingTests(unittest.TestCase):
         codes = [int(v, 16) for v in re.findall(r'0x([0-9A-F]{4}), //', text)]
         rows = text.split('font16x16_rows', 1)[1]
         pixels = [int(v, 16) for v in re.findall(r'0x([0-9A-F]{4})', re.sub(r'//[^\n]*', '', rows))]
-        position, _, _, size = struct.unpack_from('<4I', self.rom, 0x20)
-        arm9 = self.rom[position:position + size]
         for values in (codes, pixels):
             self.assertTrue(values)
-            self.assertIn(struct.pack('<' + 'H' * len(values), *values), arm9)
+            self.assertTrue(struct.pack('<' + 'H' * len(values), *values) in self.arm9,
+                            'missing/stale linked font')
+
+    def test_linked_stage_tables_and_results_patterns(self):
+        clear = Path('assets/hdi_dump/CLEAR3.GRP').read_bytes()
+        for payload in (pattern(clear), results_crop(clear)[0]):
+            self.assertTrue(payload in self.arm9, 'missing/stale HUD/results pattern')
+        # Scene7 is unused beta content; only scenes0..6 are reachable.
+        for scene in range(7):
+            self.assertTrue(layout_bytes(scene) in self.arm9, f'missing/stale STAGE{scene}')
+
+    def test_linked_singyoku_bos_sheets(self):
+        for name in ('SingyokuSphere', 'SingyokuFlash', 'SingyokuPerson'):
+            text = Path(f'assets/processed/sprites/{name}.h').read_text()
+            words = [int(v, 16) for v in re.findall(r'0x[0-9a-fA-F]+', text)]
+            self.assertTrue(words)
+            self.assertTrue(struct.pack('<' + 'I' * len(words), *words) in self.arm9,
+                            f'missing/stale {name}')
 
     def test_static_red_kanji_icon_is_exact_and_opaque(self):
         with Image.open('icon.gif') as image:

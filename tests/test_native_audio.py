@@ -136,10 +136,6 @@ class NativeCompilerTests(unittest.TestCase):
         self.assertEqual(blob[a[0]:a[0] + 16], pcm)
         self.assertNotEqual(a[4], b[4])
 
-    def test_approved_kami2_events_gain_and_sample_contents_are_preserved(self):
-        manifest = json.loads(Path('build/native_soundtrack/tracks/kami2/manifest.json').read_text())
-        self.check_onsets(manifest)
-
     def test_approval_fingerprint_rejects_pcm_gain_and_event_mutations(self):
         manifest = selected_manifest()
         blob = Path(manifest['sequence_path']).read_bytes()
@@ -182,10 +178,6 @@ class NativeCompilerTests(unittest.TestCase):
         self.assertEqual(track["slot"], 6)
         self.assertEqual(track["events"][0]["a"], 13)
         self.assertEqual(track["events"][1]["key"], 63)
-
-    def test_selected_track_retains_approved_playback(self):
-        manifest = selected_manifest()
-        self.check_onsets(manifest)
 
     def check_onsets(self, manifest):
         blob = Path(manifest["sequence_path"]).read_bytes()

@@ -6,7 +6,7 @@ CXX := $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/arm-none-eabi-g++
 OUT := build/native_audio
 NATIVE_TRACK ?= kami2
 NATIVE_APPROX_FLAGS ?= $(if $(filter kami kami2 alice,$(NATIVE_TRACK)),--approximate-portamento,)
-NATIVE_RHYTHM_DIR ?= $(if $(wildcard assets/drums/provenance.json),assets/drums,)
+NATIVE_RHYTHM_DIR ?= assets
 MDT_TOOLS ?= tools/deps/mdt-tools
 YMFM ?= tools/deps/ymfm
 HOST_CXX ?= g++
@@ -24,13 +24,8 @@ assets:
 	python3 -B tools/build_native_audio.py --track $(NATIVE_TRACK) $(NATIVE_APPROX_FLAGS) --tools-dir $(MDT_TOOLS) --ymfm $(YMFM) --cxx $(HOST_CXX) $(if $(NATIVE_RHYTHM_DIR),--rhythm-dir "$(NATIVE_RHYTHM_DIR)",)
 	python3 -B tools/build_native_soundtrack.py --tools-dir $(MDT_TOOLS) --ymfm $(YMFM) --cxx $(HOST_CXX) $(if $(NATIVE_RHYTHM_DIR),--rhythm-dir "$(NATIVE_RHYTHM_DIR)",)
 
-tests: assets
-	python3 tests/test_native_audio.py
-	python3 tests/test_native_soundtrack.py
-	python3 tests/test_opna_rhythm.py
-	g++ -O2 -std=c++17 -Wall -Wextra -Itools -Inative_audio tests/test_native_audio.cpp -o $(OUT)/test_native_audio
-	$(OUT)/test_native_audio $(OUT)/nitrofs/$(NATIVE_TRACK)/song.nsq
-	python3 tests/test_native_audio.py --trace $(OUT)/native_trace.csv
+tests:
+	$(MAKE) test TEST_SUITE=audio HOST_CXX="$(HOST_CXX)"
 
 $(OUT)/arm7.o: native_audio/arm7/main.cpp $(HEADERS)
 	@mkdir -p $(OUT)
@@ -45,7 +40,7 @@ $(OUT)/arm7.elf: $(OUT)/arm7.o
 $(OUT)/arm9.elf: $(OUT)/arm9.o
 	$(CXX) $(ARM9) $(LIBPATH) -Wl,--gc-sections,-Map,$(OUT)/arm9.map -Wl,-u,gettimeofday $< -Wl,--start-group -lnds9 -lc -Wl,--end-group -o $@
 
-hrtp_native_audio.nds: tests $(OUT)/arm7.elf $(OUT)/arm9.elf
+hrtp_native_audio.nds: $(OUT)/arm7.elf $(OUT)/arm9.elf
 	$(BLOCKSDS)/tools/ndstool/ndstool -c $@ -7 $(OUT)/arm7.elf -9 $(OUT)/arm9.elf -b icon.gif "HRtP soundtrack;Native diagnostics;16 native songs" -d build/native_soundtrack/nitrofs
 
 -include $(OUT)/arm7.d $(OUT)/arm9.d

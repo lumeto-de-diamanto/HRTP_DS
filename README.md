@@ -31,26 +31,21 @@ The rom file `hrtp_ds.nds` will then appear.
 ![Screenshot 1](images/image1.png)
 ![Screenshot 2](images/image2.png)
 
-## Checks:
+## Checks
 
-* `make asset-tests font-tests`: tests clean/parallel asset builds
-and font generation
-* `make rom-checks`: rebuilds and verifies the DS header,
-executable ranges, linked font, opaque red/black icon and exact NitroFS contents
-* `make timer-tests timer-sanitize`: checks original stage durations, frame cadence,
-extensions and HURRY UP
-* `make projectile-tests projectile-sanitize`: checks orb/pellet contact and
-portal timelines; viewport tests also verify white bullets and portal rendering
-* `make viewport-tests viewport-sanitize`: checks rendering, original stage-entry
-cel order/timing, invincibility sparkles, sprite allocation rollback/reinitialization and stable usage
-across repeated state transitions, plus bottom-HUD colours/pattern and full-world radar
-mapping, clipping, overlap restoration and zero idle writes
-  (also round-results crop/zipper, fullwidth tally, input gating and state restoration)
-* `make konngara-tests konngara-sanitize`: checks the intro timeline/rendering
-and BOS/GRZ artwork, source phases 1–7 combat/lasers and defeat, exact BG/OBJ composition and allocation
-cleanup on replay/failure (camera/flash changes must not upload bitmaps)
-* `make konngara-hybrid-tests`: offline slash-sprite packing and independent
-source-pixel packing checks. The hybrid is used by practice and real Stage 20.
+* `make test` — asset/font unit checks, gameplay/physics, source-pixel rendering,
+  HUD/results and lifecycle regressions, plus all 16 music tracks and SFX.
+* `make sanitize` — portable C++ harnesses under AddressSanitizer/UBSan, without
+  repeating Python checks. Fixed-address audio service/diagnostic/music models
+  remain normal-mode tests because their RAM mappings conflict with sanitizers.
+* `make check-release` — build both ROMs and verify headers, icon, linked assets,
+  exact NitroFS payloads and approved native-only audio; no host suite rerun.
+
+For focused host runs, append `TEST_SUITE=gameplay`, `graphics` or `audio` to
+`make test` or `make sanitize` (the default is `all`). `HOST_CXX` selects the host
+compiler. Unchanged host executables and graphics fixtures are content-cached
+under `build/`; assertions still run every time. `make clean` clears the cache.
+Feature cases stay in small modules, with packaging assertions in one place.
 
 ## Current status
 
@@ -91,8 +86,10 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
   * [x] Icon
   * [ ] Smooth transitions
     * [ ] Between two regular stages
-    * [ ] Between a regular stage and a boss stage
+    * [ ] From a regular stage to a boss stage
     * [ ] Resetting a boss stage
+    * [ ] Resetting a regular stage
+    * [ ] From boss defeat results to regular stage
 
 ## Layout
 

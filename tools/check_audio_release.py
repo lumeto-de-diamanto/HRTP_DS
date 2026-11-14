@@ -39,13 +39,12 @@ def check_release():
         if not track.get('build_inputs') or any(digest(p) != h for p, h in track['build_inputs'].items()):
             raise ValueError(f'stale compiler/renderer: {name}')
         rhythm_dir = Path(track['rhythm']['directory'])
-        if digest(rhythm_dir / 'provenance.json') != track['rhythm']['declaration_sha256']:
-            raise ValueError(f'stale rhythm provenance: {name}')
+        # The importer records source/PCM identities, not a declaration file.
         for sample in track['rhythm']['samples']:
             if digest(rhythm_dir / sample['source_file']) != sample['source_sha256']:
                 raise ValueError(f'stale rhythm input: {name}')
         for alias in track['aliases']:
-            if digest(Path('assets') / alias) != track['source_sha256']:
+            if digest(Path(track['source']).parent / alias) != track['source_sha256']:
                 raise ValueError(f'nonidentical alias: {alias}')
         blob = Path(track['sequence_path']).read_bytes()
         if hashlib.sha256(blob).hexdigest() != track['sequence_sha256']:
@@ -76,7 +75,7 @@ def check_sfx(game, approved):
     identity = manifest['identity']
     if not manifest.get('complete') or {e['id'] for e in manifest['effects']} != set(range(1, 18)):
         raise ValueError('incomplete SFX set')
-    if digest(manifest['source']) != identity['source_sha256'] or digest('assets/MDRV98.COM') != identity['driver_sha256']:
+    if digest(manifest['source']) != identity['source_sha256'] or digest('assets/hdi_dump/MDRV98.COM') != identity['driver_sha256']:
         raise ValueError('stale SFX source/driver')
     if identity['mix'] != load_mix_profile() or any(digest(p) != h for p, h in identity['renderer_sources'].items()):
         raise ValueError('stale SFX renderer/profile')

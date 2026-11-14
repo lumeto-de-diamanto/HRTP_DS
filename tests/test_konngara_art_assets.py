@@ -13,7 +13,6 @@ from konngara_art_to_bin import build, bos_patches
 from konngara_combat_to_bin import build as build_combat
 from konngara_slash_to_bin import build_pair
 from konngara_defeat_to_bin import build as build_defeat
-from nds_files import nitro_files
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -311,13 +310,11 @@ def run_renderer(binary):
     with (runtime/'defeat.bin').open('wb') as out:
         out.write(struct.pack('<I',len(records)))
         for tick,pixels in records: out.write(struct.pack('<I',tick));out.write(pixels)
-    subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
+    if binary is not None:
+        subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
 
 
 if __name__ == '__main__':
-    rom_check = '--rom' in sys.argv
-    if rom_check:
-        sys.argv.remove('--rom')
     binary = None
     if '--run' in sys.argv:
         index = sys.argv.index('--run')
@@ -326,12 +323,5 @@ if __name__ == '__main__':
     result = unittest.main(exit=False)
     if not result.result.wasSuccessful():
         sys.exit(1)
-    if rom_check:
-        files = nitro_files((ROOT / 'hrtp_ds.nds').read_bytes())
-        assert files['konngara_art.bin'] == (ROOT / 'nitrofs/konngara_art.bin').read_bytes()
-        assert files['konngara_combat.bin'] == (ROOT / 'nitrofs/konngara_combat.bin').read_bytes()
-        assert files['konngara_slash.bin'] == (ROOT / 'nitrofs/konngara_slash.bin').read_bytes()
-        assert files['konngara_defeat.bin'] == (ROOT / 'nitrofs/konngara_defeat.bin').read_bytes()
-        print('ROM: exact Konngara BOS/GRZ visual-review asset verified')
     if binary:
         run_renderer(binary)

@@ -2,13 +2,10 @@
 """Check generated SinGyoku BOS/OAM assets and required route glyphs."""
 from pathlib import Path
 import re
-import struct
-import sys
 import unittest
 
 from bos_to_h import decode_bos, pack_frame_4bpp, pad_image
 from halve_image import shrink_image
-from nds_files import nitro_files
 
 
 class BossAssetTests(unittest.TestCase):
@@ -46,16 +43,4 @@ class BossAssetTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    if '--rom' in sys.argv:
-        sys.argv.remove('--rom')
-        rom = Path('hrtp_ds.nds').read_bytes()
-        assert nitro_files(rom).get('boss1.bin') == Path('nitrofs/boss1.bin').read_bytes()
-        offset = struct.unpack_from('<I', rom, 0x20)[0]
-        size = struct.unpack_from('<I', rom, 0x2c)[0]
-        arm9 = rom[offset:offset + size]
-        for name in ('SingyokuSphere', 'SingyokuFlash', 'SingyokuPerson'):
-            text = (Path('assets/processed/sprites') / f'{name}.h').read_text()
-            words = [int(v, 16) for v in re.findall(r'0x[0-9a-fA-F]+', text)]
-            assert struct.pack('<' + 'I' * len(words), *words) in arm9, f'missing/stale {name} in ARM9'
-        print('Game ROM: exact SinGyoku background and all three BOS sheets verified')
     unittest.main()

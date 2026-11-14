@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Original-source composition, independent entrance trace and ROM checks."""
+"""Original-source composition and independent entrance trace/fixtures."""
 from array import array
 from pathlib import Path
 import shutil
@@ -10,7 +10,6 @@ import unittest
 
 from grp_to_bin import decode_grp
 from konngara_to_bin import build, HEADER
-from nds_files import nitro_files
 
 
 def reference_trace():
@@ -110,13 +109,11 @@ def run_renderer(binary):
     shutil.copyfile('nitrofs/konngara_intro.bin', destination / 'konngara_intro.bin')
     trace = reference_trace()
     (runtime / 'trace.bin').write_bytes(b''.join(struct.pack('<6i', *frame) for frame in trace))
-    subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
+    if binary is not None:
+        subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
 
 
 if __name__ == '__main__':
-    rom_check = '--rom' in sys.argv
-    if rom_check:
-        sys.argv.remove('--rom')
     binary = None
     if '--run' in sys.argv:
         index = sys.argv.index('--run')
@@ -125,9 +122,5 @@ if __name__ == '__main__':
     result = unittest.main(exit=False)
     if not result.result.wasSuccessful():
         sys.exit(1)
-    if rom_check:
-        actual = nitro_files(Path('hrtp_ds.nds').read_bytes())
-        assert actual.get('konngara_intro.bin') == Path('nitrofs/konngara_intro.bin').read_bytes()
-        print('ROM: exact original-source Konngara intro composition verified')
     if binary:
         run_renderer(binary)
