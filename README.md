@@ -8,9 +8,9 @@ to the Nintendo DS, based on the game's fully decompiled source code at
 
 Requirements:
 
-* G++
+* G++ with C++17 support
 * GNU Make 4.3 or newer
-* Python 3 (with NumPy)
+* Python 3.11 or newer, with NumPy and Pillow installed
 * The Wonderful Toolchain package manager
   [(instructions)](https://wonderful.asie.pl/wiki/doku.php?id=getting_started)
 * BlocksDS [(instructions)](https://blocksds.skylyrac.net/docs/setup/)
@@ -50,11 +50,12 @@ Feature cases stay in small modules, with packaging assertions in one place.
 ## Current status
 
 * [ ] Display
-  * [ ] Bullets and blitter effects (pellets, shootout lasers, Konngara patterns,
-    player effects implemented; other boss effects remain)
+  * [x] Bullets
+  * [x] Lasers, thin and thick
+  * [ ] Missiles
   * [x] Bitmap background
   * [x] Tiles, turrets and barriers
-  * [ ] HUD
+  * [x] HUD
     * [x] Top screen HUD
     * [x] Bottom screen HUD
   * [x] Font
