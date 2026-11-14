@@ -6,6 +6,8 @@ import struct
 import sys
 import unittest
 
+from PIL import Image
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from nds_files import nitro_files
 
@@ -61,6 +63,36 @@ class RomPackagingTests(unittest.TestCase):
         for values in (codes, pixels):
             self.assertTrue(values)
             self.assertIn(struct.pack('<' + 'H' * len(values), *values), arm9)
+
+    def test_static_red_kanji_icon_is_exact_and_opaque(self):
+        image = Image.open('icon.gif')
+        self.assertEqual(image.size, (32, 32))
+        self.assertEqual(image.n_frames, 1)
+        self.assertNotIn('transparency', image.info)
+        rgb = image.convert('RGB')
+        colors = {color for _, color in rgb.getcolors(256)}
+        self.assertLessEqual(len(colors), 15)  # plus the DS's reserved transparent slot
+        self.assertIn((0, 0, 0), colors)
+        self.assertIn((255, 0, 0), colors)
+        self.assertTrue(all(g == b == 0 for _, g, b in colors))
+        left, top, right, bottom = rgb.getbbox()
+        self.assertGreaterEqual(min(left, top), 1)
+        self.assertLessEqual(max(right, bottom), 31)
+        self.assertEqual(max(right - left, bottom - top), 30)
+
+        position = struct.unpack_from('<I', self.rom, 0x68)[0]
+        self.assertGreaterEqual(position, 0x200)
+        banner = self.rom[position:position + 0x840]
+        self.assertEqual(struct.unpack_from('<H', banner)[0], 1)
+        self.assertEqual(struct.unpack_from('<H', banner, 2)[0], crc16(banner[0x20:0x840]))
+        palette = struct.unpack_from('<16H', banner, 0x220)
+        for y in range(32):
+            for x in range(32):
+                address = 0x20 + ((y // 8) * 4 + x // 8) * 32 + (y % 8) * 4 + (x % 8) // 2
+                index = (banner[address] >> ((x % 2) * 4)) & 15
+                self.assertNotEqual(index, 0, 'black icon background must not be transparent')
+                r, g, b = rgb.getpixel((x, y))
+                self.assertEqual(palette[index], (r >> 3) | ((g >> 3) << 5) | ((b >> 3) << 10))
 
 
 if __name__ == '__main__':

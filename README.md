@@ -36,7 +36,7 @@ The rom file `hrtp_ds.nds` will then appear.
 * `make asset-tests font-tests`: tests clean/parallel asset builds
 and font generation
 * `make rom-checks`: rebuilds and verifies the DS header,
-executable ranges, linked font and exact NitroFS contents
+executable ranges, linked font, opaque red/black icon and exact NitroFS contents
 * `make timer-tests timer-sanitize`: checks original stage durations, frame cadence,
 extensions and HURRY UP
 * `make projectile-tests projectile-sanitize`: checks orb/pellet contact and
@@ -88,7 +88,7 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
   * [ ] Endings and credits
   * [ ] Hero Scroll/score table/game over
 * [ ] Miscellanea
-  * [ ] Icon
+  * [x] Icon
   * [ ] Smooth transitions
     * [ ] Between two regular stages
     * [ ] Between a regular stage and a boss stage
@@ -127,3 +127,6 @@ layers).
 * **Nmlgc** and the ReC98 contributors — for the complete decompilation of HRtP
 * **All the BlocksDS contributors** — for the SDK that makes this port possible
 * **ZUN** — for Touhou Project itself
+* **Yuji Kataoka, Kinuta Font Factory and the Yuji Project authors** — for
+  [Yuji Syuku](https://github.com/Kinutafontfactory/Yuji), used for the icon
+  ([SIL Open Font License 1.1](assets/licenses/Yuji-OFL.txt))
