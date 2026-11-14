@@ -26,6 +26,7 @@
 #include "hud_render.hpp"
 #include "subscreen.hpp"
 #include "palette_fx.hpp"
+#include "menu_render.hpp"
 #include "main/boss/singyoku.hpp"
 #include "main/player/player.hpp"
 #include "main/player/orb.hpp"
@@ -45,6 +46,7 @@ void mdrv2_se_play(int id) { test_effects.push_back(id); }
 void test_stage_entrances();
 void test_konngara_review();
 void test_konngara_stage20();
+void test_stage_bonus_awards();
 void test_player_death();
 void test_bombs();
 extern PlayerState player;
@@ -126,6 +128,149 @@ static int bg0_pixel(int x, int y) {
     const int tile = BG_MAP_RAM(30)[(y / 8) * 32 + x / 8] & 1023;
     const u16 word = BG_TILE_RAM(2)[tile * 16 + (y % 8) * 2 + (x % 8) / 4];
     return (word >> ((x % 4) * 4)) & 15;
+}
+
+static void check_modal_glyph(int left,int top,unsigned jis,int ink,int weight)
+{
+    const u16 *glyph=font16x16_find(jis);assert(glyph);
+    for(int y=0;y<16;++y) {
+        u16 bits=glyph[y];
+        if(weight==1 || weight==3) bits=u16(bits|(bits<<1));
+        if(weight>=2) {
+            const u16 added=u16(bits<<1)&~bits;
+            bits=u16((bits|(bits<<1))&~u16(added<<1));
+        }
+        for(int x=0;x<16;++x)
+            assert(bg0_pixel(left+x,top+y)==(bits&(0x8000>>x) ? ink : 0));
+    }
+}
+
+static void check_modal_ank(int left,int top,const char *text,int ink)
+{
+    for(;*text;++text,left+=8) for(int y=0;y<16;++y) for(int x=0;x<8;++x)
+        assert(bg0_pixel(left+x,top+y)==(font8x16[*text-0x20][y]&(0x80>>x) ? ink : TEXT_MODAL_BLACK));
+}
+
+namespace {
+struct MenuProbe {
+    int scenario=0,pause_frames=0,confirm_frames=0,blank_frames=0,opening_frames=0,result_frames=0,waits=0;
+    unsigned timer=0;int score=0,stage=1;
+    StageBonus bonus{};
+    u16 hud[96]{};
+} menu_probe;
+
+void observe_source_menu()
+{
+    auto &p=menu_probe;assert(++p.waits<200);
+    assert(stage_timer==p.timer && stage_score==p.score);
+    assert(std::equal(std::begin(p.hud),std::end(p.hud),BG_MAP_RAM(30)));
+    test_keys_down=test_keys_held=0;
+    if(p.scenario<5) {
+        bool confirmation=false,pause=false;
+        for(int y=56;y<72;++y) {
+            for(int x=36;x<52;++x) confirmation|=bg0_pixel(x,y)!=0;
+            for(int x=84;x<164;++x) pause|=bg0_pixel(x,y)!=0;
+        }
+        pause&=!confirmation;
+        if(pause) {
+            ++p.pause_frames;
+            check_modal_glyph(84,56,0x2350,TEXT_MODAL_WHITE,3);
+            check_modal_glyph(84,72,0x3a46,TEXT_MODAL_WHITE,3);
+            if(p.scenario==4) {
+                if(p.pause_frames==1) test_keys_down=KEY_UP; // vertical navigation is not the source menu
+                if(p.pause_frames==2) test_keys_down=KEY_RIGHT;
+                if(p.pause_frames==3) {
+                    check_modal_glyph(132,72,0x217c,TEXT_MODAL_WHITE,0);
+                    for(int y=72;y<88;++y) for(int x=68;x<84;++x) assert(!bg0_pixel(x,y));
+                    test_keys_down=KEY_LEFT;
+                }
+                if(p.pause_frames==4) { check_modal_glyph(68,72,0x217c,TEXT_MODAL_WHITE,0);test_keys_down=KEY_B; }
+            } else test_keys_down=p.scenario==3 ? KEY_START : p.scenario==0 ? KEY_B : KEY_RIGHT|KEY_B;
+        } else if(confirmation) {
+            ++p.confirm_frames;
+            check_modal_glyph(36,56,0x4b5c,TEXT_MODAL_WHITE,3);
+            check_modal_glyph(52,72,0x2426,TEXT_MODAL_WHITE,3);
+            check_modal_glyph(164,72,0x244f,TEXT_MODAL_WHITE,3);
+            check_modal_glyph(36,72,0x217c,TEXT_MODAL_WHITE,0); // No is first/default
+            test_keys_down=p.scenario==2 ? KEY_RIGHT|KEY_B : KEY_B;
+        } else if(p.pause_frames && !p.confirm_frames) ++p.blank_frames;
+        return;
+    }
+    if((REG_BLDCNT&0x3f)!=BLEND_SRC_BG0) return; // first VBlank before modal ownership
+    assert(REG_BLDCNT==(BLEND_ALPHA|BLEND_SRC_BG0|BLEND_DST_BG1|BLEND_DST_BG2|BLEND_DST_BG3|BLEND_DST_SPRITE|BLEND_DST_BACKDROP));
+    assert(REG_BLDALPHA==0x0810 && (REG_WINOUT&0x20) && !(REG_WININ&0x2020));
+    bool results=false;
+    for(int y=32;y<48;++y) for(int x=60;x<196;++x) results|=bg0_pixel(x,y)==TEXT_MODAL_RED;
+    if(results) {
+        ++p.result_frames;
+        char title[]="STAGE 00 COMPLETE";title[6]='0'+p.stage/10;title[7]='0'+p.stage%10;
+        check_modal_ank(60,32,title,TEXT_MODAL_RED);
+        check_modal_ank(108,56,"BONUS",TEXT_MODAL_WHITE);
+        check_modal_ank(32,72,"Time",TEXT_MODAL_WHITE);
+        check_modal_ank(32,88,"Continuous",TEXT_MODAL_WHITE);
+        check_modal_ank(32,104,"Bomb&Player",TEXT_MODAL_WHITE);
+        check_modal_ank(32,120,"STAGE",TEXT_MODAL_WHITE);
+        check_modal_ank(32,144,"BONUS Point",TEXT_MODAL_WHITE);
+        const int metrics[]={p.bonus.time*10,p.bonus.combo*10,p.bonus.resources*10,p.bonus.stage*10,p.bonus.total};
+        for(int row=0;row<5;++row) {
+            const int digits=row==4 ? 6 : 5,left=row==4 ? 168 : 176,top=row==4 ? 144 : 72+row*16;
+            int divisor=row==4 ? 100000 : 10000;
+            for(int d=0;d<digits;++d,divisor/=10) {
+                const char digit[]={char('0'+(metrics[row]/divisor)%10),'\0'};
+                check_modal_ank(left+d*8,top,digit,TEXT_MODAL_WHITE);
+            }
+        }
+        check_modal_ank(72,168,"Hit A or B Key",TEXT_MODAL_RED);
+        // Black halves the next visible scene layer; white text stays white.
+        const auto add=[](int source,int scene){return std::min(31,source+scene/2);};
+        assert(add(BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_BLACK]&31,20)==10);
+        assert(add(BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_WHITE]&31,20)==31);
+        if(p.result_frames==3) test_keys_down=p.scenario==5 ? KEY_B : KEY_A;
+        return;
+    }
+    assert(++p.opening_frames<=24);
+    const int half_height=(84*p.opening_frames+23)/24;
+    for(int y=24;y<192;++y) for(int x=0;x<256;++x)
+        assert(bg0_pixel(x,y)==(x>=16 && x<240 && y>=108-half_height && y<108+half_height ? TEXT_MODAL_BLACK : 0));
+    test_keys_down=KEY_A; // cannot skip the source opening animation
+}
+}
+
+static void check_source_menus()
+{
+    text_layer_clear();canvas_playfield_clip(false);canvas_clear();
+    canvas_fill_rect(12,80,8,8,RGB15(12,20,6));canvas_fill_rect(24,80,4,4,0x7fff);
+    const std::vector<u16> pixels(canvas_at(0,0),canvas_at(0,192));
+    const std::vector<u16> bg(BG_PALETTE,BG_PALETTE+256),obj(SPRITE_PALETTE,SPRITE_PALETTE+256);
+    const std::vector<u16> font(BG_TILE_RAM(2),BG_TILE_RAM(2)+224*16);
+    const auto heap=test_heap_attempts,objects=test_obj_attempts,oam=test_oam_changes;
+    const u16 control=REG_BLDCNT,alpha=REG_BLDALPHA,window=REG_WINOUT;
+    for(int scenario=0;scenario<7;++scenario) {
+        menu_probe={};auto &p=menu_probe;p.scenario=scenario;p.timer=stage_timer;p.score=stage_score;
+        std::copy(BG_MAP_RAM(30),BG_MAP_RAM(30)+96,p.hud);
+        test_vblank_hook=observe_source_menu;
+        if(scenario<5) {
+            assert(pause_menu_run()==(scenario==2));
+            assert(p.pause_frames==(scenario==4 ? 4 : 1) && p.blank_frames==20);
+            assert(p.confirm_frames==(scenario==1 || scenario==2 ? 1 : 0));
+        } else {
+            p.stage=scenario==5 ? 20 : 1;
+            p.bonus=scenario==5 ? StageBonus{6553,6553,6553,6553,262120} : StageBonus{};
+            REG_BLDCNT=0x0123;REG_BLDALPHA=0x0506;REG_WINOUT=0x401f;
+            stagebonus_run(p.bonus,p.stage);
+            assert(p.opening_frames==24 && p.result_frames==3);
+            assert(REG_BLDCNT==0x0123 && REG_BLDALPHA==0x0506 && REG_WINOUT==0x401f);
+        }
+        test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+        assert(std::equal(bg.begin(),bg.end(),BG_PALETTE) && std::equal(obj.begin(),obj.end(),SPRITE_PALETTE));
+        assert(std::equal(pixels.begin(),pixels.end(),canvas_at(0,0)));
+        assert(std::equal(font.begin(),font.end(),BG_TILE_RAM(2)));
+        assert(std::all_of(BG_MAP_RAM(30)+96,BG_MAP_RAM(30)+1024,[](u16 v){return v==0;}));
+    }
+    assert(test_heap_attempts==heap && test_obj_attempts==objects && test_oam_changes==oam);
+    REG_BLDCNT=control;REG_BLDALPHA=alpha;REG_WINOUT=window;
+    canvas_clear();
+    std::puts("Menus: native16x16 pause JIS, horizontal/default-No controls, native8x16 results, solid translucent BG0 reveal/targets, A-or-B prompt, max/zero bonuses and exact HUD/palette/blend restoration passed");
 }
 
 static void check_white_projectiles()
@@ -696,8 +841,10 @@ int main()
     assert(test_obj_used == obj_used);
     assert(test_obj_attempts == sprite_attempts && test_obj_count == 79 && test_obj_used == 27840);
     check_sprite_lifecycles();
+    check_source_menus();
     test_stage_entrances();
     test_konngara_review();
+    test_stage_bonus_awards();
     test_konngara_stage20();
     test_player_death();
     test_bombs();

@@ -4,6 +4,8 @@
 #include "text_layer.hpp"
 #include "palette.hpp"
 #include "upper_hud.hpp"
+#include "font16x16.hpp"
+#include "camera.hpp"
 
 #include "fonts/font8x16.h"
 
@@ -16,6 +18,10 @@
 #define TEXT_MAP_W 32 // tiles
 #define HUD_DIVIDER_TILE (TEXT_FIRST_TILE + 96 * 2)
 #define HUD_COUNT_FIRST (HUD_DIVIDER_TILE + 1)
+//224 +32*21 =896 tiles: ends EXACTLY at mapBase30 (0xF000), not over it.
+static constexpr int MODAL_FIRST_TILE = 224, MODAL_ROWS = (192-UPPER_HUD_H)/8;
+static_assert((MODAL_FIRST_TILE+32*MODAL_ROWS)*32<=0x7000, "modal tiles overlap BG0 map");
+static_assert(HUD_COUNT_FIRST+6<=MODAL_FIRST_TILE, "modal tiles overlap HUD/ANK glyphs");
 static unsigned last_hud_timer = ~0u;
 
 void text_layer_init()
@@ -159,4 +165,64 @@ void text_layer_number(int gx, int gy, int value, int digits, int pal_bank)
     }
     buf[digits] = '\0';
     text_layer_puts(gx, gy, buf, pal_bank);
+}
+
+void text_layer_modal_begin()
+{
+    text_layer_clear();
+    dmaFillHalfWords(0,BG_TILE_RAM(TEXT_TILE_BASE)+MODAL_FIRST_TILE*16,32*MODAL_ROWS*32);
+    // Separate ink slots preserve the approved timer/divider's dimmed colours.
+    BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_BLACK]=0;
+    BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_WHITE]=0x7fff;
+    BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_RED]=RGB15(31,0,0);
+}
+
+void text_layer_modal_pixel(int x,int y,int ink)
+{
+    if(x<0 || x>=256 || y<UPPER_HUD_H || y>=192) return;
+    const int tile=MODAL_FIRST_TILE+(y/8-UPPER_HUD_H/8)*32+x/8;
+    u16 *word=BG_TILE_RAM(TEXT_TILE_BASE)+tile*16+(y%8)*2+(x%8)/4;
+    const int shift=(x%4)*4;
+    *word=(*word&~(15<<shift))|((ink&15)<<shift);
+    BG_MAP_RAM(TEXT_SCREENBLOCK)[y/8*32+x/8]=tile|TILE_PALETTE(TEXT_PAL_RED);
+}
+
+void text_layer_modal_fill_rect(int x,int y,int w,int h,int ink)
+{
+    for(int row=0;row<h;++row) for(int col=0;col<w;++col)
+        text_layer_modal_pixel(x+col,y+row,ink);
+}
+
+void text_layer_modal_clear_rect(int x,int y,int w,int h)
+{
+    text_layer_modal_fill_rect(x,y,w,h,0);
+}
+
+void text_layer_modal_glyph(int x,int y,unsigned jis,int ink,int weight)
+{
+    const u16 *glyph=font16x16_find(jis);
+    if(!glyph) return;
+    for(int row=0;row<16;++row) {
+        u16 bits=glyph[row];
+        // ReC98 grppsafx.cpp: bold preserves holes; black adds another left
+        // pixel first. Retain its16-bit clipping, without resizing the glyph.
+        if(weight==1 || weight==3) bits|=u16(bits<<1);
+        if(weight>=2) {
+            const u16 old=bits;
+            bits|=u16(bits<<1);bits&=~u16((old^bits)<<1);
+        }
+        for(int col=0;col<16;++col)
+            if(bits&(0x8000>>col)) text_layer_modal_pixel(x+col,y+row,ink);
+    }
+}
+
+void text_layer_modal_text(int x,int y,const char *text,int ink)
+{
+    for(;*text;++text,x+=8) {
+        const unsigned char c=static_cast<unsigned char>(*text);
+        if(c<0x20 || c>0x7f) continue;
+        const u8 *glyph=font8x16[c-0x20];
+        for(int row=0;row<16;++row) for(int col=0;col<8;++col)
+            if(glyph[row]&(0x80>>col)) text_layer_modal_pixel(x+col,y+row,ink);
+    }
 }

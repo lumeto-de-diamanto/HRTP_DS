@@ -61,12 +61,13 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
     * [x] Top screen HUD
     * [ ] Bottom screen HUD (*in progress*, functional but needs visual refinement)
   * [x] Font
-* [ ] Core gameplay
+* [x] Core gameplay
   * [x] Player controls
   * [x] Orb
   * [x] Bombs
   * [x] Damage and game over
-  * [ ] Pause screen and stage results (*in progress*, functional but needs visual refinement)
+  * [x] Pause screen
+  * [x] Stage results
 * [x] Music and SFX engine
   * [x] Music
   * [x] SFX
@@ -86,6 +87,9 @@ source-pixel packing checks. The hybrid is used by practice and real Stage 20.
   * [ ] Hero Scroll/score table/game over
 * [ ] Miscellanea
   * [ ] Icon
+  * [ ] Smooth transitions
+    * [ ] Between two regular stages
+    * [ ] Between a regular stage and a boss stage
 
 ## Layout
 
@@ -106,8 +110,7 @@ Current controls:
 * **Left/Right** — move Reimu; **A** — swing gohei; **B** — shoot ofuda
   (and serve the orb at the start of a card stage)
 * **X**, or **A + B twice** — bomb.
-* **START** — pause (RESUME / QUIT; QUIT restarts at stage 1 until the
-  title screen exists)
+* **START** — pause/resume.
 * **SELECT + d-pad** — dev stage navigator (←/→: stage, ↑/↓: scene;
   Shrine and the last Jigoku scene have five stages, other scenes four)
 

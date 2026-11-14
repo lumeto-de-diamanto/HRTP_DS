@@ -25,6 +25,19 @@ void text_layer_hud_resource_number(int gx, int count); // 8x16 boss count cell,
 void text_layer_puts(int gx, int gy, const char *s, int pal_bank);
 void text_layer_number(int gx, int gy, int value, int digits, int pal_bank);
 
+// Source-style modal artwork in BG0, below the approved24px HUD. A fixed
+// tile-backed bitmap supports full16x16 JIS and native8x16 ANK glyphs at pixel positions
+// without OAM/heap allocation or modifying the gameplay effects canvas.
+constexpr int TEXT_MODAL_BLACK = 3;
+constexpr int TEXT_MODAL_WHITE = 4;
+constexpr int TEXT_MODAL_RED = 5;
+void text_layer_modal_begin();
+void text_layer_modal_pixel(int x, int y, int ink);
+void text_layer_modal_fill_rect(int x, int y, int w, int h, int ink);
+void text_layer_modal_clear_rect(int x, int y, int w, int h);
+void text_layer_modal_glyph(int x, int y, unsigned jis, int ink, int weight = 2);
+void text_layer_modal_text(int x, int y, const char *text, int ink);
+
 // Horizontal size of a string in glyph columns.
 static inline int text_layer_width(const char *s)
 {

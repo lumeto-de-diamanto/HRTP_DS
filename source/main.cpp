@@ -360,12 +360,13 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
             singyoku_update(bomb_damage);
             if(singyoku_state().phase==SG_DEFEATED) {
                 player_is_hit=false;
+                if(stage_score>hiscore) hiscore=stage_score;
                 player_bomb_cancel();
                 video_bomb_reset();
                 music_stop();
                 Pellets.init();shots_initialize();Items.init();render_frame();
                 const RouteChoice route=boss_defeat_and_select_route();
-                stage_load(route_first_scene(route),0,true);
+                stage_load(route_first_scene(route),0,true,true);
                 return;
             }
         }
@@ -409,10 +410,16 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         if(player_bomb().active() || video_bomb_effect_active()) {
             player_bomb_cancel();video_bomb_reset();render_frame();
         }
-        stagebonus_run(stagebonus_compute(global_stage_num(),lives),global_stage_num());
+        // Commit exactly once at the clear boundary, not in the blocking
+        // renderer/input loop. The displayed tally and credited amount agree.
+        const StageBonus bonus=stagebonus_compute(global_stage_num(),lives);
+        stage_score+=bonus.total;
+        if(stage_score>hiscore) hiscore=stage_score;
+        hud_render(lives,global_stage_num());
+        stagebonus_run(bonus,global_stage_num());
         int next=current_stage+1;
         if(next>=scene_stage_count(current_scene)) next=0; // other unported bosses remain gated
-        stage_load(current_scene,next,false,stage_has_konngara(current_scene,next));
+        stage_load(current_scene,next,false,true);
         if(stage_has_konngara(current_scene,current_stage)) return;
     }
     if(stage_score>hiscore) hiscore=stage_score;

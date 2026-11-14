@@ -232,8 +232,21 @@ void test_konngara_review()
 #undef HRTP_GAME_FLOW_TEST
 
 namespace {
+int bonus_from_stage,bonus_expected_score,bonus_visible_frames;
+void observe_bonus_award()
+{
+    assert(stage_score==bonus_expected_score && hiscore>=bonus_expected_score);
+    test_keys_down=test_keys_held=0;
+    if(current_stage==bonus_from_stage && (REG_BLDCNT&0x3f)==BLEND_SRC_BG0) {
+        // Hold the result for several input frames, then confirm with both
+        // buttons held. Neither drawing nor repeated input may add it again.
+        if(++bonus_visible_frames>=29) test_keys_down=test_keys_held=KEY_A|KEY_B;
+    }
+}
+
 bool stage20_entering;
 int stage20_entry_waits,stage20_defeat_waits,stage20_entry_frame;
+int stage20_carry_score;
 int stage20_frozen_score,stage20_frozen_timer,stage20_frozen_frame;
 
 void observe_stage20()
@@ -245,13 +258,13 @@ void observe_stage20()
     test_keys_down=0;
     if(stage20_entering) {
         ++stage20_entry_waits;
-        assert(stage_score==123450 && lives==6 && rem_bombs==4 && stage_timer==8000);
+        assert(stage_score==stage20_carry_score && lives==6 && rem_bombs==4 && stage_timer==8000);
         assert(frame==unsigned(stage20_entry_frame) && konngara.state().frame==0 && konngara.state().health.hp==18);
         assert(REG_WININ==0x1D1D); // intro mask retained through first combat commit
     } else if(konngara.state().complete) {
         if(!stage20_defeat_waits) {
             stage20_frozen_score=stage_score;stage20_frozen_timer=stage_timer;stage20_frozen_frame=frame;
-            assert(stage_score>=353450 && stage_score<363450 && hiscore>=stage_score);
+            assert(stage_score>=stage20_carry_score+230000 && stage_score<stage20_carry_score+240000 && hiscore>=stage_score);
         }
         assert(++stage20_defeat_waits<=541);
         assert(stage_score==stage20_frozen_score && stage_timer==unsigned(stage20_frozen_timer) && frame==unsigned(stage20_frozen_frame));
@@ -260,12 +273,51 @@ void observe_stage20()
 }
 }
 
+void test_stage_bonus_awards()
+{
+    const int saved_high=hiscore;
+    for(int stage:{0,1,3}) {
+        test_vblank_hook=nullptr;stage_load(0,stage);
+        lives=6;rem_bombs=5;stage_score=123450;hiscore=100;
+        stage_timer=1000;stage_cardcombo_max=7;
+        const StageBonus bonus=stagebonus_compute(stage_number(0,stage),lives);
+        assert(bonus.total==(3000+700+1700+stage*200)*10);
+        bonus_from_stage=stage;bonus_expected_score=stage_score+bonus.total;bonus_visible_frames=0;
+        stage_cards_removed_count=stage_card_total;
+        test_vblank_hook=observe_bonus_award;
+        gameplay_tick(0,0);
+        test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+        assert(bonus_visible_frames==29 && current_scene==0 && current_stage==stage+1);
+        assert(stage_score==bonus_expected_score && hiscore==bonus_expected_score);
+        for(int tick=0;tick<3;++tick) gameplay_tick(0,0);
+        assert(stage_score==bonus_expected_score); // next stage/entrance cannot repeat the award
+    }
+    // The natural boss/route transition must not throw away the accumulated
+    // card-stage bonus either. Use the real lethal-orb/route UI path.
+    for(int i=0;i<200;++i) singyoku_update();
+    auto &health=const_cast<BossHealth&>(singyoku_state().health);
+    health.hp=1;health.invincible=false;health.invincibility_frame=0;
+    const auto &entity=singyoku_state().entity;
+    orb_set_position(entity.left+24,entity.top+24);
+    const int before=stage_score;
+    test_vblank_hook=[](){test_keys_down=KEY_B;};gameplay_tick(0,0);
+    test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+    if(current_scene!=1 || current_stage!=0 || stage_score!=before+3000 || hiscore<stage_score)
+        std::fprintf(stderr,"Bonus route carry: scene%d stage%d score%d expected%d high%d\n",
+            current_scene,current_stage,stage_score,before+3000,hiscore);
+    assert(current_scene==1 && current_stage==0 && stage_score==before+3000 && hiscore>=stage_score);
+    hiscore=std::max(hiscore,saved_high);
+    start_new_game();assert(stage_score==0);
+    std::puts("Stage bonus: displayed x10 sum credited once before results, high score, held-confirm/no repeat, ordinary/boss/route carry and new-game reset passed");
+}
+
 void test_konngara_stage20()
 {
     test_vblank_hook=nullptr;
     stage_load(6,3); // actual Stage19, no new fake route/boss prerequisites
     lives=6;rem_bombs=4;stage_score=123450;frame=17;
     stage_cards_removed_count=stage_card_total; // test-only cleared card field
+    stage20_carry_score=stage_score+stagebonus_compute(19,lives).total;
     stage20_entry_frame=frame;stage20_entering=true;
     const int plays=starts;
     test_vblank_hook=observe_stage20;

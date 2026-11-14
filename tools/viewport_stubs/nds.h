@@ -48,8 +48,8 @@ inline u16 REG_VCOUNT = 192;
 inline u16 REG_WIN0H{}, REG_WIN1H{}, REG_WIN0V{}, REG_WIN1V{}, REG_WININ{}, REG_WINOUT{};
 inline u16 REG_BLDCNT{},REG_BLDALPHA{},REG_BLDY{};
 inline u16 REG_MASTER_BRIGHT{},REG_MASTER_BRIGHT_SUB{};
-inline constexpr int BLEND_ALPHA=1<<6,BLEND_SRC_BG2=1<<2,
-    BLEND_DST_BG1=1<<9,BLEND_DST_BG3=1<<11,BLEND_DST_SPRITE=1<<12,BLEND_DST_BACKDROP=1<<13;
+inline constexpr int BLEND_ALPHA=1<<6,BLEND_SRC_BG0=1,BLEND_SRC_BG2=1<<2,
+    BLEND_DST_BG1=1<<9,BLEND_DST_BG2=1<<10,BLEND_DST_BG3=1<<11,BLEND_DST_SPRITE=1<<12,BLEND_DST_BACKDROP=1<<13;
 inline constexpr int BLEND_FADE_WHITE=2<<6,BLEND_SRC_BG3=1<<3,BLEND_SRC_BACKDROP=1<<5;
 struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; bool visible = true; };
 inline TestBg test_bgs[4];
