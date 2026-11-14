@@ -1,11 +1,29 @@
 #pragma once
 #include <cstddef>
+#include <cstdint>
 #include <nds.h>
 #include "main/boss/konngara_state.hpp"
 
 bool konngara_combat_asset_valid(const void *data, size_t size);
 bool konngara_slash_asset_valid(const void *data, size_t size);
 bool konngara_defeat_asset_valid(const void *data, size_t size);
+enum class KonngaraDefeatFailure {
+    None, State, Open, HeaderRead, HeaderSize, Allocation, BodyRead, EndRead,
+    TrailingData, Validation, Seek, Prefetch
+};
+struct KonngaraDefeatDiagnostics {
+    KonngaraDefeatFailure failure = KonngaraDefeatFailure::None;
+    int error_number = 0;
+    int page = -1;
+    size_t requested_bytes = 0, read_bytes = 0;
+    bool active = false, already_defeated = false, heap_available = false;
+    uintptr_t heap_start = 0, heap_end = 0, heap_limit = 0;
+    size_t heap_used = 0, heap_free = 0;
+};
+// Failure state is retained BEFORE cleanup frees combat memory. No heap probe
+// allocations or per-frame logging; host hardware stubs omit the DS heap data.
+const KonngaraDefeatDiagnostics &konngara_defeat_diagnostics();
+const char *konngara_defeat_failure_name(KonngaraDefeatFailure failure);
 struct KonngaraRenderWork {
     unsigned background_bytes = 0, head_uploads = 0, palette_writes = 0, slash_uploads = 0, sprite_bytes = 0;
 };

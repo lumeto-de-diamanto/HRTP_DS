@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <cerrno>
 #include <fstream>
 #include <iterator>
 #include <utility>
@@ -579,19 +580,46 @@ int main()
         const std::vector<u16> active_objects(SPRITE_PALETTE,SPRITE_PALETTE+256);
         const std::vector<u16> live(BG_BMP_RAM(4),BG_BMP_RAM(4)+65536);
         const int before_stop=stops;
-        test_heap_fail_after=0;assert(!view.defeat());test_heap_fail_after=-1;
-        assert(REG_BLDCNT==active_blend); // failed playback leaves the live composition intact
-        assert(test_heap_bytes==bytes && test_heap_count==blocks && stops==before_stop+1);
         assert(std::rename("nitro:/konngara_defeat.bin","nitro:/konngara_defeat.saved")==0);
         assert(!view.defeat());
+        assert(konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::Open);
+        assert(konngara_defeat_diagnostics().error_number==ENOENT);
         { std::ofstream f("nitro:/konngara_defeat.bin",std::ios::binary);f.write("KGD1",4); }
         assert(!view.defeat());
+        assert(konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::HeaderRead);
+        assert(konngara_defeat_diagnostics().read_bytes==4);
+        auto write_bad=[&](const std::vector<u8> &bytes) {
+            std::ofstream f("nitro:/konngara_defeat.bin",std::ios::binary);
+            f.write(reinterpret_cast<const char *>(bytes.data()),bytes.size());
+        };
+        auto bad=data;bad[12]=0;bad[13]=0;bad[14]=0;bad[15]=0;write_bad(bad);
+        assert(!view.defeat() && konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::HeaderSize);
+        write_bad({data.begin(),data.end()-1});
+        assert(!view.defeat() && konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::BodyRead);
+        assert(konngara_defeat_diagnostics().read_bytes==data.size()-1);
+        bad=data;bad.push_back(0);write_bad(bad);
+        assert(!view.defeat() && konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::TrailingData);
+        bad=data;bad[0]='X';write_bad(bad);
+        assert(!view.defeat() && konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::Validation);
+        assert(konngara_defeat_diagnostics().read_bytes==232);
         assert(std::rename("nitro:/konngara_defeat.saved","nitro:/konngara_defeat.bin")==0);
         assert(std::equal(live.begin(),live.end(),BG_BMP_RAM(4)));
         assert(std::equal(active_palette.begin(),active_palette.end(),BG_PALETTE));
         assert(std::equal(active_objects.begin(),active_objects.end(),SPRITE_PALETTE) && REG_MASTER_BRIGHT==0x4005);
+        assert(REG_BLDCNT==active_blend && test_heap_bytes==bytes && test_heap_count==blocks);
+        // The original full-file allocation failed after a previous boss. The
+        // complete pixel/timeline oracle must now pass even if ALL further
+        // renderer malloc requests are denied, not merely with a roomier heap.
+        const size_t attempts=test_heap_attempts;
+        auto *staging=reinterpret_cast<u8*>(g_canvas_target);
+        std::fill(staging+129024,staging+131072,0xa7); // guard the unused cache tail
         defeat_reference=read("defeat.bin");defeat_testing=true;test_vblank_hook=observe_defeat;
+        test_heap_fail_after=0;
         assert(view.defeat());test_vblank_hook=nullptr;defeat_testing=false;
+        test_heap_fail_after=-1;
+        assert(test_heap_attempts==attempts && konngara_defeat_diagnostics().requested_bytes==data.size());
+        assert(std::all_of(staging+129024,staging+131072,[](u8 p){return p==0xa7;}));
+        assert(konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::None);
         assert(REG_BLDCNT==previous_blend && REG_BLDALPHA==previous_alpha && REG_BLDY==previous_y && REG_WINOUT==previous_window);
         assert(REG_MASTER_BRIGHT==previous_master);
         check_defeat_frame(420);
@@ -600,9 +628,11 @@ int main()
         for(int f=4;f<=64;f+=4) expected_sounds.push_back(90+f-1);
         for(int f=0;f<150;f+=8) expected_sounds.push_back(155+f);
         for(int f=152;f<220;f+=8) expected_sounds.push_back(155+f);
-        assert(defeat_sounds==expected_sounds && defeat_sounds.size()==44 && stops==before_stop+4);
+        assert(defeat_sounds==expected_sounds && defeat_sounds.size()==44 && stops==before_stop+7);
         assert(test_heap_count==1 && test_heap_bytes==262144 && test_obj_count==1 && test_obj_used==4096);
         KonngaraCombatState state{};assert(!view.frame(state) && !view.present() && !view.defeat());
+        assert(konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::State);
+        assert(konngara_defeat_diagnostics().active && konngara_defeat_diagnostics().already_defeated);
         view.end();view.end();
         assert(test_heap_count==0 && test_heap_bytes==0 && !g_canvas_target);
         assert(std::equal(bgpal.begin(),bgpal.end(),BG_PALETTE));
@@ -616,8 +646,26 @@ int main()
         test_vblank_hook=nullptr;defeat_testing=false;
         assert(defeat_ticks==421 && defeat_checked==1 && defeat_sounds==expected_sounds);
         view.end();assert(test_heap_count==0 && test_heap_bytes==0 && test_obj_count==1);
+        // A file that becomes unreadable AFTER the initial validation must
+        // report the prefetched page and close/clean up safely too.
+        assert(view.begin());
+        static int stream_frames;
+        stream_frames=0;
+        test_vblank_hook=[](){
+            if(++stream_frames==1) {
+                std::ofstream f("nitro:/konngara_defeat.bin",std::ios::binary|std::ios::trunc);
+                f.write("KGD1",4);
+            }
+        };
+        assert(!view.defeat());test_vblank_hook=nullptr;
+        assert(stream_frames==10 && konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::BodyRead);
+        assert(konngara_defeat_diagnostics().page==2);
+        write_bad(data);view.end();
+        assert(test_heap_count==0 && test_heap_bytes==0 && !g_canvas_target);
+        assert(std::equal(bgpal.begin(),bgpal.end(),BG_PALETTE));
+        assert(std::equal(objpal.begin(),objpal.end(),SPRITE_PALETTE));
     }
-    std::puts("Konngara defeat: independent source kuji/flash/fade/scroll pixels,421-frame timeline,44 exact SFX7 events, VBlank commits, missing/malformed/allocation rollback and full cleanup passed");
+    std::puts("Konngara defeat: independent source kuji/flash/fade/scroll pixels,421-frame timeline,44 exact SFX7 events, bounded page prefetch with zero renderer allocations, missing/malformed/mid-stream failure and full cleanup passed");
     std::printf("Konngara artwork: all BOS directions/expressions and persistent GRZ patches match source pixels at five camera offsets; asset %zu bytes, peak owned heap %zu bytes\n",
         asset.size(), asset.size() + 128000 + 131072);
     std::puts("Konngara artwork: source slash keyframes/SFX8, 20 preview replays, three allocation failures, audio/file failures, HUD/camera restoration, zero OBJ requests and zero retained heap passed");

@@ -30,10 +30,10 @@ extern std::string test_practice_label;
 
 namespace {
 bool allow_music = true;
-bool checkpoint, saw_checkpoint,fail_defeat_memory;
+bool checkpoint, saw_checkpoint,block_defeat_allocations;
 int start_set, phase3_frames, phase5_frames, phase7_frames, misses_checked;
 int defeat_frames,death_orb_x,death_orb_y,death_player_x,death_player_y,death_camera,death_score;
-size_t defeat_bytes,death_effects;
+size_t death_effects;
 int starts, stops, sfx_stops, ticks;
 size_t baseline_heap, baseline_blocks, heap_attempts, obj_attempts, owned_bytes;
 
@@ -49,15 +49,15 @@ void observe()
             death_camera=camera.left;death_score=stage_score;death_effects=test_effects.size();
             const int lethal_score=(18-start_set*3)*10000+50000;
             assert(death_score>=lethal_score && death_score<lethal_score+10000 && hiscore>=death_score);
-            assert(test_heap_count==baseline_blocks+4 && test_heap_bytes==baseline_heap+owned_bytes+defeat_bytes);
+            assert(test_heap_count==baseline_blocks+3 && test_heap_bytes==baseline_heap+owned_bytes);
             assert(test_obj_count==80);
         } else {
-            assert(test_heap_count==baseline_blocks+2 && test_heap_bytes==baseline_heap+262144+defeat_bytes);
+            assert(test_heap_count==baseline_blocks+1 && test_heap_bytes==baseline_heap+262144);
             assert(test_obj_count==79 && test_obj_used==27840);
             assert(!test_bgs[0].visible && !test_bgs[1].visible && !test_bgs[2].visible);
             for(int i=0;i<128;++i) assert(test_objs[i].hidden);
         }
-        assert(test_heap_attempts==heap_attempts+1 && test_obj_attempts==obj_attempts && g_canvas_target);
+        assert(test_heap_attempts==heap_attempts && test_obj_attempts==obj_attempts && g_canvas_target);
         assert(orb_get_state().x_position==death_orb_x && orb_get_state().y_position==death_orb_y);
         assert(player_get_state().x_position==death_player_x && player_get_state().y_position==death_player_y);
         assert(camera.left==death_camera && stage_score==death_score && Pellets.alive_count()==0);
@@ -87,7 +87,7 @@ void observe()
         if (test_practice_label.find("PHASE 3") == 0) ++phase3_frames;
         if (test_practice_label.find("PHASE 5") == 0) ++phase5_frames;
         if (test_practice_label.find("PHASE 7") == 0) ++phase7_frames;
-        if(fail_defeat_memory && phase7_frames>300) test_heap_fail_after=0;
+        if(block_defeat_allocations && phase7_frames>300) test_heap_fail_after=0;
         const bool hit = (start_set == 0 && ticks <= 90) || (phase3_frames > 0 && phase3_frames <= 90) ||
                           (phase5_frames > 0 && phase5_frames <= 90) || (phase7_frames > 0 && phase7_frames <= 400);
         orb_set_position(hit ? 300 : 600, hit ? 130 : 80);
@@ -131,7 +131,7 @@ void test_konngara_review()
     std::ifstream defeat("nitro:/konngara_defeat.bin",std::ios::binary|std::ios::ate);
     assert(asset.good());
     assert(slash.good());
-    assert(defeat.good());defeat_bytes=size_t(defeat.tellg());
+    assert(defeat.good());
     owned_bytes = size_t(asset.tellg()) + size_t(slash.tellg()) + 262144;
     const std::vector<u16> resident(BG_BMP_RAM(4), BG_BMP_RAM(4) + 65536);
     const std::vector<u16> bg_palette(BG_PALETTE, BG_PALETTE + 256), obj_palette(SPRITE_PALETTE, SPRITE_PALETTE + 256);
@@ -191,12 +191,12 @@ void test_konngara_review()
         upper_hud_render(3,2,100,UpperHudMode::Boss);upper_hud_boss(8,8,2,6);
         assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && !test_objs[OAM_SLOT_HUD_BOMBS].hidden && !test_objs[OAM_SLOT_HUD_HP].hidden);
     }
-    // A failed cinematic must not roll back the bonus already earned on the
-    // lethal hit, retain a cinematic buffer, or leave an overlay visible.
-    fail_defeat_memory=true;start_set=3;ticks=0;stage_score=0;saw_checkpoint=false;
-    initialize_irand(42);assert(!konngara_combat_review(3));
-    fail_defeat_memory=false;test_heap_fail_after=-1;
-    assert(!saw_checkpoint && defeat_frames==0 && stage_score>=140000 && stage_score<150000);
+    // No large allocation is permitted at the lethal hit: the existing staging
+    // buffer must carry all421 frames even after the heap becomes unavailable.
+    block_defeat_allocations=true;start_set=3;ticks=0;stage_score=0;saw_checkpoint=false;
+    initialize_irand(42);assert(konngara_combat_review(3));
+    block_defeat_allocations=false;test_heap_fail_after=-1;
+    assert(saw_checkpoint && defeat_frames==421 && stage_score>=140000 && stage_score<150000);
     assert(test_heap_count==baseline_blocks && test_heap_bytes==baseline_heap && !g_canvas_target);
     assert(test_obj_count==79 && test_obj_used==27840);
     assert(std::equal(resident.begin(),resident.end(),BG_BMP_RAM(4)));
@@ -222,7 +222,7 @@ void test_konngara_review()
     boss_render_hide();
     test_keys_down = test_keys_held = 0;
     camera.snap_center();
-    std::puts("Konngara review: 40 replays/orb preservation, four real421-frame defeats, frozen gameplay/44 SFX7/+50000 once, late defeat-allocation failure, restored heap/OBJ/palettes/background and SinGyoku handoff passed");
+    std::puts("Konngara review: 40 replays/orb preservation, five real421-frame defeats including denied late allocations, frozen gameplay/44 SFX7/+50000 once, restored heap/OBJ/palettes/background and SinGyoku handoff passed");
 }
 
 // Exercise the ACTUAL normal-game stage loader/tick, not a second model of it.
@@ -335,6 +335,18 @@ void test_stage_bonus_awards()
 void test_konngara_stage20()
 {
     test_vblank_hook=nullptr;
+    // Reproduce the reported history: SinGyoku's actual defeat, route choice
+    // and round results must precede Stage20, not just a fresh direct jump.
+    stage_load(0,4);
+    for(int i=0;i<200;++i) singyoku_update();
+    auto &health=const_cast<BossHealth&>(singyoku_state().health);
+    health.hp=1;health.invincible=false;health.invincibility_frame=0;
+    const auto &entity=singyoku_state().entity;
+    orb_set_position(entity.left+24,entity.top+24);
+    test_vblank_hook=[](){test_keys_down=KEY_B;test_keys_held=0;};
+    gameplay_tick(0,0);
+    test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+    assert(current_scene==1 && current_stage==0);
     stage_load(6,3); // actual Stage19, no new fake route/boss prerequisites
     lives=6;rem_bombs=4;stage_score=123450;frame=17;
     stage_cards_removed_count=stage_card_total; // test-only cleared card field
@@ -365,16 +377,22 @@ void test_konngara_stage20()
     assert(std::equal(pixels.begin(),pixels.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
     assert(std::equal(palette.begin(),palette.end(),BG_PALETTE) && std::equal(objects.begin(),objects.end(),SPRITE_PALETTE));
     int phase_frames[8]={};
+    size_t defeat_attempts=0;
     initialize_irand(42);
     for(int tick=0;tick<3000 && !jigoku_cleared;++tick) {
         if(tick%80==0) player_miss(); // test-only invincibility, not extra lives
         const auto &s=konngara.state();int age=++phase_frames[s.phase];
         bool hit=((s.phase==1 || s.phase==3 || s.phase==5) && age<=90) || (s.phase==7 && age<=400);
         orb_set_position(hit?300:600,hit?130:80);
-        if(s.phase==7 && s.health.hp==1 && !s.health.invincible) player_is_hit=true;
+        if(s.phase==7 && s.health.hp==1 && !s.health.invincible) {
+            player_is_hit=true;
+            defeat_attempts=test_heap_attempts;test_heap_fail_after=0;
+        }
         gameplay_tick(0,0);
     }
+    test_heap_fail_after=-1;
     assert(jigoku_cleared && stage20_defeat_waits==541 && current_scene==6 && current_stage==4);
+    assert(defeat_attempts && test_heap_attempts==defeat_attempts);
     assert(stage_score==stage20_frozen_score && lives==5 && rem_bombs==5);
     const u16 j=(1+('J'-0x20)*2)|(14<<12);
     assert(BG_MAP_RAM(30)[8*32+7]==j && test_obj_count==79);

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 #ifndef HRTP_GAME_FLOW_TEST
 #include <filesystem.h>
 #endif
@@ -80,9 +81,24 @@ static bool regular_bomb_canvas_owned;
 static void check_konngara(bool okay,const char *part)
 {
     if(okay) return;
+    const char *audio_error=music_error();
     konngara_view.end();music_stop();
     consoleDemoInit();
-    printf("Konngara %s asset/audio error\n%s",part,music_error());
+    if(strcmp(part,"defeat")==0) {
+        const auto &d=konngara_defeat_diagnostics();
+        printf("Konngara defeat error\nStep: %s\n",konngara_defeat_failure_name(d.failure));
+        printf("errno: %d\nAsset: %lu B\nRead: %lu B\n",d.error_number,
+            (unsigned long)d.requested_bytes,(unsigned long)d.read_bytes);
+        printf("Active/defeated: %u/%u\n",unsigned(d.active),unsigned(d.already_defeated));
+        if(d.page>=0) printf("Page: %d\n",d.page);
+        if(d.heap_available) {
+            printf("Heap BEFORE cleanup:\nBase: %08lX\nEnd: %08lX\nLimit: %08lX\n",
+                (unsigned long)d.heap_start,(unsigned long)d.heap_end,(unsigned long)d.heap_limit);
+            printf("Used: %lu  Free: %lu\nGrowable: %lu\n",(unsigned long)d.heap_used,
+                (unsigned long)d.heap_free,(unsigned long)(d.heap_limit>d.heap_end?d.heap_limit-d.heap_end:0));
+        }
+        if(audio_error[0]) printf("Audio: %s\n",audio_error);
+    } else printf("Konngara %s asset/audio error\n%s",part,audio_error);
     while(true) swiWaitForVBlank();
 }
 
