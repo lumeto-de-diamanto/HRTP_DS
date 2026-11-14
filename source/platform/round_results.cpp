@@ -15,6 +15,7 @@
 
 namespace {
 constexpr int results_map=31, results_tiles=4, pattern_block=16, art_base=32;
+constexpr int screen_height=192,joined_height=screen_height*2;
 constexpr char alphabet[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/";
 constexpr int font_words=(1+(sizeof(alphabet)-1)*4)*16;
 static_assert(font_words*2<16*1024,"results font must fit the saved BG3 scratch region");
@@ -54,6 +55,14 @@ void letter(int x,int y,char c)
 
 void text(int x,int y,const char *s) { for(;*s;++s,x+=16) letter(x,y,*s); }
 
+void labels(int stage)
+{
+    text(64,8,"STAGE");letter(160,8,'0'+stage/10%10);letter(176,8,'0'+stage%10);
+    text(64,24,"COMPLETE");
+    text(8,56,"TIME");text(8,80,"MAXCOMBO");text(8,104,"BOMB/LIFE");
+    text(8,128,"CLEAR");text(8,152,"TOTAL");
+}
+
 void palette_step(int step)
 {
     for(int i=0;i<16;++i) {
@@ -66,24 +75,40 @@ void palette_step(int step)
         }
         BG_PALETTE_SUB[art_base+i]=color;
     }
-    BG_PALETTE[4]=BG_PALETTE_SUB[4]=BG_PALETTE_SUB[art_base+4];
-    BG_PALETTE[5]=BG_PALETTE_SUB[5]=BG_PALETTE_SUB[art_base+15];
+    // Incoming art owns32..47. Leave the outgoing HUD's palette (including
+    // its pattern at4/5) unchanged until those pixels have actually left.
+    BG_PALETTE[4]=BG_PALETTE_SUB[art_base+4];
+    BG_PALETTE[5]=BG_PALETTE_SUB[art_base+15];
 }
 
 int row_amount(int tick,int y)
 {
-    const int age=tick-(y*400/192)/8;
+    const int age=tick-(y*400/joined_height)/8;
     return age<=0 ? 0 : age>=20 ? 256 : age*256/20;
 }
 
-void top_pattern_row(int y,int amount)
+void top_results_row(int y,int amount)
 {
     volatile u16 *out=BG_BMP_RAM(pattern_block)+y*256;
     const u16 colors[]={u16(0x8000|BG_PALETTE[4]),u16(0x8000|BG_PALETTE[5])};
+    const u16 red=0x8000|BG_PALETTE[TEXT_PAL_RED*16+1];
+    const u16 *map=BG_MAP_RAM(results_map)+(y/8)*32;
     const int first=(y&1) ? 0 : 256-amount,last=(y&1) ? amount : 256;
-    for(int x=first;x<last;++x) {
-        const int source=(y&1) ? x+256-amount : x-(256-amount);
-        out[x]=colors[HudPattern_pixels[(y&127)*128+(source&127)]==5];
+    // Decode each8-pixel text row once, rather than reading map/font VRAM for
+    // every pixel during palette recolours. Partial edge tiles still travel
+    // at the exact zipper offset; no font/crop scaling or extra ink buffer.
+    for(int x=first,source=(y&1) ? 256-amount : 0;x<last;) {
+        const int tile=map[source/8]&1023,offset=source&7;
+        int count=8-offset;if(count>last-x) count=last-x;
+        u32 ink=0;
+        if(tile) {
+            const u16 *row=BG_TILE_RAM(results_tiles)+tile*16+(y%8)*2;
+            ink=(u32(row[0])|(u32(row[1])<<16))>>(offset*4);
+        }
+        while(count-->0) {
+            out[x++]=(ink&15) ? red : colors[HudPattern_pixels[(y&127)*128+(source&127)]==5];
+            ++source;ink>>=4;
+        }
     }
 }
 
@@ -95,52 +120,76 @@ void top_zipper_row(int tick,int y,int amount)
     // out in opposite directions. In-place traversal must follow the shift.
     if(y&1) for(int x=255;x>=amount;--x) out[x]=out[x-delta]|0x8000;
     else for(int x=0;x<256-amount;++x) out[x]=out[x+delta]|0x8000;
-    top_pattern_row(y,amount);
+    top_results_row(y,amount);
 }
 
 void recolor_top(int tick)
 {
     // RGB capture pixels don't follow palette writes. Recolour only the
-    // incoming pattern, including completed rows; never tint the frozen boss.
-    for(int y=0;y<192;++y) top_pattern_row(y,row_amount(tick,y));
+    // incoming pattern/text, including completed rows; never tint the frozen boss.
+    for(int y=0;y<screen_height;++y) top_results_row(y,row_amount(tick,y));
+}
+
+void freeze_bottom_hud()
+{
+    // Materialize transparent overlay holes from the resident BG3 pattern.
+    // The visible image is identical, but can now shift in-place as one image.
+    // No extra framebuffer, no byte stores to VRAM, and no early HUD clearing.
+    const auto *pattern=reinterpret_cast<const u8*>(BG_BMP_RAM_SUB(4));
+    volatile u16 *out=BG_BMP_RAM_SUB(0);
+    for(int y=0;y<screen_height;++y) for(int x=0;x<256;x+=2) {
+        const u16 old=out[y*128+x/2];
+        const int low=old&255,high=old>>8;
+        out[y*128+x/2]=(low ? low : pattern[(y&127)*128+(x&127)])|
+            ((high ? high : pattern[(y&127)*128+((x+1)&127)])<<8);
+    }
+}
+
+void bottom_zipper_row(int tick,int y,int amount)
+{
+    volatile u16 *out=BG_BMP_RAM_SUB(0)+y*128;
+    const int delta=amount-row_amount(tick-1,y+screen_height);
+    const auto pixel=[&](int x) {
+        const bool incoming=(y&1) ? x<amount : x>=256-amount;
+        if(incoming) {
+            const int source=(y&1) ? x+256-amount : x-(256-amount);
+            return int(art_base+RoundResults_pixels[y*256+source]);
+        }
+        // Only the new delta is read from the already-shifted outgoing image.
+        const int source=(y&1) ? x-delta : x+delta;
+        return (out[source/2]>>((source&1)*8))&255;
+    };
+    // Read both source pixels before a paired halfword write. Direction matters
+    // for odd deltas too: ARM9 cannot publish this in-place shift via STRB.
+    for(int pair=(y&1) ? 127 : 0;pair>=0 && pair<128;pair+=(y&1) ? -1 : 1) {
+        const int x=pair*2;
+        const u16 packed=pixel(x)|(pixel(x+1)<<8);
+        out[pair]=packed;
+    }
 }
 
 void zipper()
 {
     // Original: 400 rows, eight activated per iteration, twenty32px shifts
     // across640px, with a two-frame delay. Retain its70-iteration cadence;
-    // resample progress, not the approved unscaled256x192 crop itself.
+    // resample progress across ONE384-row joined image, not independently on
+    // each screen, and never resample the approved unscaled256x192 crop.
     int active=0,done_before=1,palette=0;
     for(int tick=0;tick<70;++tick) {
         int done=0;
-        for(int y=0;y<192;++y) {
-            const int birth=1+(y*400/192)/8,age=tick-birth+1;
+        for(int y=0;y<joined_height;++y) {
+            const int birth=1+(y*400/joined_height)/8,age=tick-birth+1;
             if(age>20) { ++done;continue; }
             if(age<=0) continue;
             if(age==20) ++done;
             // Even rows shift left and inject the source prefix at the right;
             // odd rows shift right and inject the source suffix at the left.
             const int amount=age*256/20;
-            top_zipper_row(tick,y,amount);
-            // ARM9's stack is in DTCM, which DMA cannot read. Publish paired
-            // pixels with CPU halfword stores, like the gameplay sub renderer.
-            // Volatile prevents the compiler from turning these into STRB.
-            volatile u16 *out=BG_BMP_RAM_SUB(0)+y*128;
-            for(int x=0;x<256;x+=2) {
-                u16 packed=0;
-                for(int half=0;half<2;++half) {
-                    const int px=x+half,source=(y&1) ? px+256-amount : px-(256-amount);
-                    const bool incoming=(y&1) ? px<amount : px>=256-amount;
-                    const int shifted=(y&1) ? px-amount : px+amount;
-                    const u8 index=incoming ? art_base+RoundResults_pixels[y*256+source] :
-                        HudPattern_pixels[(y%128)*128+(shifted&127)];
-                    packed|=u16(index)<<(half*8);
-                }
-                out[x/2]=packed;
-            }
+            if(y<screen_height) top_zipper_row(tick,y,amount);
+            else bottom_zipper_row(tick,y-screen_height,amount);
         }
         hold(2);
-        if(done>=192) break;
+        if(done>=joined_height) break;
         if(active<400) active+=8;
         if(done!=done_before && !(active&15) && palette<15) {
             palette_step(++palette);recolor_top(tick);
@@ -197,15 +246,17 @@ void round_results_run(const StageBonus &bonus,int stage)
     do { frame(); } while(REG_DISPCAPCNT&DCAP_ENABLE);
     vramSetBankD(VRAM_D_MAIN_BG_0x06040000);
     // BG2 now holds that capture. Keep it visible until the zipper has
-    // replaced every pixel; the temporary results text map stays blank.
+    // replaced every pixel. The hidden results map supplies incoming text ink,
+    // not a stationary overlay on top of the outgoing boss/HUD capture.
     REG_DISPCNT=(display&~0xff00u)|(1u<<10);
     REG_BLDCNT=0;REG_MASTER_BRIGHT=REG_MASTER_BRIGHT_SUB=0;
-    subscreen_clear(SUB_COL_BG);hud_invalidate();
+    freeze_bottom_hud();
     bgInitHidden(0,BgType_Text4bpp,BgSize_T_256x256,results_map,results_tiles);
     bgInitHidden(3,BgType_Bmp8,BgSize_B8_128x128,pattern_block,0);
     bgSetPriority(0,0);bgSetPriority(3,3);bgWrapOn(3);
     bake_font();dmaFillHalfWords(0,BG_MAP_RAM(results_map),2048);
     BG_PALETTE[TEXT_PAL_RED*16+1]=RGB15(31,0,0);
+    labels(stage); // pre-draw before revealing/zippering the incoming screen
     palette_step(0);bgSetScroll(3,0,0);bgUpdate();
     zipper();
     // Identical final pattern, now hardware-repeated. Upload and switch in
@@ -215,10 +266,6 @@ void round_results_run(const StageBonus &bonus,int stage)
     dmaCopyHalfWords(3,HudPattern_pixels,BG_BMP_RAM(pattern_block),sizeof(HudPattern_pixels));
     bgShow(0);bgShow(3);
     REG_DISPCNT=(display&~0xff00u)|(1<<8)|(1<<11);
-    text(64,8,"STAGE");letter(160,8,'0'+stage/10%10);letter(176,8,'0'+stage%10);
-    text(64,24,"COMPLETE");
-    text(8,56,"TIME");text(8,80,"MAXCOMBO");text(8,104,"BOMB/LIFE");
-    text(8,128,"CLEAR");text(8,152,"TOTAL");
     hold(30);
     int clock=0;
     roll_number(248,56,bonus.time*10,5,clock);

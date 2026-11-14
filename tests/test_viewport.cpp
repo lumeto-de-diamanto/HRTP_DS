@@ -260,6 +260,21 @@ namespace {
 int result_frames,result_prompt_frames,result_score,result_timer;
 StageBonus result_bonus;
 int result_stage;
+u8 result_bottom_image[192*256];
+u16 result_hud_palette[32];
+bool result_label_ink[192][256];
+int result_zipper_frames,result_incoming_text;
+size_t result_sub_calls;
+
+void result_label(int x,int y,const char *s)
+{
+    for(;*s;++s,x+=16) {
+        const u16 *glyph=*s==' ' ? nullptr : font16x16_find(*s=='/' ? 0x213f : 0x2300+*s);
+        if(*s!=' ') assert(glyph);
+        for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx)
+            result_label_ink[y+gy][x+gx]=glyph && (glyph[gy]&(0x8000>>gx));
+    }
+}
 
 u16 captured_boss_pixel(int x,int y) {
     return 0x8000|RGB15((x/8)&31,(y/8)&31,((x+y)/8)&31);
@@ -283,47 +298,71 @@ static void check_result_text(int x,int y,const char *s) {
 void observe_round_results() {
     assert(++result_frames<1200);
     assert(stage_score==result_score && stage_timer==result_timer);
+    assert(sub_calls.size()==result_sub_calls); // no HUD clear before zippering away
+    assert(std::equal(std::begin(result_hud_palette),std::end(result_hud_palette),BG_PALETTE_SUB));
     test_keys_down=test_keys_held=KEY_A|KEY_B;
-    if(test_bgs[0].map!=31) return;
+    if(test_bgs[0].map!=31) {
+        for(int y=0;y<192;++y) for(int x=0;x<256;++x) {
+            const auto index=sub_index(x,y);
+            assert((index ? index : sub_backend::HudPattern_pixels[(y&127)*128+(x&127)])==result_bottom_image[y*256+x]);
+        }
+        return;
+    }
     const bool zipping=(REG_DISPCNT&0xff00)==(1<<10);
     assert((zipping || (REG_DISPCNT&0xff00)==((1<<8)|(1<<11))) && !REG_BLDCNT);
     assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
     assert(test_bgs[3].size==BgSize_B8_128x128 && test_bgs[3].map==16 && test_bgs[3].wrap);
     assert(BG_PALETTE[TEXT_PAL_RED*16+1]==RGB15(31,0,0));
-    assert(BG_PALETTE[4]==BG_PALETTE_SUB[4] && BG_PALETTE[5]==BG_PALETTE_SUB[5]);
+    assert(BG_PALETTE[4]==BG_PALETTE_SUB[32+4] && BG_PALETTE[5]==BG_PALETTE_SUB[32+15]);
     assert(test_vram_d_mode==VRAM_D_MAIN_BG_0x06040000);
     if(!zipping) {
         const auto *pattern=reinterpret_cast<const u8*>(BG_BMP_RAM(16));
         assert(std::equal(pattern,pattern+128*128,sub_backend::HudPattern_pixels));
     } else {
+        ++result_zipper_frames;
         assert(result_frames>=53 && result_frames<=193);
         const int tick=std::min(69,(result_frames-53)/2);
+        const int palette=std::max(0,std::min(15,(tick-20)/2));
+        for(int i=0;i<16;++i) {
+            const u16 start=i==4 ? RGB15(1,1,1) : i==15 ? RGB15(3,2,2) : 0;
+            for(int shift:{0,5,10}) {
+                const int a=(start>>shift)&31,b=(RoundResults_palette[i]>>shift)&31;
+                assert(((BG_PALETTE_SUB[32+i]>>shift)&31)==a+(b-a)*palette/15);
+            }
+        }
         for(int y=0;y<192;++y) for(int x=0;x<256;++x) {
-            const int amount=std::max(0,std::min(20,tick-(y*400/192)/8))*256/20;
+            const int amount=std::max(0,std::min(20,tick-(y*400/384)/8))*256/20;
             const bool incoming=(y&1) ? x<amount : x>=256-amount;
             const int sx=(y&1) ? x+256-amount : x-(256-amount);
             const int old_x=(y&1) ? x-amount : x+amount;
             const auto ink=sub_backend::HudPattern_pixels[(y&127)*128+(sx&127)];
-            const u16 expected=incoming ? (0x8000|BG_PALETTE[ink]) : captured_boss_pixel(old_x,y);
+            const bool text=incoming && result_label_ink[y][sx];
+            const u16 expected=incoming ? (0x8000|(text ? RGB15(31,0,0) : BG_PALETTE[ink])) : captured_boss_pixel(old_x,y);
             assert(BG_BMP_RAM(16)[y*256+x]==expected);
+            result_incoming_text+=text;
         }
-        for(int i=0;i<1024;++i) assert(!BG_MAP_RAM(31)[i]); // no title/tally before completion
+        // The complete incoming label map is prepared already, but BG0 must
+        // stay hidden: labels travel WITH incoming strips, never over the boss.
+        assert(!(REG_DISPCNT&(1<<8)));
+        check_result_text(64,8,"STAGE");check_result_text(64,24,"COMPLETE");
+        char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};
+        check_result_text(160,8,stage);
+        check_result_text(8,56,"TIME");check_result_text(8,80,"MAXCOMBO");
+        check_result_text(8,104,"BOMB/LIFE");check_result_text(8,128,"CLEAR");check_result_text(8,152,"TOTAL");
     }
     // Before the tally begins: independently reconstruct every row of each
     // zipper frame, including untouched rows, opposite motion and palette phase.
     if(result_frames>=53 && result_frames<=192) {
         const int tick=(result_frames-53)/2;
         for(int y=0;y<192;++y) for(int x=0;x<256;++x) {
-            const int age=tick-(1+(y*400/192)/8)+1;
+            const int age=tick-(1+((y+192)*400/384)/8)+1;
             const int amount=std::max(0,std::min(20,age))*256/20;
             const bool image=(y&1) ? x<amount : x>=256-amount;
             const int sx=(y&1) ? x+256-amount : x-(256-amount);
             const int shifted=(y&1) ? x-amount : x+amount;
-            const u8 expected=image ? 32+RoundResults_pixels[y*256+sx] :
-                sub_backend::HudPattern_pixels[(y%128)*128+(shifted&127)];
+            const u8 expected=image ? 32+RoundResults_pixels[y*256+sx] : result_bottom_image[y*256+shifted];
             const u8 index=sub_index(x,y);
-            const u8 actual=index ? index : sub_backend::HudPattern_pixels[(y%128)*128+x%128];
-            assert(actual==expected);
+            assert(index==expected);
         }
     }
     // A OR B: keep stale confirmations asserted for nine frames, then release
@@ -379,8 +418,26 @@ static void check_round_results() {
     test_effects.reserve(test_effects.size()+4096);
     const auto heap=test_heap_attempts,obj=test_obj_attempts;
     for(int replay=0;replay<2;++replay) {
+        hud_invalidate();hud_render(3,replay ? 15 : 5);hud_radar_render();
+        // Distinct edge pixels exercise odd/even shifts, seam/last rows and all
+        // real HUD inks, alongside the actual score/rank/radar text and frame.
+        for(int y=0;y<192;++y) {
+            sub_backend::subscreen_fill_rect(0,y,1,1,1+y%12);
+            sub_backend::subscreen_fill_rect(255,y,1,1,1+(y+5)%12);
+            for(int x=0;x<256;++x) {
+                const auto index=sub_index(x,y);
+                result_bottom_image[y*256+x]=index ? index : sub_backend::HudPattern_pixels[(y&127)*128+(x&127)];
+            }
+        }
+        std::copy(BG_PALETTE_SUB,BG_PALETTE_SUB+32,result_hud_palette);
+        result_sub_calls=sub_calls.size();result_zipper_frames=result_incoming_text=0;
         result_bonus=replay ? StageBonus{6553,6553,6553,65530,851890} : StageBonus{};
         result_stage=replay ? 15 : 5;result_frames=result_prompt_frames=0;
+        std::memset(result_label_ink,0,sizeof(result_label_ink));
+        result_label(64,8,"STAGE");result_label(64,24,"COMPLETE");
+        char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};result_label(160,8,stage);
+        result_label(8,56,"TIME");result_label(8,80,"MAXCOMBO");result_label(8,104,"BOMB/LIFE");
+        result_label(8,128,"CLEAR");result_label(8,152,"TOTAL");
         result_score=stage_score;result_timer=stage_timer;
         REG_BLDCNT=0x124;REG_BLDALPHA=0x507;video_set_fade(3);
         REG_MASTER_BRIGHT=(1<<14)|2;REG_MASTER_BRIGHT_SUB=(1<<14)|1;
@@ -395,6 +452,8 @@ static void check_round_results() {
         test_capture_source=nullptr;
         test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
         assert(result_prompt_frames==12 && irand()==random);
+        assert(result_zipper_frames==141 && result_incoming_text>0);
+        assert(sub_calls.size()==result_sub_calls+1 && sub_calls.back().type=='C');
         // Only the compiled main-RAM pattern may use DMA. Scanlines and the
         // restoration backups must use CPU halfwords, never DTCM-stack DMA.
         assert(test_dma_copy_calls==dma_copies+1 && test_dma_copy_bytes==dma_bytes+128*128);
@@ -418,7 +477,7 @@ static void check_round_results() {
     REG_MASTER_BRIGHT=master;REG_MASTER_BRIGHT_SUB=sub_master;
     REG_DISPCAPCNT=capture;
     hud_render(3,1);hud_radar_render();
-    std::puts("Round results: captured boss-to-pattern top zipper and bottom crop every frame, source bonus/clamps, red fullwidth glyphs, zero/max rolling/SFX, held-confirm release, frozen state/RNG, exact VRAM/palette/capture/register restoration and zero heap/OBJ allocations passed");
+    std::puts("Round results: one384-row zipper, frozen bottom HUD/palette shifted out intact, incoming top labels at every strip/frame, original crop, zero/max rolling/SFX, held-confirm release, frozen state/RNG, exact VRAM/palette/capture/register restoration and zero heap/OBJ allocations passed");
 }
 
 static int foreground_frames, covered_hud_frames, title_frames;
