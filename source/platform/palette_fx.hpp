@@ -1,12 +1,15 @@
 #pragma once
 
-// ReC98's z_palette_settone_but_keep_white(): dims the whole screen to a
-// percentage while keeping pure white pixels untouched. Used by the pause
-// and bonus screens.
-
-void palette_dim(int tone); // 0..100, 40 = ReC98's pause tone
+// Native scene/OBJ darkening (nearest BLDY step), including both HUDs.
+// BG0 menu text stays bright; its shared HUD layer uses three private ink
+// adjustments. The sub-engine HUD uses hardware master brightness.
+// Unlike palette scaling, white gameplay pixels darken with their layer.
+// Only a cleared foreground-only BG2 (route labels) may stay bright too.
+void palette_dim(int tone, bool keep_canvas_bright = false); // 0..100; pause=40
 void palette_restore();
-// Palette-only white blend against the most recent palette_dim() snapshot.
+// Separate palette-only snapshot for SinGyoku's approved defeat transition.
+void palette_white_begin();
+// Palette-only white blend against the most recent palette_white_begin().
 // Direct-color white-line/canvas animation is owned by the caller.
 void palette_toward_white(int amount); // 0=original,31=white
 

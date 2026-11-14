@@ -59,11 +59,20 @@ inline constexpr u32 DCAP_SIZE(int n) {return (n&3u)<<20;}
 inline constexpr u32 DCAP_BANK(int n) {return (n&3u)<<16;}
 inline u16 REG_VCOUNT = 192;
 inline u16 REG_WIN0H{}, REG_WIN1H{}, REG_WIN0V{}, REG_WIN1V{}, REG_WININ{}, REG_WINOUT{};
-inline u16 REG_BLDCNT{},REG_BLDALPHA{},REG_BLDY{};
+inline u16 REG_BLDCNT{},REG_BLDALPHA{};
+// Unlike ordinary host memory, BLDY cannot be read by DS code. Tests inspect
+// the written latch explicitly; accidental renderer readback fails to compile.
+struct TestWriteOnlyRegister {
+    u16 written{};
+    u16 operator=(u16 value) { written=value;return value; }
+    operator u16() const = delete;
+};
+inline TestWriteOnlyRegister REG_BLDY;
 inline u16 REG_MASTER_BRIGHT{},REG_MASTER_BRIGHT_SUB{};
 inline constexpr int BLEND_ALPHA=1<<6,BLEND_SRC_BG0=1,BLEND_SRC_BG2=1<<2,
     BLEND_DST_BG1=1<<9,BLEND_DST_BG2=1<<10,BLEND_DST_BG3=1<<11,BLEND_DST_SPRITE=1<<12,BLEND_DST_BACKDROP=1<<13;
 inline constexpr int BLEND_FADE_WHITE=2<<6,BLEND_SRC_BG3=1<<3,BLEND_SRC_BACKDROP=1<<5;
+inline constexpr int BLEND_FADE_BLACK=3<<6,BLEND_SRC_BG1=1<<1,BLEND_SRC_SPRITE=1<<4;
 struct TestBg { int type{}, size{}, map{}, tile{}, x{}, y{}, priority{}; int sx = 256, sy = 256; bool visible = true,wrap=false; };
 inline TestBg test_bgs[8];
 inline void videoSetMode(int) {}

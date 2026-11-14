@@ -37,8 +37,6 @@ bool canvas_buffer_ready();
 // already_gated is for a grouped early-VBlank commit that publishes BG/OAM
 // registers first, then streams pixels top-to-bottom without a second gate.
 bool canvas_buffer_present(bool already_gated = false);
-// Direct RAM writers (e.g. pause snapshot/dim/restore) must publish their writes.
-void canvas_buffer_dirty_all();
 // Gameplay draw calls clip below the transparent HUD; screen-space menus and
 // the HUD itself disable this clip. Clearing the whole canvas always works.
 void canvas_playfield_clip(bool enabled);

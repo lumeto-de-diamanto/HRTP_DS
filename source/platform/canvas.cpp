@@ -130,13 +130,6 @@ void canvas_buffer_prepare()
 
 bool canvas_buffer_ready() { return g_canvas_target && prepared; }
 
-void canvas_buffer_dirty_all()
-{
-    if(!g_canvas_target) return;
-    for(auto &row:present_rows) row=~u32(0);
-    prepared=false;
-}
-
 bool canvas_buffer_present(bool already_gated)
 {
     if (!canvas_buffer_ready() || (!already_gated && (REG_VCOUNT < 192 || REG_VCOUNT >= 200))) return false;

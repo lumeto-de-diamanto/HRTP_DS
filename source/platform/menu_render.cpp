@@ -58,7 +58,10 @@ int pause_select(bool confirmation)
 
 static void menu_text(int gx, int gy, const char *s, int bank)
 {
-    text_layer_puts(gx, gy, s, bank);
+    // Same native ANK glyphs/positions, but independent modal ink slots keep
+    // game-over lettering bright while the shared BG0 HUD counters darken.
+    text_layer_modal_clear_rect(gx*8,gy*16,text_layer_width(s)*8,16);
+    text_layer_modal_text(gx*8,gy*16,s,bank==TEXT_PAL_WHITE ? TEXT_MODAL_WHITE : TEXT_MODAL_RED);
 }
 
 static void menu_choice(int gy, const char *s, bool selected)
@@ -91,7 +94,7 @@ bool pause_menu_run(void)
 bool gameover_menu_run()
 {
     palette_dim(40);
-    text_layer_clear();
+    text_layer_modal_begin();
     menu_text(11,3,"GAME OVER",TEXT_PAL_WHITE);
     menu_text(3,10,"A/START: CHOOSE  B: NEW GAME",TEXT_PAL_RED);
     int selected=0;

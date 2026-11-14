@@ -171,7 +171,7 @@ void text_layer_modal_begin()
 {
     text_layer_clear();
     dmaFillHalfWords(0,BG_TILE_RAM(TEXT_TILE_BASE)+MODAL_FIRST_TILE*16,32*MODAL_ROWS*32);
-    // Separate ink slots preserve the approved timer/divider's dimmed colours.
+    // Separate modal ink slots leave the fixed timer/divider colours intact.
     BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_BLACK]=0;
     BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_WHITE]=0x7fff;
     BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_RED]=RGB15(31,0,0);

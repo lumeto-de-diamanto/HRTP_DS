@@ -16,13 +16,25 @@ static int bomb_obj_brightness;
 static unsigned bomb_recovery_start;
 static int bomb_phase,bomb_brightness,bomb_shake_y,bomb_master;
 static bool bomb_inverted;
+static bool modal_effect_owned;
+static u16 modal_control,modal_alpha,modal_y,modal_window_in,modal_window_out,modal_master,modal_sub_master;
+static u16 fade_coefficient;
+
+void video_set_fade(u16 amount)
+{
+    fade_coefficient=amount;
+    REG_BLDY=amount;
+}
+
+u16 video_fade() { return fade_coefficient; }
 
 void video_init()
 {
     canvas_foreground_depth = 0;
+    modal_effect_owned=false;
     bomb_effect_owned=bomb_paused=false;bomb_phase=bomb_brightness=bomb_shake_y=0;
     bomb_obj_owned=false;bomb_master=0;
-    REG_BLDCNT=0;REG_BLDALPHA=0;REG_BLDY=0;REG_MASTER_BRIGHT=0;
+    REG_BLDCNT=0;REG_BLDALPHA=0;video_set_fade(0);REG_MASTER_BRIGHT=0;
     videoSetMode(MODE_5_2D);
     // Main sprite VRAM is only available on banks A, B and E; A+B hold the
     // main BGs; D adds a separate effects canvas, E supplies 64KB OBJ VRAM.
@@ -137,7 +149,7 @@ void video_bomb_reset()
         for(unsigned i=0;i<208;++i) BG_PALETTE[i]=bomb_normal[i];
         if(bomb_obj_owned) for(unsigned i=0;i<144;++i) SPRITE_PALETTE[112+i]=bomb_obj_normal[i];
         REG_BLDCNT=bomb_saved_control;REG_BLDALPHA=bomb_saved_alpha;
-        REG_BLDY=bomb_saved_y;REG_WINOUT=bomb_saved_window;
+        video_set_fade(bomb_saved_y);REG_WINOUT=bomb_saved_window;
         REG_MASTER_BRIGHT=bomb_saved_master;
     }
     bomb_effect_owned=bomb_paused=bomb_obj_owned=false;
@@ -146,12 +158,12 @@ void video_bomb_reset()
 
 void video_canvas_effect_commit()
 {
-    if(!bomb_effect_owned) return;
+    if(!bomb_effect_owned || modal_effect_owned) return;
     // BG3's transparent index0 reveals the backdrop, so fade that too. No
     // foreground layer is a brightness target; HUD windows keep effects off.
     REG_BLDCNT=(!bomb_paused && !canvas_foreground_depth && bomb_brightness) ?
         BLEND_FADE_WHITE|BLEND_SRC_BG3|BLEND_SRC_BACKDROP : 0;
-    REG_BLDY=bomb_brightness;
+    video_set_fade(bomb_brightness);
     // Master brightness is a final-output effect: intentionally includes HUD
     // and foreground ink. No pulse in the approved intro or cosmetic recovery.
     REG_MASTER_BRIGHT=(!bomb_paused && !canvas_foreground_depth && bomb_phase==1) ? bomb_master : bomb_saved_master;
@@ -162,7 +174,7 @@ void video_bomb_commit(bool konngara)
     if(!bomb_phase) { video_bomb_reset();return; }
     if(!bomb_effect_owned) {
         bomb_saved_control=REG_BLDCNT;bomb_saved_alpha=REG_BLDALPHA;
-        bomb_saved_y=REG_BLDY;bomb_saved_window=REG_WINOUT;
+        bomb_saved_y=video_fade();bomb_saved_window=REG_WINOUT;
         bomb_saved_master=REG_MASTER_BRIGHT;
         bomb_effect_owned=true;video_bomb_palette_changed();
     }
@@ -193,6 +205,31 @@ void video_bomb_pause(bool paused)
 {
     bomb_paused=paused;
     video_canvas_effect_commit();
+}
+
+void video_modal_effect_begin()
+{
+    if(modal_effect_owned) return;
+    modal_control=REG_BLDCNT;modal_alpha=REG_BLDALPHA;modal_y=video_fade();
+    modal_window_in=REG_WININ;modal_window_out=REG_WINOUT;modal_master=REG_MASTER_BRIGHT;
+    modal_sub_master=REG_MASTER_BRIGHT_SUB;
+    modal_effect_owned=true;
+    // Master brightness bypasses layer/window targeting, including the HUD.
+    // Suppress it even on a fully white bomb-recovery frame.
+    REG_MASTER_BRIGHT=0;
+    REG_WININ=modal_window_in&~0x2020;
+    REG_WINOUT=modal_window_out|0x20;
+}
+
+void video_modal_effect_end()
+{
+    if(!modal_effect_owned) return;
+    REG_BLDCNT=modal_control;REG_BLDALPHA=modal_alpha;video_set_fade(modal_y);
+    REG_WININ=modal_window_in;REG_WINOUT=modal_window_out;REG_MASTER_BRIGHT=modal_master;
+    REG_MASTER_BRIGHT_SUB=modal_sub_master;
+    // Do not recommit the bomb here: restore the exact displayed registers,
+    // including a caller's alpha/window settings. Gameplay resumes its clock.
+    modal_effect_owned=false;
 }
 
 static void hud_oam_priority(int priority)

@@ -37,6 +37,14 @@ size_t death_effects;
 int starts, stops, sfx_stops, ticks;
 size_t baseline_heap, baseline_blocks, heap_attempts, obj_attempts, owned_bytes;
 
+void check_pause_dimming()
+{
+    assert(REG_BLDCNT==(BLEND_FADE_BLACK|BLEND_SRC_BG1|BLEND_SRC_BG2|
+        BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP));
+    assert(REG_BLDY.written==10 && video_fade()==10 && (REG_WINOUT&0x20) && (REG_WININ&0x2020)==0x2020 && REG_MASTER_BRIGHT==0);
+    assert(REG_MASTER_BRIGHT_SUB==0x800a);
+}
+
 void observe()
 {
     ++ticks;
@@ -312,6 +320,12 @@ void test_stage_bonus_awards()
     route_result_timer=stage_timer;route_result_frame=frame;route_sfx_start=test_effects.size();
     test_vblank_hook=[](){
         test_keys_down=KEY_B;test_keys_held=0;
+        if((REG_BLDCNT&(3<<6))==BLEND_FADE_BLACK) {
+            // The real SinGyoku route screen clears BG2 before drawing labels.
+            assert(REG_BLDCNT==(BLEND_FADE_BLACK|BLEND_SRC_BG1|BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP));
+            assert(REG_BLDY.written==10 && REG_WININ==0x3d3d && REG_MASTER_BRIGHT==0);
+            assert(REG_MASTER_BRIGHT_SUB==0x800a);
+        }
         if(test_bgs[0].map==31) {
             ++route_result_frames;
             assert(stage_score==route_expected_score && hiscore>=stage_score);
@@ -371,7 +385,7 @@ void test_konngara_stage20()
     const std::vector<u16> palette(BG_PALETTE,BG_PALETTE+256),objects(SPRITE_PALETTE,SPRITE_PALETTE+256);
     const unsigned paused_frame=frame,paused_timer=stage_timer;
     const int paused_boss_frame=konngara.state().frame;
-    test_vblank_hook=[](){test_keys_down=KEY_B;};
+    test_vblank_hook=[](){check_pause_dimming();test_keys_down=KEY_B;};
     assert(!pause_menu_run());test_keys_down=0;test_vblank_hook=observe_stage20;
     assert(frame==paused_frame && stage_timer==paused_timer && konngara.state().frame==paused_boss_frame);
     assert(std::equal(pixels.begin(),pixels.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
@@ -456,8 +470,11 @@ void observe_player_death()
         assert(REG_WININ==0x1919);
         return;
     }
-    const u16 g=(1+('G'-0x20)*2)|(TEXT_PAL_WHITE<<12);
+    const u16 g=(224+3*32+11)|(TEXT_PAL_RED<<12); // modal tile at GAME OVER's first cell
     if(BG_MAP_RAM(30)[6*32+11]!=g) return;
+    check_pause_dimming(); // game-over shares native dimming, not palette scaling
+    assert(BG_PALETTE[TEXT_PAL_RED*16+TEXT_MODAL_WHITE]==0x7fff);
+    assert(BG_PALETTE[TEXT_PAL_WHITE*16+1]==RGB15(12,12,12));
     ++p.prompt;
     // A held attack cannot accept the prompt. Release, optionally move to NEW
     // GAME, then explicitly confirm; the ordinary startup/entrance is real.
@@ -648,7 +665,7 @@ void test_player_death()
 
 void test_bombs()
 {
-    const u16 original_control=REG_BLDCNT,original_alpha=REG_BLDALPHA,original_y=REG_BLDY,original_window=REG_WINOUT;
+    const u16 original_control=REG_BLDCNT,original_alpha=REG_BLDALPHA,original_y=REG_BLDY.written,original_window=REG_WINOUT;
     const u16 original_master=REG_MASTER_BRIGHT,original_sub_master=REG_MASTER_BRIGHT_SUB;
     const std::vector<u16> initial_palette(BG_PALETTE,BG_PALETTE+256);
     assert(video_bomb_indigo(0)==0x7fff && video_bomb_indigo(0x7fff)==RGB15(12,12,31));
@@ -660,7 +677,7 @@ void test_bombs()
     }
     // Exact restore of non-default colour state. The only fade targets are
     // BG3 and its index0 backdrop; never stage objects, player, bullets or HUD.
-    REG_BLDCNT=0x0123;REG_BLDALPHA=0x0506;REG_BLDY=7;REG_WINOUT=0x401f;
+    REG_BLDCNT=0x0123;REG_BLDALPHA=0x0506;video_set_fade(7);REG_WINOUT=0x401f;
     REG_MASTER_BRIGHT=0x8003;REG_MASTER_BRIGHT_SUB=0x4002;
     BG_PALETTE[0]=0;BG_PALETTE[1]=0x7fff;
     video_bomb_prepare(true,50,1000);video_bomb_commit();
@@ -678,29 +695,29 @@ void test_bombs()
     for(int age=1;age<=32;++age) {
         video_bomb_prepare(false,140,1090+age);video_bomb_commit();
         if(age<32) {
-            assert(REG_BLDY==(age<=16 ? age : 32-age));
+            assert(REG_BLDY.written==(age<=16 ? age : 32-age));
             assert(REG_BLDCNT==(BLEND_FADE_WHITE|BLEND_SRC_BG3|BLEND_SRC_BACKDROP));
             assert(BG_PALETTE[0]==(age<16 ? 0x7fff : 0));
             if(age==16) {
-                assert(REG_BLDY==16 && BG_PALETTE[1]==0x7fff); // swap hidden by full white
+                assert(REG_BLDY.written==16 && BG_PALETTE[1]==0x7fff); // swap hidden by full white
                 { CanvasForegroundScope foreground;video_canvas_effect_commit();assert(REG_BLDCNT==0); }
                 video_bomb_commit();assert(REG_BLDCNT);
             }
         }
     }
     assert(!video_bomb_effect_active());
-    assert(REG_BLDCNT==0x0123 && REG_BLDALPHA==0x0506 && REG_BLDY==7 && REG_WINOUT==0x401f);
+    assert(REG_BLDCNT==0x0123 && REG_BLDALPHA==0x0506 && REG_BLDY.written==7 && video_fade()==7 && REG_WINOUT==0x401f);
     assert(REG_MASTER_BRIGHT==0x8003 && REG_MASTER_BRIGHT_SUB==0x4002);
-    REG_BLDCNT=original_control;REG_BLDALPHA=original_alpha;REG_BLDY=original_y;REG_WINOUT=original_window;
+    REG_BLDCNT=original_control;REG_BLDALPHA=original_alpha;video_set_fade(original_y);REG_WINOUT=original_window;
     REG_MASTER_BRIGHT=original_master;REG_MASTER_BRIGHT_SUB=original_sub_master;
     std::copy(initial_palette.begin(),initial_palette.end(),BG_PALETTE);
     // Interrupting recovery with another invocation restores normal colours
     // immediately; its first50 frames must not inherit brightness or tint.
     video_bomb_prepare(true,60,2000);video_bomb_commit();
     video_bomb_prepare(false,140,2080);video_bomb_commit();
-    video_bomb_prepare(false,140,2088);video_bomb_commit();assert(REG_BLDY==8);
+    video_bomb_prepare(false,140,2088);video_bomb_commit();assert(REG_BLDY.written==8);
     video_bomb_prepare(true,0,2089);video_bomb_commit();
-    assert(!video_bomb_effect_active() && REG_BLDY==original_y);
+    assert(!video_bomb_effect_active() && REG_BLDY.written==original_y);
     assert(REG_MASTER_BRIGHT==original_master);
     assert(std::equal(initial_palette.begin(),initial_palette.end(),BG_PALETTE));
     PlayerBomb input;
@@ -763,7 +780,7 @@ void test_bombs()
     assert(test_obj_attempts==objects && test_heap_attempts==heap);
     for(int age=1;age<=32;++age) { video_bomb_prepare(false,140,140+age);video_bomb_commit(); }
     assert(std::equal(bg.begin(),bg.end(),BG_PALETTE));
-    assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY==original_y && REG_WINOUT==original_window);
+    assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY.written==original_y && REG_WINOUT==original_window);
     assert(REG_MASTER_BRIGHT==original_master);
     for(int i=0;i<99;++i) player_update(0,0);
     assert(player_is_invincible());player_update(0,0);assert(!player_is_invincible());
@@ -786,27 +803,33 @@ void test_bombs()
         if(f>=52) assert(test_dma_copy_bytes-bytes<86016); // no compulsory84KiB stream
         if(f>=50 && f<172) {
             assert(REG_BLDALPHA==original_alpha && (REG_WINOUT&0x20));
-            assert(REG_BLDY==(f<=140 ? 0 : f<=156 ? f-140 : 172-f));
+            assert(REG_BLDY.written==(f<=140 ? 0 : f<=156 ? f-140 : 172-f));
             assert(test_bgs[g_bg_id_canvas].y==-video_bomb_shake());
             assert(test_bgs[g_bg_id_tiles].y==-video_bomb_shake());
             assert(test_bgs[g_bg_id_background].y==-video_bomb_shake());
             assert(test_objs[0].y==Camera::y(player_get_state().y_position)+video_bomb_shake());
             assert(test_objs[OAM_SLOT_HUD_LIVES].y==hud_y);
-        } else assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY==original_y && REG_WINOUT==original_window);
+        } else assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY.written==original_y && REG_WINOUT==original_window);
         if(f==49) assert(stage_cardcombo_cur==0);
         if(f==85 || f==148 || f==156) {
             const unsigned paused_frame=frame,paused_timer=stage_timer;
-            const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,brightness=REG_BLDY,window=REG_WINOUT;
+            const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,brightness=REG_BLDY.written,window=REG_WINOUT;
             const u16 master=REG_MASTER_BRIGHT;
             const std::vector<u16> pixels(BG_BMP_RAM(CANVAS_BMP_BLOCK),BG_BMP_RAM(CANVAS_BMP_BLOCK)+VIEW_W*VIEW_H);
             const std::vector<u16> palette(BG_PALETTE,BG_PALETTE+256);
-            test_vblank_hook=[](){assert(REG_BLDCNT==0 && REG_MASTER_BRIGHT==0);test_keys_down=KEY_B;};assert(!pause_menu_run());
+            const std::vector<u16> obj_palette(SPRITE_PALETTE,SPRITE_PALETTE+256);
+            const auto attempts=test_heap_attempts;
+            test_heap_fail_after=0;
+            test_vblank_hook=[](){check_pause_dimming();video_canvas_effect_commit();check_pause_dimming();test_keys_down=KEY_B;};assert(!pause_menu_run());
+            test_heap_fail_after=-1;
             test_vblank_hook=nullptr;test_keys_down=0;
+            assert(test_heap_attempts==attempts);
             assert(player_bomb().frame()==(f<140?f:140) && frame==paused_frame && stage_timer==paused_timer);
-            assert(REG_BLDCNT==blend && REG_BLDALPHA==alpha && REG_BLDY==brightness && REG_WINOUT==window);
+            assert(REG_BLDCNT==blend && REG_BLDALPHA==alpha && REG_BLDY.written==brightness && video_fade()==brightness && REG_WINOUT==window);
             assert(REG_MASTER_BRIGHT==master);
             assert(std::equal(pixels.begin(),pixels.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
             assert(std::equal(palette.begin(),palette.end(),BG_PALETTE));
+            assert(std::equal(obj_palette.begin(),obj_palette.end(),SPRITE_PALETTE));
         }
     }
     assert(stage_cardcombo_cur>0);
@@ -839,7 +862,7 @@ void test_bombs()
         assert(REG_MASTER_BRIGHT==0x4005);
         assert(player_bomb().active() && video_bomb_effect_active());stage_load(0,0);
         assert(!player_bomb().active() && !player_bomb().pending() && !g_canvas_target && !regular_bomb_canvas_owned);
-        assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY==original_y && REG_WINOUT==original_window);
+        assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY.written==original_y && REG_WINOUT==original_window);
         assert(REG_MASTER_BRIGHT==original_master && REG_MASTER_BRIGHT_SUB==original_sub_master);
     }
     start_new_game();camera.snap_center();

@@ -1,84 +1,68 @@
 #include <nds.h>
 #include <string.h>
-#include <stdlib.h>
 
 #include "palette_fx.hpp"
-#include "canvas.hpp"
 #include "video.hpp"
+#include "text_layer.hpp"
 
-// The background/tile palette and the sprite palette dim via palette RAM;
-// the effects canvas is 15bpp direct color, so it is snapshotted and
-// scaled in place (one-shot cost per pause/bonus screen).
-
+// Only palettes need a small snapshot: modal text owns reserved ink slots,
+// and SinGyoku's white-line transition still animates indexed colours.
+// Scene/OBJ dimming never touches their palettes, canvas pixels or the heap.
 static u16 bg_snap[256];
 static u16 obj_snap[256];
-static u16 *canvas_snap;
+static bool palette_owned;
 
-static void present_buffered_canvas()
+static void palette_effect_begin()
 {
-    if(!g_canvas_target) return;
-    canvas_buffer_dirty_all();canvas_buffer_prepare();
-    do { swiWaitForVBlank(); } while(!canvas_buffer_present());
+    if(palette_owned) return;
+    memcpy(bg_snap,BG_PALETTE,sizeof(bg_snap));
+    memcpy(obj_snap,SPRITE_PALETTE,sizeof(obj_snap));
+    palette_owned=true;
+    video_modal_effect_begin();
 }
 
-static u16 dim_color(u16 c, int tone)
+void palette_dim(int tone,bool keep_canvas_bright)
 {
-    if (c == 0x7FFF) // keep white
-        return c;
-    int r = (c & 31) * tone / 100;
-    int g = ((c >> 5) & 31) * tone / 100;
-    int b = ((c >> 10) & 31) * tone / 100;
-    return r | (g << 5) | (b << 10);
+    palette_effect_begin();
+    if(tone<0) tone=0;
+    if(tone>100) tone=100;
+    // BLDY has 16 steps; round to the nearest native intensity (40% ->10).
+    const int amount=((100-tone)*16+50)/100;
+    video_set_fade(amount);
+    REG_BLDCNT=tone==100 ? 0 : BLEND_FADE_BLACK|BLEND_SRC_BG1|
+        BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP|
+        (keep_canvas_bright ? 0 : BLEND_SRC_BG2);
+    // Both halves of the upper HUD now admit colour effects for its OBJ and
+    // scenery. BG0 stays excluded so modal/route text is not dimmed with it.
+    if(tone<100) REG_WININ|=0x2020;
+    else REG_WININ&=~0x2020;
+    REG_MASTER_BRIGHT_SUB=(2<<14)|amount;
+    // BG0 HUD counters/divider share a layer with the bright menu. Only their
+    // three ink slots need the same native BLDY equation, including white.
+    const int inks[]={TEXT_PAL_WHITE*16+1,TEXT_PAL_RED*16+1,TEXT_PAL_RED*16+2};
+    for(int ink:inks) {
+        const u16 c=bg_snap[ink];u16 result=0;
+        for(int shift=0;shift<=10;shift+=5) {
+            const int component=(c>>shift)&31;
+            result|=(component-component*amount/16)<<shift;
+        }
+        BG_PALETTE[ink]=result;
+    }
 }
 
-void palette_dim(int tone)
+void palette_white_begin()
 {
-    memcpy(bg_snap, BG_PALETTE, 256 * sizeof(u16));
-    memcpy(obj_snap, SPRITE_PALETTE, 256 * sizeof(u16));
-    if(!g_canvas_target) for (int i = 0; i < 256; i++) {
-        BG_PALETTE[i] = dim_color(bg_snap[i], tone);
-        SPRITE_PALETTE[i] = dim_color(obj_snap[i], tone);
-    }
-
-    if (!canvas_snap)
-        canvas_snap = (u16 *)malloc(CANVAS_W * CANVAS_H * sizeof(u16));
-    if (canvas_snap) {
-        u16 *px = canvas_at(0, 0);
-        memcpy(canvas_snap, px, CANVAS_W * CANVAS_H * sizeof(u16));
-        for (int i = 0; i < CANVAS_W * CANVAS_H; i++) {
-            u16 c = px[i];
-            if (c == 0)
-                continue; // transparent stays transparent
-            px[i] = 0x8000 | dim_color(c & 0x7FFF, tone);
-        }
-    }
-    video_bomb_pause(true); // pause must dim even a fully white recovery frame
-    if(g_canvas_target) {
-        // Publish the RAM effects and indexed palettes in the same VBlank.
-        present_buffered_canvas();
-        for(int i=0;i<256;++i) {
-            BG_PALETTE[i]=dim_color(bg_snap[i],tone);
-            SPRITE_PALETTE[i]=dim_color(obj_snap[i],tone);
-        }
-    }
+    palette_effect_begin();
+    REG_BLDCNT=0;video_set_fade(0);
 }
 
 void palette_restore()
 {
-    if(!g_canvas_target) {
-        memcpy(BG_PALETTE, bg_snap, 256 * sizeof(u16));
-        memcpy(SPRITE_PALETTE, obj_snap, 256 * sizeof(u16));
-    }
-    if (canvas_snap) {
-        memcpy(canvas_at(0, 0), canvas_snap,
-               CANVAS_W * CANVAS_H * sizeof(u16));
-    }
-    if(g_canvas_target) {
-        present_buffered_canvas();
-        memcpy(BG_PALETTE,bg_snap,256*sizeof(u16));
-        memcpy(SPRITE_PALETTE,obj_snap,256*sizeof(u16));
-    }
-    video_bomb_pause(false);
+    if(!palette_owned) return;
+    memcpy(BG_PALETTE,bg_snap,sizeof(bg_snap));
+    memcpy(SPRITE_PALETTE,obj_snap,sizeof(obj_snap));
+    video_modal_effect_end();
+    palette_owned=false;
 }
 
 void palette_toward_white(int amount)

@@ -572,7 +572,7 @@ int main()
         }
         KonngaraCombatView view;assert(view.begin());
         const auto bytes=test_heap_bytes,blocks=test_heap_count;
-        const u16 previous_blend=REG_BLDCNT,previous_alpha=REG_BLDALPHA,previous_y=REG_BLDY,previous_window=REG_WINOUT;
+        const u16 previous_blend=REG_BLDCNT,previous_alpha=REG_BLDALPHA,previous_y=REG_BLDY.written,previous_window=REG_WINOUT;
         const u16 previous_master=REG_MASTER_BRIGHT;
         video_bomb_prepare(true,65,65);video_bomb_commit(true); // a bomb can supply the lethal hit
         const u16 active_blend=REG_BLDCNT;
@@ -620,7 +620,7 @@ int main()
         assert(test_heap_attempts==attempts && konngara_defeat_diagnostics().requested_bytes==data.size());
         assert(std::all_of(staging+129024,staging+131072,[](u8 p){return p==0xa7;}));
         assert(konngara_defeat_diagnostics().failure==KonngaraDefeatFailure::None);
-        assert(REG_BLDCNT==previous_blend && REG_BLDALPHA==previous_alpha && REG_BLDY==previous_y && REG_WINOUT==previous_window);
+        assert(REG_BLDCNT==previous_blend && REG_BLDALPHA==previous_alpha && REG_BLDY.written==previous_y && REG_WINOUT==previous_window);
         assert(REG_MASTER_BRIGHT==previous_master);
         check_defeat_frame(420);
         assert(defeat_ticks==421 && unsigned(defeat_checked)==dword(defeat_reference.data()));

@@ -41,6 +41,10 @@ constexpr int OBJ_PAL_OVERLAY = 6;     // 0 transparent, 1 red, 2 white
 
 void video_init();
 void video_apply_camera();
+// BLDY is write-only. Keep its last written coefficient for effect handoffs;
+// never calculate or restore an effect by reading the hardware register.
+void video_set_fade(u16 amount);
+u16 video_fade();
 // Apply after rebuilding gameplay shadow OAM, before its VBlank commit. The
 // fixed HUD stays put; scenery, canvas, boss and player shake together.
 void video_apply_death_shake(int down_pixels, bool konngara);
@@ -59,6 +63,11 @@ void video_bomb_commit(bool konngara = false);
 void video_bomb_reset();
 void video_bomb_pause(bool paused);
 void video_canvas_effect_commit();
+// Blocking menus own the blend/window registers, suppressing bomb commits and
+// main master brightness until exact restoration of both engines. No gameplay
+// time advances here; the caller may darken the sub-engine HUD independently.
+void video_modal_effect_begin();
+void video_modal_effect_end();
 
 // Blocking, non-gameplay BG2 animations may cover BG0/HUD OAM as well.
 // Nestable so the stage-title sequence can invoke a shared banner safely.

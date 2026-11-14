@@ -180,7 +180,7 @@ void round_results_run(const StageBonus &bonus,int stage)
     u16 main_palette[256],sub_palette[256];
     const u32 display=REG_DISPCNT;
     const u32 capture=REG_DISPCAPCNT;
-    const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,fade=REG_BLDY;
+    const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,fade=video_fade();
     const u16 master=REG_MASTER_BRIGHT,sub_master=REG_MASTER_BRIGHT_SUB;
     for(int i=0;i<font_words;++i) old_font[i]=BG_TILE_RAM(results_tiles)[i];
     for(int i=0;i<1024;++i) old_map[i]=BG_MAP_RAM(results_map)[i];
@@ -249,7 +249,7 @@ void round_results_run(const StageBonus &bonus,int stage)
     if(display&(1<<11)) bgShow(3);
     bgSetScroll(3,background_scroll_x(),0);bgUpdate();
     for(int i=0;i<256;++i) {BG_PALETTE[i]=main_palette[i];BG_PALETTE_SUB[i]=sub_palette[i];}
-    REG_BLDCNT=blend;REG_BLDALPHA=alpha;REG_BLDY=fade;
+    REG_BLDCNT=blend;REG_BLDALPHA=alpha;video_set_fade(fade);
     REG_MASTER_BRIGHT=master;REG_MASTER_BRIGHT_SUB=sub_master;
     REG_DISPCAPCNT=capture;
     REG_DISPCNT=display;

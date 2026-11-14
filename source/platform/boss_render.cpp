@@ -116,7 +116,7 @@ RouteChoice boss_defeat_and_select_route()
     // 15-frame palette steps, adapted to the DS viewport. The original
     // nonblocking music fade and exact transition styling remain follow-ups.
     canvas_clear();
-    palette_dim(100);
+    palette_white_begin();
     const int center = singyoku_state().entity.top + 48;
     const int first_y = PLAYFIELD_TOP - UPPER_HUD_H * 2;
     for (int distance = 0; center - distance >= first_y || center + distance < PLAYFIELD_BOTTOM; ++distance) {
@@ -135,7 +135,7 @@ RouteChoice boss_defeat_and_select_route()
         for (int f = 0; f < 15; ++f) swiWaitForVBlank();
     }
     palette_restore();
-    palette_dim(40);
+    palette_dim(40,true); // cleared BG2 now contains only bright route labels
     RouteChoice route = ROUTE_MAKAI;
     route_render(route);
     // Do not accept a shot held from the fight as an unseen route confirmation.

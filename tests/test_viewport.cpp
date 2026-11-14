@@ -372,7 +372,7 @@ static void check_round_results() {
     const std::vector<u16> main_palette(BG_PALETTE,BG_PALETTE+256),sub_palette(BG_PALETTE_SUB,BG_PALETTE_SUB+256);
     const auto display=REG_DISPCNT;
     const auto capture=REG_DISPCAPCNT;
-    const auto old_blend=REG_BLDCNT,old_alpha=REG_BLDALPHA,old_fade=REG_BLDY;
+    const auto old_blend=REG_BLDCNT,old_alpha=REG_BLDALPHA,old_fade=REG_BLDY.written;
     const auto master=REG_MASTER_BRIGHT,sub_master=REG_MASTER_BRIGHT_SUB;
     const auto old_player=player;const auto old_orb=orb_get_state();
     const auto items=Items;const auto pellets=Pellets;
@@ -382,7 +382,7 @@ static void check_round_results() {
         result_bonus=replay ? StageBonus{6553,6553,6553,65530,851890} : StageBonus{};
         result_stage=replay ? 15 : 5;result_frames=result_prompt_frames=0;
         result_score=stage_score;result_timer=stage_timer;
-        REG_BLDCNT=0x124;REG_BLDALPHA=0x507;REG_BLDY=3;
+        REG_BLDCNT=0x124;REG_BLDALPHA=0x507;video_set_fade(3);
         REG_MASTER_BRIGHT=(1<<14)|2;REG_MASTER_BRIGHT_SUB=(1<<14)|1;
         initialize_irand(1234);const int random=irand();initialize_irand(1234);
         const size_t sfx=test_effects.size();
@@ -407,14 +407,14 @@ static void check_round_results() {
         for(int i=0;i<256*192;++i) assert(!sub[i]);
         assert(std::equal(main_palette.begin(),main_palette.end(),BG_PALETTE));
         assert(std::equal(sub_palette.begin(),sub_palette.end(),BG_PALETTE_SUB));
-        assert(REG_DISPCNT==display && REG_BLDCNT==0x124 && REG_BLDALPHA==0x507 && REG_BLDY==3);
+        assert(REG_DISPCNT==display && REG_BLDCNT==0x124 && REG_BLDALPHA==0x507 && REG_BLDY.written==3 && video_fade()==3);
         assert(REG_MASTER_BRIGHT==((1<<14)|2) && REG_MASTER_BRIGHT_SUB==((1<<14)|1));
         assert(test_bgs[0].map==30 && test_bgs[0].tile==2 && test_bgs[3].size==BgSize_B8_512x256 && test_bgs[3].map==4);
         assert(!std::memcmp(&player,&old_player,sizeof(player)) && !std::memcmp(&orb_get_state(),&old_orb,sizeof(old_orb)));
         assert(!std::memcmp(&Items,&items,sizeof(Items)) && !std::memcmp(&Pellets,&pellets,sizeof(Pellets)));
     }
     assert(test_heap_attempts==heap && test_obj_attempts==obj);
-    REG_BLDCNT=old_blend;REG_BLDALPHA=old_alpha;REG_BLDY=old_fade;
+    REG_BLDCNT=old_blend;REG_BLDALPHA=old_alpha;video_set_fade(old_fade);
     REG_MASTER_BRIGHT=master;REG_MASTER_BRIGHT_SUB=sub_master;
     REG_DISPCAPCNT=capture;
     hud_render(3,1);hud_radar_render();
@@ -430,7 +430,8 @@ static void observe_foreground() {
     assert(++foreground_frames < 2000);
     if(g_canvas_target && !canvas_buffer_ready())
         assert(std::equal(canvas_at(0,0),canvas_at(0,VIEW_H),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
-    assert(REG_WININ == 0x1D1D && test_bgs[0].priority == 1 && test_bgs[2].priority == 0);
+    const bool dimmed=(REG_BLDCNT&(3<<6))==BLEND_FADE_BLACK;
+    assert(REG_WININ == (dimmed ? 0x3D3D : 0x1D1D) && test_bgs[0].priority == 1 && test_bgs[2].priority == 0);
     assert(test_objs[OAM_SLOT_HUD_LIVES].priority == 1 && test_objs[OAM_SLOT_HUD_HP].priority == 1);
     for (int i = 0; i < OAM_HUD_HP_COUNT; ++i) assert(test_objs[OAM_SLOT_HUD_HP + i].priority == 1);
     covered_hud_frames += (displayed_canvas_pixel(0, 0) & 0x8000) != 0;
@@ -475,10 +476,10 @@ static void check_modal_glyph(int left,int top,unsigned jis,int ink,int weight)
     }
 }
 
-static void check_modal_ank(int left,int top,const char *text,int ink)
+static void check_modal_ank(int left,int top,const char *text,int ink,int background=TEXT_MODAL_BLACK)
 {
     for(;*text;++text,left+=8) for(int y=0;y<16;++y) for(int x=0;x<8;++x)
-        assert(bg0_pixel(left+x,top+y)==(font8x16[*text-0x20][y]&(0x80>>x) ? ink : TEXT_MODAL_BLACK));
+        assert(bg0_pixel(left+x,top+y)==(font8x16[*text-0x20][y]&(0x80>>x) ? ink : background));
 }
 
 namespace {
@@ -495,7 +496,25 @@ void observe_source_menu()
     assert(stage_timer==p.timer && stage_score==p.score);
     assert(std::equal(std::begin(p.hud),std::end(p.hud),BG_MAP_RAM(30)));
     test_keys_down=test_keys_held=0;
-    if(p.scenario<5) {
+    if(p.scenario<5 || p.scenario>=7) {
+        assert(REG_BLDCNT==(BLEND_FADE_BLACK|BLEND_SRC_BG1|BLEND_SRC_BG2|
+            BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP));
+        assert(REG_BLDY.written==10 && (REG_WINOUT&0x20) && (REG_WININ&0x2020)==0x2020);
+        assert(REG_MASTER_BRIGHT_SUB==0x800a);
+        assert(REG_MASTER_BRIGHT==0);
+        assert(BG_PALETTE[TEXT_PAL_WHITE*16+1]==RGB15(12,12,12));
+        if(p.scenario>=7) {
+            check_modal_ank(88,48,"GAME OVER",TEXT_MODAL_WHITE,0);
+            check_modal_ank(24,160,"A/START: CHOOSE  B: NEW GAME",TEXT_MODAL_RED,0);
+            const bool new_game=p.scenario==9 && p.waits>=4;
+            check_modal_ank(80,80,"RETRY STAGE",new_game ? TEXT_MODAL_RED : TEXT_MODAL_WHITE,0);
+            check_modal_ank(80,96,"NEW GAME",new_game ? TEXT_MODAL_WHITE : TEXT_MODAL_RED,0);
+            // First held press is ignored; release, navigate, then confirm.
+            if(p.waits==1) test_keys_down=test_keys_held=KEY_A;
+            else if(p.waits==3 && p.scenario==9) test_keys_down=KEY_DOWN;
+            else if(p.waits>=3) test_keys_down=p.scenario==8 ? KEY_B : KEY_A;
+            return;
+        }
         bool confirmation=false,pause=false;
         for(int y=56;y<72;++y) {
             for(int x=36;x<52;++x) confirmation|=bg0_pixel(x,y)!=0;
@@ -575,7 +594,8 @@ static void check_source_menus()
     const std::vector<u16> font(BG_TILE_RAM(2),BG_TILE_RAM(2)+224*16);
     const auto heap=test_heap_attempts,objects=test_obj_attempts,oam=test_oam_changes;
     const u16 control=REG_BLDCNT,alpha=REG_BLDALPHA,window=REG_WINOUT;
-    for(int scenario=0;scenario<7;++scenario) {
+    const u16 fade=REG_BLDY.written,window_in=REG_WININ,master=REG_MASTER_BRIGHT,sub_master=REG_MASTER_BRIGHT_SUB;
+    for(int scenario=0;scenario<10;++scenario) {
         menu_probe={};auto &p=menu_probe;p.scenario=scenario;p.timer=stage_timer;p.score=stage_score;
         std::copy(BG_MAP_RAM(30),BG_MAP_RAM(30)+96,p.hud);
         test_vblank_hook=observe_source_menu;
@@ -583,15 +603,19 @@ static void check_source_menus()
             assert(pause_menu_run()==(scenario==2));
             assert(p.pause_frames==(scenario==4 ? 4 : 1) && p.blank_frames==20);
             assert(p.confirm_frames==(scenario==1 || scenario==2 ? 1 : 0));
-        } else {
+        } else if(scenario<7) {
             p.stage=scenario==5 ? 20 : 1;
             p.bonus=scenario==5 ? StageBonus{6553,6553,6553,6553,262120} : StageBonus{};
             REG_BLDCNT=0x0123;REG_BLDALPHA=0x0506;REG_WINOUT=0x401f;
             stagebonus_run(p.bonus,p.stage);
             assert(p.opening_frames==24 && p.result_frames==3);
             assert(REG_BLDCNT==0x0123 && REG_BLDALPHA==0x0506 && REG_WINOUT==0x401f);
+        } else {
+            assert(gameover_menu_run()==(scenario==7));
+            assert(p.waits==(scenario==9 ? 4 : 3));
         }
         test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+        assert(REG_BLDY.written==fade && REG_WININ==window_in && REG_MASTER_BRIGHT==master && REG_MASTER_BRIGHT_SUB==sub_master);
         assert(std::equal(bg.begin(),bg.end(),BG_PALETTE) && std::equal(obj.begin(),obj.end(),SPRITE_PALETTE));
         assert(std::equal(pixels.begin(),pixels.end(),canvas_at(0,0)));
         assert(std::equal(font.begin(),font.end(),BG_TILE_RAM(2)));
@@ -600,7 +624,109 @@ static void check_source_menus()
     assert(test_heap_attempts==heap && test_obj_attempts==objects && test_oam_changes==oam);
     REG_BLDCNT=control;REG_BLDALPHA=alpha;REG_WINOUT=window;
     canvas_clear();
-    std::puts("Menus: native16x16 pause JIS, horizontal/default-No controls, native8x16 results, solid translucent BG0 reveal/targets, A-or-B prompt, max/zero bonuses and exact HUD/palette/blend restoration passed");
+    std::puts("Menus: native pause/game-over glyphs and controls, bright lettering over dimmed HUDs, native8x16 results, solid translucent BG0 reveal/targets, max/zero bonuses and exact HUD/palette/blend restoration passed");
+}
+
+static void check_native_dimming()
+{
+    const u16 control=REG_BLDCNT,alpha=REG_BLDALPHA,fade=REG_BLDY.written;
+    const u16 window_in=REG_WININ,window_out=REG_WINOUT,master=REG_MASTER_BRIGHT;
+    const auto heap=test_heap_attempts,objects=test_obj_attempts;
+    const std::vector<u16> bg(BG_PALETTE,BG_PALETTE+256),obj(SPRITE_PALETTE,SPRITE_PALETTE+256);
+    const std::vector<u16> sub(BG_BMP_RAM_SUB(0),BG_BMP_RAM_SUB(0)+65536);
+    const std::vector<u16> sub_palette(BG_PALETTE_SUB,BG_PALETTE_SUB+256);
+    const u16 sub_master=REG_MASTER_BRIGHT_SUB;
+    REG_MASTER_BRIGHT_SUB=0x4005; // exact restoration, not merely clearing dim mode
+    alignas(32) static u16 staging[65536];
+    canvas_playfield_clip(false);canvas_clear();
+    canvas_fill_rect(12,80,8,8,RGB15(12,20,6));canvas_fill_rect(24,80,4,4,0x7fff);
+    const std::vector<u16> pixels(canvas_at(0,0),canvas_at(0,0)+65536);
+    for(bool buffered:{false,true}) {
+        if(buffered) {
+            assert(canvas_buffer_begin(staging));
+            canvas_fill_rect(12,80,8,8,RGB15(12,20,6));canvas_fill_rect(24,80,4,4,0x7fff);
+            canvas_buffer_prepare();swiWaitForVBlank();assert(canvas_buffer_present());
+        }
+        const std::vector<u16> ram(canvas_at(0,0),canvas_at(0,0)+65536);
+        const std::vector<u16> vram(BG_BMP_RAM(CANVAS_BMP_BLOCK),BG_BMP_RAM(CANVAS_BMP_BLOCK)+65536);
+        const auto copies=test_dma_copy_bytes,fills=test_dma_fill_bytes;
+        for(int tone:{-20,0,40,50,100,120}) {
+            REG_BLDCNT=0x1243;REG_BLDALPHA=0x0506;video_set_fade(7);
+            REG_WININ=0x3939;REG_WINOUT=0x401f;REG_MASTER_BRIGHT=0x8003;
+            test_heap_fail_after=0;
+            palette_dim(tone);
+            const int clamped=std::max(0,std::min(100,tone)),amount=((100-clamped)*16+50)/100;
+            const int targets=BLEND_SRC_BG1|BLEND_SRC_BG2|BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP;
+            assert(REG_BLDCNT==(clamped==100 ? 0 : BLEND_FADE_BLACK|targets));
+            assert(REG_BLDY.written==amount && video_fade()==amount && REG_WININ==(clamped<100 ? 0x3939 : 0x1919) && REG_WINOUT==0x403f && REG_MASTER_BRIGHT==0);
+            assert(REG_MASTER_BRIGHT_SUB==((2<<14)|amount));
+            for(int i=0;i<256;++i) {
+                const bool hud=i==TEXT_PAL_WHITE*16+1 || i==TEXT_PAL_RED*16+1 || i==TEXT_PAL_RED*16+2;
+                for(int shift:{0,5,10}) {
+                    const int c=(bg[i]>>shift)&31;
+                    assert(((BG_PALETTE[i]>>shift)&31)==(hud ? c-c*amount/16 : c));
+                }
+            }
+            assert(std::equal(obj.begin(),obj.end(),SPRITE_PALETTE));
+            assert(std::equal(ram.begin(),ram.end(),canvas_at(0,0)));
+            assert(std::equal(vram.begin(),vram.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
+            assert(!canvas_buffer_ready());
+            // Model the documented layer/window equation, not pixel mutation:
+            // BG0 modal ink stays bright; scene whites and HUD OBJ all dim.
+            for(int layer=0;layer<6;++layer) for(int y:{0,23,24,191}) for(int x:{0,127,128,255}) {
+                const int effects=y<24 ? (REG_WININ>>(x<128 ? 0 : 8))&0x20 : REG_WINOUT&0x20;
+                const bool dark=effects && ((REG_BLDCNT>>6)&3)==3 && (REG_BLDCNT&(1<<layer));
+                for(int component:{0,12,20,31}) {
+                    const int output=dark ? component-component*REG_BLDY.written/16 : component;
+                    const bool expected=clamped<100 && layer!=0;
+                    assert(output==(expected ? component-component*amount/16 : component));
+                }
+            }
+            video_canvas_effect_commit(); // buffered/canvas commits must not steal ownership
+            assert(REG_BLDY.written==amount && REG_MASTER_BRIGHT==0);
+            palette_restore();test_heap_fail_after=-1;
+            assert(REG_BLDCNT==0x1243 && REG_BLDALPHA==0x0506 && REG_BLDY.written==7 && video_fade()==7);
+            assert(REG_WININ==0x3939 && REG_WINOUT==0x401f && REG_MASTER_BRIGHT==0x8003);
+            assert(REG_MASTER_BRIGHT_SUB==0x4005);
+            assert(std::equal(bg.begin(),bg.end(),BG_PALETTE) && std::equal(obj.begin(),obj.end(),SPRITE_PALETTE));
+            assert(std::equal(ram.begin(),ram.end(),canvas_at(0,0)));
+            assert(std::equal(vram.begin(),vram.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
+        }
+        // A foreground-only BG2 route screen exempts its labels, not scenery.
+        palette_dim(40,true);
+        assert(REG_BLDCNT==(BLEND_FADE_BLACK|BLEND_SRC_BG1|BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP));
+        palette_dim(50); // changing intensity must not overwrite the saved state
+        assert(BG_PALETTE[TEXT_PAL_WHITE*16+1]==RGB15(16,16,16));
+        palette_restore();
+        assert(REG_BLDCNT==0x1243 && REG_WININ==0x3939 && REG_MASTER_BRIGHT==0x8003);
+        // SinGyoku's separate palette animation never allocates or rewrites BG2.
+        palette_white_begin();
+        assert(REG_BLDCNT==0 && REG_BLDY.written==0 && REG_MASTER_BRIGHT==0);
+        for(int amount:{0,10,31}) {
+            palette_toward_white(amount);
+            for(int i=0;i<256;++i) for(int shift:{0,5,10}) {
+                const int b=(bg[i]>>shift)&31,o=(obj[i]>>shift)&31;
+                assert(((BG_PALETTE[i]>>shift)&31)==b+(31-b)*amount/31);
+                assert(((SPRITE_PALETTE[i]>>shift)&31)==o+(31-o)*amount/31);
+            }
+        }
+        palette_restore();palette_restore(); // repeated cleanup is harmless
+        assert(std::equal(bg.begin(),bg.end(),BG_PALETTE) && std::equal(obj.begin(),obj.end(),SPRITE_PALETTE));
+        assert(std::equal(ram.begin(),ram.end(),canvas_at(0,0)));
+        assert(std::equal(vram.begin(),vram.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
+        assert(test_dma_copy_bytes==copies && test_dma_fill_bytes==fills);
+        if(buffered) canvas_buffer_end();
+    }
+    assert(test_heap_attempts==heap && test_obj_attempts==objects);
+    assert(REG_MASTER_BRIGHT_SUB==0x4005 && std::equal(sub.begin(),sub.end(),BG_BMP_RAM_SUB(0)));
+    assert(std::equal(sub_palette.begin(),sub_palette.end(),BG_PALETTE_SUB));
+    // Neither dim nor the white transition restored/re-published old pixels.
+    assert(std::equal(pixels.begin(),pixels.end(),BG_BMP_RAM(CANVAS_BMP_BLOCK)));
+    REG_BLDCNT=control;REG_BLDALPHA=alpha;video_set_fade(fade);
+    REG_WININ=window_in;REG_WINOUT=window_out;REG_MASTER_BRIGHT=master;
+    REG_MASTER_BRIGHT_SUB=sub_master;
+    canvas_clear();
+    std::puts("Native darkening: direct/buffered scene and both HUDs including white ink, bright modal/route text, three isolated BG0 HUD inks, unchanged pixels/scene palettes, zero heap/uploads, exact registers and separate SinGyoku white blend passed");
 }
 
 static void check_white_projectiles()
@@ -783,9 +909,9 @@ static void check_sprite_initializers()
 
 static void check_sprite_lifecycles()
 {
-    // The pause/bonus canvas snapshot is intentionally retained after first use.
+    // Hardware dimming retains no heap block, even on its first use.
     palette_dim(50); palette_restore();
-    assert(test_heap_count == 1 && test_heap_bytes == 98304);
+    assert(test_heap_count == 0 && test_heap_bytes == 0);
     const auto heap_attempts = test_heap_attempts, obj_attempts = test_obj_attempts;
     for (int transition = 0; transition < 1000; ++transition) {
         const bool boss = transition % 8 == 7;
@@ -810,10 +936,10 @@ static void check_sprite_lifecycles()
         palette_dim(50); palette_restore();
         assert(test_obj_count == 79 && test_obj_used == 27840 && test_obj_attempts == obj_attempts);
         // Each background load uses one temporary buffer and frees it.
-        assert(test_heap_count == 1 && test_heap_bytes == 98304);
+        assert(test_heap_count == 0 && test_heap_bytes == 0);
         assert(test_heap_attempts == heap_attempts + transition + 1);
     }
-    std::puts("Sprites: 1000 stage/life/HUD/boss reset cycles with flat OBJ usage and one retained 98304-byte dim snapshot passed");
+    std::puts("Sprites: 1000 stage/life/HUD/boss reset cycles with flat OBJ usage and zero retained dimming allocations passed");
 }
 
 int main()
@@ -1008,6 +1134,8 @@ int main()
     }
     palette_dim(40);
     assert(BG_PALETTE[TEXT_PAL_RED * 16 + 1] == RGB15(12, 0, 0));
+    assert(BG_PALETTE[TEXT_PAL_WHITE * 16 + 1] == RGB15(12,12,12));
+    assert(!(REG_BLDCNT&BLEND_SRC_BG0) && (REG_WININ&0x2020)==0x2020 && REG_BLDY.written==10);
     palette_restore();
     assert(BG_PALETTE[TEXT_PAL_RED * 16 + 1] == RGB15(31, 0, 0));
     for (int x = 0; x < 32; ++x) assert(text_map[64 + x] == divider);
@@ -1173,6 +1301,7 @@ int main()
     check_portal_rendering();
     assert(test_obj_used == obj_used);
     assert(test_obj_attempts == sprite_attempts && test_obj_count == 79 && test_obj_used == 27840);
+    check_native_dimming();
     check_sprite_lifecycles();
     check_source_menus();
     test_stage_entrances();
