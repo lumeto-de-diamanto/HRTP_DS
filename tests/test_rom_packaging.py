@@ -28,7 +28,14 @@ class RomPackagingTests(unittest.TestCase):
 
     def test_ds_only_header_and_checksums(self):
         self.assertEqual(self.rom[0x12], 0, 'ROM must identify as DS-only, not DS+DSi')
-        self.assertEqual(struct.unpack_from('<I', self.rom, 0x84)[0], 0x200)
+        self.assertEqual(struct.unpack_from('<I', self.rom, 0x84)[0], 0x4000)
+        self.assertEqual(self.rom[0x1f] & 4, 0, 'legacy autostart must not bypass the firmware menu')
+        arm9_offset = struct.unpack_from('<I', self.rom, 0x20)[0]
+        self.assertGreaterEqual(arm9_offset, 0x4000)
+        self.assertLess(arm9_offset, 0x8000)
+        self.assertEqual(arm9_offset % 0x200, 0)
+        self.assertEqual(crc16(self.rom[arm9_offset:0x8000]),
+                         struct.unpack_from('<H', self.rom, 0x6c)[0])
         for start, end, checksum in ((0, 0x15e, 0x15e), (0xc0, 0x15c, 0x15c)):
             self.assertEqual(crc16(self.rom[start:end]),
                              struct.unpack_from('<H', self.rom, checksum)[0])
@@ -65,11 +72,11 @@ class RomPackagingTests(unittest.TestCase):
             self.assertIn(struct.pack('<' + 'H' * len(values), *values), arm9)
 
     def test_static_red_kanji_icon_is_exact_and_opaque(self):
-        image = Image.open('icon.gif')
-        self.assertEqual(image.size, (32, 32))
-        self.assertEqual(image.n_frames, 1)
-        self.assertNotIn('transparency', image.info)
-        rgb = image.convert('RGB')
+        with Image.open('icon.gif') as image:
+            self.assertEqual(image.size, (32, 32))
+            self.assertEqual(image.n_frames, 1)
+            self.assertNotIn('transparency', image.info)
+            rgb = image.convert('RGB')
         colors = {color for _, color in rgb.getcolors(256)}
         self.assertLessEqual(len(colors), 15)  # plus the DS's reserved transparent slot
         self.assertIn((0, 0, 0), colors)

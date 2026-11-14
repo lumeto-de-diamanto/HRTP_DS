@@ -250,12 +250,11 @@ else
     GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_SUBTITLE);$(GAME_AUTHOR)
 endif
 
-# A 0x200 header omits TWL sections: package actual DS-only, not DS+DSi.
 $(ROM): arm9 arm7
 	@echo "  NDSTOOL $@"
 	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
 		-7 build/arm7.elf -9 build/arm9.elf \
-		-h 0x200 \
+		-h 0x4000 -uc 0 \
 		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
 		-d $(NITROFSDIR) $(NDSTOOL_ARGS)
 
