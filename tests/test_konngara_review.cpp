@@ -243,6 +243,48 @@ namespace {
 int bonus_from_stage,bonus_expected_score,bonus_visible_frames;
 int bonus_fade_frames,bonus_black_frames,bonus_kanji_frames,bonus_waits,bonus_frozen_timer;
 unsigned bonus_frozen_frame;
+bool regular_background_tracked,regular_dismiss_overrun,regular_init_overrun,regular_banner_overrun;
+int regular_commits,regular_incoming_waits,regular_entrance_frames;
+std::vector<u16> regular_background;
+
+void check_regular_background()
+{
+    assert(std::equal(regular_background.begin(),regular_background.end(),BG_BMP_RAM(4)));
+}
+
+void observe_regular_dma()
+{
+    if(!regular_background_tracked) return;
+    // Observe intermediate clears too: re-uploading the same file must not
+    // pass merely because the final background bytes happen to match.
+    check_regular_background();
+    if(current_stage==bonus_from_stage) {
+        // Simulate scanout advancing AFTER the menu's own VBlank gate, while
+        // it erases the dismissed panel. Never force its wait loop to retry.
+        if(bonus_visible_frames==29 && !regular_dismiss_overrun &&
+           (REG_BLDCNT&0x3f)==BLEND_SRC_BG0) {
+            regular_dismiss_overrun=true;REG_VCOUNT=80;
+        }
+        return;
+    }
+    if(!regular_commits && !regular_init_overrun) {
+        regular_init_overrun=true;REG_VCOUNT=80; // loading/HUD work missed VBlank
+    } else if(regular_incoming_waits==regular_entrance_frames && !regular_banner_overrun) {
+        regular_banner_overrun=true;REG_VCOUNT=80; // final banner erase ran long
+    }
+}
+
+void observe_regular_scroll()
+{
+    if(!regular_background_tracked) return;
+    assert(REG_VCOUNT>=192 && REG_VCOUNT<200);
+    assert(current_stage==bonus_from_stage+1 && camera.left==32);
+    assert(test_bgs[1].x==32 && test_bgs[3].x==32);
+    assert(!test_bgs[1].y && !test_bgs[3].y && !test_bgs[2].y);
+    check_regular_background();
+    assert(++regular_commits<=2); // entrance, then ONE first-serve frame
+}
+
 int route_expected_score,route_result_frames,route_result_timer;
 unsigned route_result_frame;
 size_t route_sfx_start;
@@ -250,7 +292,16 @@ void observe_bonus_award()
 {
     assert(stage_score==bonus_expected_score && hiscore>=bonus_expected_score);
     test_keys_down=test_keys_held=0;
-    if(++bonus_waits==1) { bonus_frozen_timer=stage_timer;bonus_frozen_frame=frame; }
+    if(regular_background_tracked) {
+        check_regular_background();
+        if(current_stage!=bonus_from_stage) {
+            assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
+            assert(frame==bonus_frozen_frame);
+            if(regular_commits) ++regular_incoming_waits;
+        }
+    }
+    assert(++bonus_waits<1200);
+    if(bonus_waits==1) { bonus_frozen_timer=stage_timer;bonus_frozen_frame=frame; }
     if(current_stage==bonus_from_stage) {
         assert(stage_timer==unsigned(bonus_frozen_timer) && frame==bonus_frozen_frame);
         if(REG_MASTER_BRIGHT&31) {
@@ -271,7 +322,9 @@ void observe_bonus_award()
     if(current_stage==bonus_from_stage && (REG_BLDCNT&0x3f)==BLEND_SRC_BG0) {
         // Hold the result for several input frames, then confirm with both
         // buttons held. Neither drawing nor repeated input may add it again.
-        if(++bonus_visible_frames>=29) test_keys_down=test_keys_held=KEY_A|KEY_B;
+        if(++bonus_visible_frames>=29) {
+            test_keys_down=test_keys_held=KEY_A|KEY_B;
+        }
     }
 }
 
@@ -329,7 +382,7 @@ void observe_stage20()
 void test_stage_bonus_awards()
 {
     const int saved_high=hiscore;
-    for(int stage:{0,1,3}) {
+    for(int stage:{0,1,2,3}) {
         test_vblank_hook=nullptr;stage_load(0,stage);
         lives=6;rem_bombs=5;stage_score=123450;hiscore=100;
         stage_timer=1000;stage_cardcombo_max=7;
@@ -337,15 +390,35 @@ void test_stage_bonus_awards()
         assert(bonus.total==(3000+700+1700+stage*200)*10);
         bonus_from_stage=stage;bonus_expected_score=stage_score+bonus.total;bonus_visible_frames=0;
         bonus_fade_frames=bonus_black_frames=bonus_kanji_frames=bonus_waits=0;
+        regular_background_tracked=stage<3;
+        regular_dismiss_overrun=regular_init_overrun=regular_banner_overrun=false;
+        regular_commits=regular_incoming_waits=0;
+        if(regular_background_tracked) {
+            camera.left=stage%2 ? 64 : 0;video_apply_camera();
+            regular_background.assign(BG_BMP_RAM(4),BG_BMP_RAM(4)+65536);
+            int cards=0;
+            const auto *layout=scene_layout(0,stage+1);
+            for(const auto &row:layout->card) for(auto card:row) cards+=bool(card);
+            regular_entrance_frames=(cards ? cards+13 : 0)+70;
+        }
         stage_cards_removed_count=stage_card_total;
+        test_dma_fill_hook=observe_regular_dma;test_bg_update_hook=observe_regular_scroll;
         test_vblank_hook=observe_bonus_award;
         gameplay_tick(0,0);
-        test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+        test_vblank_hook=nullptr;test_dma_fill_hook=nullptr;test_bg_update_hook=nullptr;
+        test_keys_down=test_keys_held=0;
         assert(bonus_visible_frames==29 && current_scene==0 && current_stage==stage+1);
         assert(bonus_fade_frames==(stage==3 ? 16 : 0));
         assert(bonus_black_frames==(stage==3 ? 1 : 0));
         assert(bonus_kanji_frames==(stage==3 ? 48 : 0));
         assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
+        if(regular_background_tracked) {
+            assert(regular_dismiss_overrun && regular_init_overrun && regular_banner_overrun && regular_commits==2);
+            assert(regular_incoming_waits==regular_entrance_frames+1); // safe first-serve resync
+            check_regular_background();
+            assert(wait_for_shot && !test_objs[0].hidden);
+        }
+        regular_background_tracked=false;
         assert(stage_score==bonus_expected_score && hiscore==bonus_expected_score);
         for(int tick=0;tick<3;++tick) gameplay_tick(0,0);
         assert(stage_score==bonus_expected_score); // next stage/entrance cannot repeat the award
@@ -386,7 +459,7 @@ void test_stage_bonus_awards()
     assert(stage_score==before+3000+round_bonus); // no repeat after results/route handoff
     hiscore=std::max(hiscore,saved_high);
     start_new_game();assert(stage_score==0);
-    std::puts("Stage bonus: credited once, ordinary stages unchanged, real Stage4->5 bonus/fade/black-held load/48-frame kanji order, frozen timer/frame, boss/route carry and new-game reset passed");
+    std::puts("Stage bonus: credited once, resident regular backgrounds never cleared/re-uploaded, zero-Y scroll commits gated through forced scanout overruns, card ripple/banner then one serve frame, Stage4->5 fade/kanji, frozen state and boss/route carry passed");
 }
 
 void test_konngara_stage20()

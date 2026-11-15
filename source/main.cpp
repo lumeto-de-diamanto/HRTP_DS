@@ -224,7 +224,14 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     const bool boss = stage_has_boss(scene, stage);
     const bool final_boss=stage_has_konngara(scene,stage);
     const bool previous_boss = stage_has_boss(current_scene, current_stage);
+    const bool regular_handoff=preserve_score && !boss && !previous_boss &&
+        scene==current_scene && stage==current_stage+1;
     const int entering_score=preserve_score ? stage_score : 0;
+    // A normal next-stage entrance reuses the resident scenery, like the
+    // source's page restore. Start replacing actors/tiles in a fresh VBlank,
+    // not halfway through scanout after dismissing the bonus panel.
+    if(regular_handoff)
+        do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
     // Remove modal/result text before restoring scenery or revealing it through
     // the next entrance's transparent glyphs. Preserve the fixed upper HUD.
     text_layer_clear();
@@ -255,7 +262,9 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     // Per-scene background: its palette becomes the round palette that
     // cards/items render through (the original's ptn_load "retains the
     // current hardware palette").
-    if (stage_has_singyoku(scene,stage)) load_boss_background(); else load_background(scene);
+    if(!regular_handoff) {
+        if (stage_has_singyoku(scene,stage)) load_boss_background(); else load_background(scene);
+    }
     palette_apply_round();
 
     if (boss) {
@@ -298,9 +307,15 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     render_hud();
     // No fully rendered gameplay frame may expose the orb/cards before the
     // entrance. Later-stage card ripple precedes STAGE NN, as in ReC98.
+    // Initialization may overrun VBlank. Affine BG reference-point writes
+    // during scanout restart the image at that scanline, despite a zero Y.
+    if(regular_handoff && (REG_VCOUNT<192 || REG_VCOUNT>=200))
+        do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
     video_apply_camera();
     stage_entrance_animate(global_stage_num(), current_stage == 0 || boss);
     wait_for_shot = !boss;
+    if(regular_handoff && (REG_VCOUNT<192 || REG_VCOUNT>=200))
+        do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
     render_frame(); // source life-loop handoff: player/orb appear before BGM
 
     // ReC98 starts regular-stage BGM after the entrance and keeps it running
@@ -454,7 +469,9 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         if(stage_has_boss(current_scene,next))
             video_stage_fade_out();
         stage_load(current_scene,next,false,true);
-        if(stage_has_konngara(current_scene,current_stage)) return;
+        // stage_load already presented the first serve frame. A second regular
+        // render here could rewrite affine scroll after that VBlank has ended.
+        if(!stage_has_boss(current_scene,current_stage) || stage_has_konngara(current_scene,current_stage)) return;
     }
     if(stage_score>hiscore) hiscore=stage_score;
     camera.follow(player_center_x());render_frame();
