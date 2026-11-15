@@ -264,6 +264,7 @@ u8 result_bottom_image[192*256];
 u16 result_hud_palette[32];
 bool result_label_ink[192][256];
 int result_zipper_frames,result_incoming_text;
+int result_exit_fade_frames,result_hidden_cleanup_commits;
 size_t result_sub_calls;
 std::vector<u16> result_reference_font;
 std::vector<u8> result_reference_labels;
@@ -327,7 +328,13 @@ void observe_round_results() {
     }
     const bool zipping=(REG_DISPCNT&0xff00)==(1<<10);
     assert((zipping || (REG_DISPCNT&0xff00)==((1<<8)|(1<<11))) && !REG_BLDCNT);
-    assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
+    const bool fading=(REG_MASTER_BRIGHT&0xc000)==0x8000;
+    if(fading) {
+        assert(!zipping && result_prompt_frames==12);
+        assert(++result_exit_fade_frames<=16 && REG_MASTER_BRIGHT==(0x8000|result_exit_fade_frames));
+        assert(REG_MASTER_BRIGHT_SUB==REG_MASTER_BRIGHT);
+    } else assert(!REG_MASTER_BRIGHT);
+    if(!fading) assert(!REG_MASTER_BRIGHT_SUB);
     assert(test_bgs[3].size==BgSize_B8_128x128 && test_bgs[3].map==16 && test_bgs[3].wrap);
     assert(BG_PALETTE[TEXT_PAL_RED*16+1]==RGB15(31,0,0));
     assert(BG_PALETTE[4]==BG_PALETTE_SUB[32+4] && BG_PALETTE[5]==BG_PALETTE_SUB[32+15]);
@@ -385,8 +392,8 @@ void observe_round_results() {
     // A OR B: keep stale confirmations asserted for nine frames, then release
     // and deliberately confirm. Rolling/opening may not consume held input.
     if(!(BG_MAP_RAM(31)[22*32+10]&1023)) return;
-    ++result_prompt_frames;
-    if(result_prompt_frames==1) {
+    if(!fading) ++result_prompt_frames;
+    if(result_prompt_frames==1 || fading) {
         check_result_text(64,8,"STAGE");
         char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};
         check_result_text(160,8,stage);check_result_text(64,24,"COMPLETE");
@@ -404,7 +411,14 @@ void observe_round_results() {
         for(int y=0;y<192;++y) for(int x=0;x<256;++x)
             assert(sub_index(x,y)==32+RoundResults_pixels[y*256+x]);
     }
-    if(result_prompt_frames==10) test_keys_down=test_keys_held=0;
+    if(!fading && result_prompt_frames==10) test_keys_down=test_keys_held=0;
+}
+
+void observe_results_cleanup() {
+    if(result_exit_fade_frames==16) {
+        assert(REG_MASTER_BRIGHT==0x8010 && REG_MASTER_BRIGHT_SUB==0x8010);
+        ++result_hidden_cleanup_commits;
+    }
 }
 }
 
@@ -454,6 +468,7 @@ static void check_round_results() {
         }
         std::copy(BG_PALETTE_SUB,BG_PALETTE_SUB+32,result_hud_palette);
         result_sub_calls=sub_calls.size();result_zipper_frames=result_incoming_text=0;
+        result_exit_fade_frames=result_hidden_cleanup_commits=0;
         result_bonus=replay ? StageBonus{6553,6553,6553,65530,851890} : StageBonus{};
         result_stage=replay ? 15 : 5;result_frames=result_prompt_frames=0;
         std::memset(result_label_ink,0,sizeof(result_label_ink));
@@ -471,10 +486,13 @@ static void check_round_results() {
         REG_DISPCAPCNT=0x1234567;
         test_capture_source=captured_boss_pixel;
         test_vblank_hook=observe_round_results;
+        test_bg_update_hook=observe_results_cleanup;
         round_results_run(result_bonus,result_stage);
         test_capture_source=nullptr;
-        test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+        test_vblank_hook=nullptr;test_bg_update_hook=nullptr;test_keys_down=test_keys_held=0;
         assert(result_prompt_frames==12 && irand()==random);
+        assert(result_exit_fade_frames==16 && result_hidden_cleanup_commits==1);
+        assert(REG_MASTER_BRIGHT==0x8010 && REG_MASTER_BRIGHT_SUB==0x8010);
         assert(result_zipper_frames==141 && result_incoming_text>0);
         assert(sub_calls.size()==result_sub_calls+1 && sub_calls.back().type=='C');
         // Only the compiled main-RAM pattern may use DMA. Scanlines and the
@@ -490,6 +508,7 @@ static void check_round_results() {
         assert(std::equal(main_palette.begin(),main_palette.end(),BG_PALETTE));
         assert(std::equal(sub_palette.begin(),sub_palette.end(),BG_PALETTE_SUB));
         assert(REG_DISPCNT==display && REG_BLDCNT==0x124 && REG_BLDALPHA==0x507 && REG_BLDY.written==3 && video_fade()==3);
+        video_stage_reveal(); // standalone renderer caller completes the next-scene handoff
         assert(REG_MASTER_BRIGHT==((1<<14)|2) && REG_MASTER_BRIGHT_SUB==((1<<14)|1));
         assert(test_bgs[0].map==30 && test_bgs[0].tile==2 && test_bgs[3].size==BgSize_B8_512x256 && test_bgs[3].map==4);
         assert(!std::memcmp(&player,&old_player,sizeof(player)) && !std::memcmp(&orb_get_state(),&old_orb,sizeof(old_orb)));
@@ -500,7 +519,7 @@ static void check_round_results() {
     REG_MASTER_BRIGHT=master;REG_MASTER_BRIGHT_SUB=sub_master;
     REG_DISPCAPCNT=capture;
     hud_render(3,1);hud_radar_render();
-    std::puts("Round results: Libre Bodoni letters/numerals from independent bitmap oracle, one384-row zipper, outgoing HUD intact, incoming text at every strip/frame, original crop, zero/max rolling/SFX, exact restoration and zero heap/OBJ allocations passed");
+    std::puts("Round results: Libre Bodoni pixels/one384-row zipper intact, zero/max rolling, held-confirm release, synchronized sixteen-step fade of both result screens, cleanup under black, exact dual brightness restoration at reveal and zero heap/OBJ allocations passed");
 }
 
 static int foreground_frames, covered_hud_frames, title_frames;

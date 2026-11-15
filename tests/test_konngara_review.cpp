@@ -16,6 +16,7 @@
 #include "upper_hud.hpp"
 #include "boss_gfx.hpp"
 #include "boss_render.hpp"
+#include "font16x16.hpp"
 #include "main/boss/singyoku.hpp"
 #include "main/random.hpp"
 #include "main/player/player.hpp"
@@ -35,6 +36,7 @@ int start_set, phase3_frames, phase5_frames, phase7_frames, misses_checked;
 int defeat_frames,death_orb_x,death_orb_y,death_player_x,death_player_y,death_camera,death_score;
 size_t death_effects;
 int starts, stops, sfx_stops, ticks;
+int scene_plays[7];
 size_t baseline_heap, baseline_blocks, heap_attempts, obj_attempts, owned_bytes;
 
 void check_pause_dimming()
@@ -129,7 +131,7 @@ bool music_play_track(NativeTrackId id)
 void music_stop() { ++stops; }
 void sfx_stop() { ++sfx_stops; }
 const char *music_error() { return ""; }
-void music_play_scene(int scene) { assert(scene>=0 && scene<7); }
+void music_play_scene(int scene) { assert(scene>=0 && scene<7);++scene_plays[scene]; }
 
 void test_konngara_review()
 {
@@ -288,6 +290,68 @@ void observe_regular_scroll()
 int route_expected_score,route_result_frames,route_result_timer;
 unsigned route_result_frame;
 size_t route_sfx_start;
+int route_target_scene,route_exit_fade_frames,route_black_waits,route_kanji_frames;
+int route_cleanup_commits,route_load_commits;
+bool route_first_mask;
+
+void observe_route_commit()
+{
+    if(route_exit_fade_frames!=16 || route_first_mask) return;
+    // All result restoration and scene-loading commits must stay hidden, not
+    // briefly restore the old boss or reveal the arena ahead of the mask.
+    assert(REG_MASTER_BRIGHT==0x8010 && REG_MASTER_BRIGHT_SUB==0x8010);
+    if(current_scene==0) ++route_cleanup_commits;
+    else {
+        assert(current_scene==route_target_scene && current_stage==0 && camera.left==32);
+        ++route_load_commits;
+        if(test_bgs[2].sx==32 && test_bgs[2].y==CANVAS_H) {
+            assert(REG_VCOUNT>=192 && REG_VCOUNT<200 && route_black_waits==1);
+            const u16 *glyph=font16x16_find(JIS_TOUHOU_REIIDEN[0]);assert(glyph);
+            for(int y=0;y<24;++y) for(int x=0;x<32;++x) {
+                const bool ink=x>=8 && x<24 && y>=4 && y<20 && (glyph[y-4]&(0x8000>>(x-8)));
+                assert(*canvas_at(x,CANVAS_H+y)==(ink ? 0 : 0x8000));
+            }
+            route_first_mask=true;
+        }
+    }
+}
+
+void observe_route_handoff()
+{
+    test_keys_down=KEY_B;test_keys_held=0;
+    if((REG_BLDCNT&(3<<6))==BLEND_FADE_BLACK) {
+        assert(REG_BLDCNT==(BLEND_FADE_BLACK|BLEND_SRC_BG1|BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP));
+        assert(REG_BLDY.written==10 && REG_WININ==0x3d3d && REG_MASTER_BRIGHT==0);
+        assert(REG_MASTER_BRIGHT_SUB==0x800a);
+        if(route_target_scene==2) test_keys_down|=KEY_DOWN;
+    }
+    if(test_bgs[0].map==31) {
+        assert(++route_result_frames<1200);
+        assert(stage_score==route_expected_score && hiscore>=stage_score);
+        assert(frame==route_result_frame && stage_timer==unsigned(route_result_timer));
+        assert(std::find(test_effects.begin()+route_sfx_start,test_effects.end(),SFX_ROUTE_CONFIRM)!=test_effects.end());
+        if(REG_MASTER_BRIGHT&31) {
+            assert(++route_exit_fade_frames<=16 && REG_MASTER_BRIGHT==(0x8000|route_exit_fade_frames));
+            assert(REG_MASTER_BRIGHT_SUB==REG_MASTER_BRIGHT && test_bgs[3].map==16);
+            assert(BG_MAP_RAM(31)[22*32+10]&1023); // finished tally/prompt still displayed
+        }
+    } else if(current_scene==route_target_scene) {
+        assert(current_stage==0 && stage_score==route_expected_score && frame==route_result_frame);
+        assert(route_exit_fade_frames==16);
+        if(!route_first_mask) {
+            assert(REG_MASTER_BRIGHT==0x8010 && ++route_black_waits==1);
+            assert(REG_MASTER_BRIGHT_SUB==0x8010);
+            assert(test_bgs[2].sx==32 && test_bgs[2].y==CANVAS_H);
+        } else {
+            assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
+            if(test_bgs[2].sx==32) {
+                assert(++route_kanji_frames<=48 && test_bgs[2].y==CANVAS_H);
+                assert(test_bgs[2].x==((route_kanji_frames-1)/8%2)*32);
+            }
+        }
+    }
+}
+
 void observe_bonus_award()
 {
     assert(stage_score==bonus_expected_score && hiscore>=bonus_expected_score);
@@ -425,41 +489,39 @@ void test_stage_bonus_awards()
     }
     // The natural boss/route transition must not throw away the accumulated
     // card-stage bonus either. Use the real lethal-orb/route UI path.
-    for(int i=0;i<200;++i) singyoku_update();
-    auto &health=const_cast<BossHealth&>(singyoku_state().health);
-    health.hp=1;health.invincible=false;health.invincibility_frame=0;
-    const auto &entity=singyoku_state().entity;
-    orb_set_position(entity.left+24,entity.top+24);
-    const int before=stage_score;
-    const int round_bonus=roundbonus_compute(5,lives).total;
-    route_expected_score=before+3000+round_bonus;route_result_frames=0;
-    route_result_timer=stage_timer;route_result_frame=frame;route_sfx_start=test_effects.size();
-    test_vblank_hook=[](){
-        test_keys_down=KEY_B;test_keys_held=0;
-        if((REG_BLDCNT&(3<<6))==BLEND_FADE_BLACK) {
-            // The real SinGyoku route screen clears BG2 before drawing labels.
-            assert(REG_BLDCNT==(BLEND_FADE_BLACK|BLEND_SRC_BG1|BLEND_SRC_BG3|BLEND_SRC_SPRITE|BLEND_SRC_BACKDROP));
-            assert(REG_BLDY.written==10 && REG_WININ==0x3d3d && REG_MASTER_BRIGHT==0);
-            assert(REG_MASTER_BRIGHT_SUB==0x800a);
-        }
-        if(test_bgs[0].map==31) {
-            ++route_result_frames;
-            assert(stage_score==route_expected_score && hiscore>=stage_score);
-            assert(frame==route_result_frame && stage_timer==route_result_timer);
-            assert(std::find(test_effects.begin()+route_sfx_start,test_effects.end(),SFX_ROUTE_CONFIRM)!=test_effects.end());
-        }
-    };gameplay_tick(0,0);
-    test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
-    if(current_scene!=1 || current_stage!=0 || stage_score!=before+3000+round_bonus || hiscore<stage_score)
-        std::fprintf(stderr,"Bonus route carry: scene%d stage%d score%d expected%d high%d\n",
-            current_scene,current_stage,stage_score,before+3000+round_bonus,hiscore);
-    assert(current_scene==1 && current_stage==0 && stage_score==before+3000+round_bonus && hiscore>=stage_score);
-    assert(route_result_frames>200);
-    for(int tick=0;tick<3;++tick) gameplay_tick(0,0);
-    assert(stage_score==before+3000+round_bonus); // no repeat after results/route handoff
+    for(int target:{1,2}) {
+        stage_load(0,4,false,true);
+        for(int i=0;i<200;++i) singyoku_update();
+        auto &health=const_cast<BossHealth&>(singyoku_state().health);
+        health.hp=1;health.invincible=false;health.invincibility_frame=0;
+        const auto &entity=singyoku_state().entity;
+        orb_set_position(entity.left+24,entity.top+24);
+        const int before=stage_score;
+        const int round_bonus=roundbonus_compute(5,lives).total;
+        route_expected_score=before+3000+round_bonus;route_result_frames=0;
+        route_result_timer=stage_timer;route_result_frame=frame;route_sfx_start=test_effects.size();
+        route_target_scene=target;route_exit_fade_frames=route_black_waits=route_kanji_frames=0;
+        route_cleanup_commits=route_load_commits=0;route_first_mask=false;
+        const int old_lives=lives,old_bombs=rem_bombs;
+        const int old_starts=starts;
+        const int old_scene_plays=scene_plays[target];
+        test_vblank_hook=observe_route_handoff;test_bg_update_hook=observe_route_commit;
+        gameplay_tick(0,0);
+        test_vblank_hook=nullptr;test_bg_update_hook=nullptr;test_keys_down=test_keys_held=0;
+        assert(current_scene==target && current_stage==0 && stage_score==before+3000+round_bonus && hiscore>=stage_score);
+        assert(route_result_frames>200 && route_exit_fade_frames==16);
+        assert(route_cleanup_commits==1 && route_load_commits>=3 && route_first_mask);
+        assert(route_black_waits==1 && route_kanji_frames==48);
+        assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB && wait_for_shot);
+        assert(lives==old_lives && rem_bombs==old_bombs && starts==old_starts);
+        assert(scene_plays[target]==old_scene_plays+1);
+        assert(std::count(test_effects.begin()+route_sfx_start,test_effects.end(),SFX_TITLE_GLYPH)==6);
+        for(int tick=0;tick<3;++tick) gameplay_tick(0,0);
+        assert(stage_score==before+3000+round_bonus); // no repeat after results/route handoff
+    }
     hiscore=std::max(hiscore,saved_high);
     start_new_game();assert(stage_score==0);
-    std::puts("Stage bonus: credited once, resident regular backgrounds never cleared/re-uploaded, zero-Y scroll commits gated through forced scanout overruns, card ripple/banner then one serve frame, Stage4->5 fade/kanji, frozen state and boss/route carry passed");
+    std::puts("Stage bonus: credited once, resident regular scenery/VBlank-safe scroll, card ripple/banner/one serve frame, Stage4->5 fade/kanji, both Makai/Jigoku results fade before cleanup/load/first kanji, unchanged resources/music and boss/route carry passed");
 }
 
 void test_konngara_stage20()

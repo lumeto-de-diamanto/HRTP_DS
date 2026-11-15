@@ -45,9 +45,15 @@ void video_apply_camera();
 // never calculate or restore an effect by reading the hardware register.
 void video_set_fade(u16 amount);
 u16 video_fade();
-// Fade the outgoing stage's top screen/HUD to black and retain it through boss
+// Fade the outgoing stage/results top screen to black and retain it through scene
 // loading. No pixels, palettes, simulation or bottom-screen brightness change.
 void video_stage_fade_out();
+// Results temporarily use neutral brightness; restore the caller's original
+// gameplay brightness only when the next scene's first mask/image is ready.
+void video_stage_fade_out(u16 restore_master);
+// Results exit fades both screens together; retain both at black until the
+// next scene's first mask/image, then restore their original brightness.
+void video_stage_fade_out(u16 restore_master, u16 restore_sub_master);
 // Commit a prepared first kanji mask/intro image, then release the fade in the
 // same VBlank. Renderers with their own first-frame wait may reuse that VBlank.
 // Without a pending fade, this only commits background settings.

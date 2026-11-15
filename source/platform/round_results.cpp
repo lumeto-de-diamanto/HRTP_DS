@@ -283,7 +283,11 @@ void round_results_run(const StageBonus &bonus,int stage)
         if(!(held&(KEY_A|KEY_B))) released=true;
         if(released && (down&(KEY_A|KEY_B))) break;
     }
-    frame();REG_DISPCNT&=~0xff00u;
+    // ReC98 returns from TOTLE, then the binary switch fades its still-visible
+    // results to black. Do this BEFORE restoring gameplay layers/palettes, and
+    // retain black through the next scene load until its first kanji mask.
+    video_stage_fade_out(master,sub_master);
+    REG_DISPCNT&=~0xff00u;
     // These backups are also on the DTCM stack: restoring via DMA would
     // corrupt scenery/map memory even if the range had been cache-flushed.
     volatile u16 *font_out=BG_TILE_RAM(results_tiles),*map_out=BG_MAP_RAM(results_map);
@@ -297,7 +301,7 @@ void round_results_run(const StageBonus &bonus,int stage)
     bgSetScroll(3,background_scroll_x(),0);bgUpdate();
     for(int i=0;i<256;++i) {BG_PALETTE[i]=main_palette[i];BG_PALETTE_SUB[i]=sub_palette[i];}
     REG_BLDCNT=blend;REG_BLDALPHA=alpha;video_set_fade(fade);
-    REG_MASTER_BRIGHT=master;REG_MASTER_BRIGHT_SUB=sub_master;
+    // Both screens stay black until video_stage_reveal() commits the first mask.
     REG_DISPCAPCNT=capture;
     REG_DISPCNT=display;
 }

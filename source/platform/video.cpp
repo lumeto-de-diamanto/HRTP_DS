@@ -19,8 +19,8 @@ static bool bomb_inverted;
 static bool modal_effect_owned;
 static u16 modal_control,modal_alpha,modal_y,modal_window_in,modal_window_out,modal_master,modal_sub_master;
 static u16 fade_coefficient;
-static bool stage_faded;
-static u16 stage_saved_master;
+static bool stage_faded,stage_sub_faded;
+static u16 stage_saved_master,stage_saved_sub_master;
 
 void video_set_fade(u16 amount)
 {
@@ -35,19 +35,29 @@ static void stage_vblank()
     do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
 }
 
-void video_stage_fade_out()
+static void stage_fade_out(u16 restore_master,bool fade_sub,u16 restore_sub_master)
 {
     if(stage_faded) return;
-    stage_saved_master=REG_MASTER_BRIGHT;
+    stage_saved_master=restore_master;
+    stage_sub_faded=fade_sub;stage_saved_sub_master=restore_sub_master;
     stage_faded=true;
     // Source binary-switch fade: sixteen steps, synchronized to display frames.
     // Final-output brightness includes white ink, OBJ and the upper HUD, even
-    // through gameplay's blend/window exclusions. The bottom screen is untouched.
+    // through gameplay's blend/window exclusions. Only results exit opts into
+    // fading the bottom screen; ordinary boss entrances remain top-only.
     for(int amount=1;amount<=16;++amount) {
         stage_vblank();
         REG_MASTER_BRIGHT=(2<<14)|amount;
+        if(stage_sub_faded) REG_MASTER_BRIGHT_SUB=(2<<14)|amount;
     }
     stage_vblank(); // display full black before loading or changing any VRAM
+}
+
+void video_stage_fade_out() { stage_fade_out(REG_MASTER_BRIGHT,false,0); }
+void video_stage_fade_out(u16 restore_master) { stage_fade_out(restore_master,false,0); }
+void video_stage_fade_out(u16 restore_master,u16 restore_sub_master)
+{
+    stage_fade_out(restore_master,true,restore_sub_master);
 }
 
 void video_stage_reveal(bool already_in_vblank)
@@ -56,7 +66,8 @@ void video_stage_reveal(bool already_in_vblank)
     bgUpdate(); // install the complete mask/image BEFORE releasing final-output black
     if(stage_faded) {
         REG_MASTER_BRIGHT=stage_saved_master;
-        stage_faded=false;
+        if(stage_sub_faded) REG_MASTER_BRIGHT_SUB=stage_saved_sub_master;
+        stage_faded=stage_sub_faded=false;
     }
 }
 
@@ -64,7 +75,7 @@ void video_init()
 {
     canvas_foreground_depth = 0;
     modal_effect_owned=false;
-    stage_faded=false;
+    stage_faded=stage_sub_faded=false;
     bomb_effect_owned=bomb_paused=false;bomb_phase=bomb_brightness=bomb_shake_y=0;
     bomb_obj_owned=false;bomb_master=0;
     REG_BLDCNT=0;REG_BLDALPHA=0;video_set_fade(0);REG_MASTER_BRIGHT=0;

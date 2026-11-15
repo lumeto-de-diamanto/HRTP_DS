@@ -85,10 +85,10 @@ Feature cases stay in small modules, with packaging assertions in one place.
   * [ ] Hero Scroll/score table/game over
 * [ ] Miscellanea
   * [x] Icon
-  * [ ] Smooth transitions
+  * [ ] Smooth transitions (transitions to be added as scenes are added)
     * [x] Between two regular stages
     * [x] From a regular stage to a boss stage
-    * [ ] From boss defeat results to regular stage
+    * [x] From boss defeat results to regular stage
 
 ## Layout
 
