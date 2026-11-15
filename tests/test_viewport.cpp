@@ -265,12 +265,29 @@ u16 result_hud_palette[32];
 bool result_label_ink[192][256];
 int result_zipper_frames,result_incoming_text;
 size_t result_sub_calls;
+std::vector<u16> result_reference_font;
+std::vector<u8> result_reference_labels;
+
+void result_strip(const char *s,int &first,int &cells)
+{
+    const char *labels[]={"STAGE","COMPLETE","Time","Max Combo","Bomb/Life","Clear","Total","A or B"};
+    for(int i=0;i<8;++i) if(!std::strcmp(s,labels[i])) {
+        first=result_reference_labels[(10+i)*2];cells=result_reference_labels[(10+i)*2+1];return;
+    }
+    first=-1;cells=std::strlen(s);
+}
+
+const u16 *result_glyph(char c)
+{
+    assert(c>='0' && c<='9');
+    return result_reference_font.data()+(c-'0')*16;
+}
 
 void result_label(int x,int y,const char *s)
 {
-    for(;*s;++s,x+=16) {
-        const u16 *glyph=*s==' ' ? nullptr : font16x16_find(*s=='/' ? 0x213f : 0x2300+*s);
-        if(*s!=' ') assert(glyph);
+    int first,cells;result_strip(s,first,cells);
+    for(int i=0;i<cells;++i,x+=16) {
+        const u16 *glyph=first<0 ? result_glyph(s[i]) : result_reference_font.data()+(first+i)*16;
         for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx)
             result_label_ink[y+gy][x+gx]=glyph && (glyph[gy]&(0x8000>>gx));
     }
@@ -281,9 +298,9 @@ u16 captured_boss_pixel(int x,int y) {
 }
 
 static void check_result_text(int x,int y,const char *s) {
-    for(;*s;++s,x+=16) {
-        const u16 *glyph=*s==' ' ? nullptr : font16x16_find(*s=='/' ? 0x213f : 0x2300+*s);
-        if(*s!=' ') assert(glyph);
+    int first,cells;result_strip(s,first,cells);
+    for(int i=0;i<cells;++i,x+=16) {
+        const u16 *glyph=first<0 ? result_glyph(s[i]) : result_reference_font.data()+(first+i)*16;
         for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx) {
             const int px=x+gx,py=y+gy;
             const u16 entry=BG_MAP_RAM(31)[py/8*32+px/8];
@@ -347,8 +364,8 @@ void observe_round_results() {
         check_result_text(64,8,"STAGE");check_result_text(64,24,"COMPLETE");
         char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};
         check_result_text(160,8,stage);
-        check_result_text(8,56,"TIME");check_result_text(8,80,"MAXCOMBO");
-        check_result_text(8,104,"BOMB/LIFE");check_result_text(8,128,"CLEAR");check_result_text(8,152,"TOTAL");
+        check_result_text(8,56,"Time");check_result_text(8,80,"Max Combo");
+        check_result_text(8,104,"Bomb/Life");check_result_text(8,128,"Clear");check_result_text(8,152,"Total");
     }
     // Before the tally begins: independently reconstruct every row of each
     // zipper frame, including untouched rows, opposite motion and palette phase.
@@ -367,15 +384,15 @@ void observe_round_results() {
     }
     // A OR B: keep stale confirmations asserted for nine frames, then release
     // and deliberately confirm. Rolling/opening may not consume held input.
-    if((BG_MAP_RAM(31)[22*32+10]&1023)!=41) return;
+    if(!(BG_MAP_RAM(31)[22*32+10]&1023)) return;
     ++result_prompt_frames;
     if(result_prompt_frames==1) {
         check_result_text(64,8,"STAGE");
         char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};
         check_result_text(160,8,stage);check_result_text(64,24,"COMPLETE");
-        check_result_text(8,56,"TIME");check_result_text(8,80,"MAXCOMBO");
-        check_result_text(8,104,"BOMB/LIFE");check_result_text(8,128,"CLEAR");
-        check_result_text(8,152,"TOTAL");check_result_text(80,176,"A OR B");
+        check_result_text(8,56,"Time");check_result_text(8,80,"Max Combo");
+        check_result_text(8,104,"Bomb/Life");check_result_text(8,128,"Clear");
+        check_result_text(8,152,"Total");check_result_text(80,176,"A or B");
         const int values[]={result_bonus.time*10,result_bonus.combo*10,result_bonus.resources*10,result_bonus.stage*10,result_bonus.total};
         const int rows[]={56,80,104,128,152},digits[]={5,5,5,6,6};
         for(int i=0;i<5;++i) {
@@ -392,6 +409,12 @@ void observe_round_results() {
 }
 
 static void check_round_results() {
+    const auto font=read_bytes("results-font.bin");
+    assert(!font.empty() && font.size()%32==0);
+    result_reference_font.resize(font.size()/2);
+    for(unsigned i=0;i<font.size()/2;++i) result_reference_font[i]=font[i*2]|(font[i*2+1]<<8);
+    result_reference_labels=read_bytes("results-labels.bin");
+    assert(result_reference_labels.size()==18*2);
     const int old_timer=stage_timer,old_combo=stage_cardcombo_max,old_bombs=rem_bombs;
     stage_timer=1000;stage_cardcombo_max=7;rem_bombs=5;
     auto bonus=roundbonus_compute(5,6);
@@ -436,8 +459,8 @@ static void check_round_results() {
         std::memset(result_label_ink,0,sizeof(result_label_ink));
         result_label(64,8,"STAGE");result_label(64,24,"COMPLETE");
         char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};result_label(160,8,stage);
-        result_label(8,56,"TIME");result_label(8,80,"MAXCOMBO");result_label(8,104,"BOMB/LIFE");
-        result_label(8,128,"CLEAR");result_label(8,152,"TOTAL");
+        result_label(8,56,"Time");result_label(8,80,"Max Combo");result_label(8,104,"Bomb/Life");
+        result_label(8,128,"Clear");result_label(8,152,"Total");
         result_score=stage_score;result_timer=stage_timer;
         REG_BLDCNT=0x124;REG_BLDALPHA=0x507;video_set_fade(3);
         REG_MASTER_BRIGHT=(1<<14)|2;REG_MASTER_BRIGHT_SUB=(1<<14)|1;
@@ -477,7 +500,7 @@ static void check_round_results() {
     REG_MASTER_BRIGHT=master;REG_MASTER_BRIGHT_SUB=sub_master;
     REG_DISPCAPCNT=capture;
     hud_render(3,1);hud_radar_render();
-    std::puts("Round results: one384-row zipper, frozen bottom HUD/palette shifted out intact, incoming top labels at every strip/frame, original crop, zero/max rolling/SFX, held-confirm release, frozen state/RNG, exact VRAM/palette/capture/register restoration and zero heap/OBJ allocations passed");
+    std::puts("Round results: Libre Bodoni letters/numerals from independent bitmap oracle, one384-row zipper, outgoing HUD intact, incoming text at every strip/frame, original crop, zero/max rolling/SFX, exact restoration and zero heap/OBJ allocations passed");
 }
 
 static int foreground_frames, covered_hud_frames, title_frames;

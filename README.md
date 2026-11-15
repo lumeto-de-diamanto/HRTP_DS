@@ -128,3 +128,7 @@ layers).
 * **Yuji Kataoka, Kinuta Font Factory and the Yuji Project authors** — for
   [Yuji Syuku](https://github.com/Kinutafontfactory/Yuji), used for the icon
   ([SIL Open Font License 1.1](assets/licenses/Yuji-OFL.txt))
+* **Pablo Impallari, Rodrigo Fuenzalida and the Libre Bodoni Project Authors** —
+  for [Libre Bodoni](https://github.com/googlefonts/Libre-Bodoni), adapted as the
+  round-results bitmap serif
+  ([SIL Open Font License 1.1](assets/licenses/LibreBodoni-OFL.txt))

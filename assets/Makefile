@@ -69,6 +69,14 @@ assets: $(SPRITES_DIR)/Shape8x8.h
 assets: $(SPRITES_DIR)/BombKuji.h
 assets: $(BACKGROUND_DIR)/HudPattern.h
 assets: $(BACKGROUND_DIR)/RoundResults.h
+assets: $(FONT_DIR)/ResultsSerif.h $(NITROFS_DIR)/licenses/LibreBodoni-OFL.txt
+
+$(FONT_DIR)/ResultsSerif.h: $(ASSETS_DIR)/fonts/results_serif.bdf $(TOOLS_DIR)/results_serif_to_h.py
+	$(PYTHON) $(TOOLS_DIR)/results_serif_to_h.py $< $@
+
+$(NITROFS_DIR)/licenses/LibreBodoni-OFL.txt: $(ASSETS_DIR)/licenses/LibreBodoni-OFL.txt
+	@mkdir -p $(dir $@)
+	cp $< $@
 
 $(BACKGROUND_DIR)/HudPattern.h: $(HDI_DUMP_DIR)/CLEAR3.GRP $(TOOLS_DIR)/hud_pattern_to_h.py $(TOOLS_DIR)/grp_to_bin.py
 	$(PYTHON) $(TOOLS_DIR)/hud_pattern_to_h.py $< $@

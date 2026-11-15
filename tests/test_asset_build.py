@@ -33,7 +33,7 @@ class AssetBuildTests(unittest.TestCase):
                 root = Path(directory)
                 (root / 'assets').mkdir()
                 (root / 'tools').symlink_to(ROOT / 'tools', target_is_directory=True)
-                for name in ('Makefile', 'th01.hdi', 'font.bmp', 'sprites'):
+                for name in ('Makefile', 'th01.hdi', 'font.bmp', 'sprites', 'fonts', 'licenses'):
                     (root / 'assets' / name).symlink_to(ROOT / 'assets' / name)
                 output = self.make_assets(root, jobs)
                 self.assertEqual(output.count('ASSETS  extracting assets/hdi_dump/'), 1)
@@ -49,6 +49,8 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertIn('assets/processed/sprites/BombKuji.h', before)
                 self.assertIn('assets/processed/backgrounds/HudPattern.h', before)
                 self.assertIn('assets/processed/backgrounds/RoundResults.h', before)
+                self.assertIn('assets/processed/fonts/ResultsSerif.h', before)
+                self.assertIn('nitrofs/licenses/LibreBodoni-OFL.txt', before)
                 for scene in range(7):
                     self.assertEqual((root / f'nitrofs/st{scene}.bin').stat().st_size, 61440)
                 self.assertIn('FONT16X16_GLYPH_COUNT 272',
@@ -71,7 +73,9 @@ class AssetBuildTests(unittest.TestCase):
                               'assets/hdi_dump/BOSS8.GRZ', 'nitrofs/konngara_defeat.bin',
                                'assets/packfile/KUZI1.GRC', 'assets/processed/sprites/BombKuji.h',
                                'assets/hdi_dump/CLEAR3.GRP', 'assets/processed/backgrounds/HudPattern.h',
-                               'assets/processed/backgrounds/RoundResults.h'):
+                                'assets/processed/backgrounds/RoundResults.h',
+                                'assets/processed/fonts/ResultsSerif.h',
+                                'nitrofs/licenses/LibreBodoni-OFL.txt'):
                     (root / path).unlink()
                 self.make_assets(root, jobs)
                 after = self.snapshot(root)
@@ -79,6 +83,21 @@ class AssetBuildTests(unittest.TestCase):
                                  {p: v[1] for p, v in after.items()})
                 self.make_assets(root, jobs)
                 self.assertEqual(self.snapshot(root), after)
+                # A different valid PC-98 font must not rebuild or replace the
+                # separate approved serif. Modify ONLY the disposable input,
+                # never the user's symlink target/original font.bmp.
+                alternate = bytearray((root / 'assets/font.bmp').read_bytes())
+                offset = int.from_bytes(alternate[10:14], 'little')
+                x, y = (0x23 - 0x20) * 16 + 7, 0x41 * 16 + 7  # fullwidth A
+                alternate[offset + (2047-y)*256 + x//8] ^= 1 << (7-x%8)
+                (root / 'assets/font.bmp').unlink()
+                (root / 'assets/font.bmp').write_bytes(alternate)
+                self.make_assets(root, jobs)
+                variant = self.snapshot(root)
+                self.assertEqual(variant['assets/processed/fonts/ResultsSerif.h'],
+                                 after['assets/processed/fonts/ResultsSerif.h'])
+                self.assertNotEqual(variant['assets/processed/fonts/font16x16.h'][1],
+                                    after['assets/processed/fonts/font16x16.h'][1])
 
 
 if __name__ == '__main__':

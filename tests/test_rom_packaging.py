@@ -11,7 +11,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from nds_files import nitro_files
 from hud_pattern_to_h import pattern, results_crop
-from test_viewport_assets import layout_bytes
+from test_viewport_assets import layout_bytes, results_font_bytes
 
 
 def crc16(data):
@@ -73,6 +73,9 @@ class RomPackagingTests(unittest.TestCase):
             self.assertTrue(values)
             self.assertTrue(struct.pack('<' + 'H' * len(values), *values) in self.arm9,
                             'missing/stale linked font')
+        self.assertIn(results_font_bytes(), self.arm9, 'missing/stale Libre Bodoni results font')
+        self.assertEqual(nitro_files(self.rom)['licenses/LibreBodoni-OFL.txt'],
+                         Path('assets/licenses/LibreBodoni-OFL.txt').read_bytes())
 
     def test_linked_stage_tables_and_results_patterns(self):
         clear = Path('assets/hdi_dump/CLEAR3.GRP').read_bytes()

@@ -95,7 +95,8 @@ def fixtures(module_name, runtime):
     # graphics, not just renderer inputs. Hash content rather than timestamps.
     inputs = [Path(__file__)]
     for directory, pattern in [('tests', '*.py'), ('tools', '*.py'),
-                               ('assets/hdi_dump', '*'), ('assets/packfile', '*'),
+                                ('assets/hdi_dump', '*'), ('assets/packfile', '*'),
+                                ('assets/fonts', '*.bdf'),
                                ('nitrofs', '*.bin')]:
         inputs += [p for p in Path(directory).glob(pattern) if p.is_file()]
     signature = snapshot(inputs)

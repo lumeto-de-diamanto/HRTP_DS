@@ -1,10 +1,9 @@
 #include <nds.h>
-#include <cstring>
 
 #include "round_results.hpp"
 #include "background.hpp"
 #include "canvas.hpp"
-#include "font16x16.hpp"
+#include "fonts/ResultsSerif.h"
 #include "hud_render.hpp"
 #include "sound_effects.hpp"
 #include "subscreen.hpp"
@@ -16,8 +15,8 @@
 namespace {
 constexpr int results_map=31, results_tiles=4, pattern_block=16, art_base=32;
 constexpr int screen_height=192,joined_height=screen_height*2;
-constexpr char alphabet[]="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/";
-constexpr int font_words=(1+(sizeof(alphabet)-1)*4)*16;
+constexpr int font_cells=sizeof(ResultsSerif_rows)/sizeof(ResultsSerif_rows[0]);
+constexpr int font_words=(1+font_cells*4)*16;
 static_assert(font_words*2<16*1024,"results font must fit the saved BG3 scratch region");
 
 void frame()
@@ -31,10 +30,8 @@ void bake_font()
 {
     u16 *out=BG_TILE_RAM(results_tiles);
     dmaFillHalfWords(0,out,font_words*2);
-    for(unsigned c=0;c<sizeof(alphabet)-1;++c) {
-        const unsigned jis=alphabet[c]=='/' ? 0x213f : 0x2300+alphabet[c];
-        const u16 *glyph=font16x16_find(jis);
-        if(!glyph) continue;
+    for(int c=0;c<font_cells;++c) {
+        const u16 *glyph=ResultsSerif_rows[c];
         for(int tile=0;tile<4;++tile) for(int y=0;y<8;++y) for(int half=0;half<2;++half) {
             u16 packed=0;
             for(int x=0;x<4;++x)
@@ -44,23 +41,26 @@ void bake_font()
     }
 }
 
-void letter(int x,int y,char c)
+void cell(int x,int y,int index)
 {
-    const char *found=c==' ' ? nullptr : std::strchr(alphabet,c);
-    const int tile=found ? 1+(found-alphabet)*4 : 0;
+    const int tile=1+index*4;
     for(int dy=0;dy<2;++dy) for(int dx=0;dx<2;++dx)
-        BG_MAP_RAM(results_map)[(y/8+dy)*32+x/8+dx]=tile ?
-            (tile+dy*2+dx)|TILE_PALETTE(TEXT_PAL_RED) : 0;
+        BG_MAP_RAM(results_map)[(y/8+dy)*32+x/8+dx]=(tile+dy*2+dx)|TILE_PALETTE(TEXT_PAL_RED);
 }
 
-void text(int x,int y,const char *s) { for(;*s;++s,x+=16) letter(x,y,*s); }
+void letter(int x,int y,char c) { cell(x,y,c-'0'); }
+
+void label(int x,int y,ResultsSerif_label id)
+{
+    for(int i=0;i<ResultsSerif_cells[id];++i) cell(x+i*16,y,ResultsSerif_first[id]+i);
+}
 
 void labels(int stage)
 {
-    text(64,8,"STAGE");letter(160,8,'0'+stage/10%10);letter(176,8,'0'+stage%10);
-    text(64,24,"COMPLETE");
-    text(8,56,"TIME");text(8,80,"MAXCOMBO");text(8,104,"BOMB/LIFE");
-    text(8,128,"CLEAR");text(8,152,"TOTAL");
+    label(64,8,ResultsSerif_Stage);letter(160,8,'0'+stage/10%10);letter(176,8,'0'+stage%10);
+    label(64,24,ResultsSerif_Complete);
+    label(8,56,ResultsSerif_Time);label(8,80,ResultsSerif_MaxCombo);label(8,104,ResultsSerif_BombLife);
+    label(8,128,ResultsSerif_Clear);label(8,152,ResultsSerif_Total);
 }
 
 void palette_step(int step)
@@ -273,7 +273,7 @@ void round_results_run(const StageBonus &bonus,int stage)
     roll_number(248,104,bonus.resources*10,5,clock);
     roll_number(248,128,bonus.stage*10,6,clock);
     roll_number(248,152,bonus.total,6,clock);
-    text(80,176,"A OR B");
+    label(80,176,ResultsSerif_Prompt);
     // A held route confirmation (including presses during rolling) must be
     // released before a new edge can acknowledge the finished results.
     bool released=false;
