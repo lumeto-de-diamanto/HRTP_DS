@@ -13,6 +13,7 @@
 #include "video.hpp"
 #include "tiles.hpp"
 #include "stage_render.hpp"
+#include "stage_entrance.hpp"
 #include "background.hpp"
 #include "upper_hud.hpp"
 #include "orb_render.hpp"
@@ -22,6 +23,8 @@
 #include "pellet_render.hpp"
 #include "popup.hpp"
 #include "boss_render.hpp"
+#include "boss_gfx.hpp"
+#include "sprites/BossArrow.h"
 #include "text_layer.hpp"
 #include "hud_render.hpp"
 #include "subscreen.hpp"
@@ -1043,6 +1046,116 @@ static void check_sprite_lifecycles()
     std::puts("Sprites: 1000 stage/life/HUD/boss reset cycles with flat OBJ usage and zero retained dimming allocations passed");
 }
 
+static void check_boss_indicator()
+{
+    auto &s=const_cast<SinGyokuState&>(singyoku_state());
+    const auto saved=s;
+    const auto old_orb=orb_get_state();
+    const int old_camera=camera.left;
+    const bool old_portal=orb_get_in_portal();
+    s.phase=SG_SPHERE;s.sheet=SG_SHEET_SPHERE;s.cel=0;
+    boss_render_hide();boss_render_frame(); // warm the ordinary boss frame cache
+    camera.left=64;orb_set_position(0,280);orb_set_in_portal(false);orb_indicator_render();
+    const auto *shared_gfx=test_objs[OAM_SLOT_ORB_ARROW].gfx;assert(shared_gfx);
+    const std::vector<u16> arrow_pixels(shared_gfx,shared_gfx+32);
+    const auto *boss_arrow=boss_gfx()+1024;
+    assert(boss_arrow!=shared_gfx && !std::memcmp(boss_arrow,BossArrow_tiles,64));
+    assert(SPRITE_PALETTE[OBJ_PAL_OVERLAY*16+1]==RGB15(31,0,0));
+    assert(SPRITE_PALETTE[OBJ_PAL_OVERLAY*16+2]==RGB15(31,31,31));
+    assert(SPRITE_PALETTE[OBJ_PAL_OVERLAY*16+3]==RGB15(20,4,30));
+    unsigned char orb_oam[sizeof(test_objs[OAM_SLOT_ORB_ARROW])];
+    std::memcpy(orb_oam,&test_objs[OAM_SLOT_ORB_ARROW],sizeof(orb_oam));
+    canvas_playfield_clip(false);canvas_clear();
+    const auto heap=test_heap_attempts,objects=test_obj_attempts,fills=test_dma_fill_bytes,copies=test_dma_copy_bytes;
+    const auto sounds=test_effects.size();
+    const auto timer=stage_timer;
+    const auto score=stage_score;
+    initialize_irand(431);const int random=irand();initialize_irand(431);
+    for(int cam=0;cam<=64;++cam) for(int left=-128;left<=768;++left)
+        for(int top:{-128,64,96,280,400,600}) {
+            camera.left=cam;s.entity.left=left;s.entity.top=top;
+            unsigned char before[sizeof(s)];std::memcpy(before,&s,sizeof(s));
+            boss_render_frame();
+            // Independent geometry: actual96px source frame, not the padded
+            // 64px OAM box. Test every pixel/odd world coordinate at both edges.
+            const int x=(left>=0 ? left/2 : (left-1)/2)-cam;
+            const int side=x+48<=0 ? -1 : x>=256 ? 1 : 0;
+            const auto &arrow=test_objs[OAM_SLOT_BOSS_ARROW];
+            assert(arrow.hidden==!side);
+            if(side) {
+                const int center=top+48;
+                const int y=(center>=0 ? center/2 : (center-1)/2)-8;
+                assert(arrow.x==(side<0 ? 1 : 247));
+                assert(arrow.y==std::max(29,std::min(186,y))-7);
+                assert(arrow.hflip==(side<0) && arrow.priority==0);
+                assert(arrow.palette==OBJ_PAL_OVERLAY && arrow.size==SpriteSize_8x16 && arrow.gfx==boss_arrow);
+            }
+            assert(!std::memcmp(before,&s,sizeof(s)));
+        }
+    assert(!std::memcmp(orb_oam,&test_objs[OAM_SLOT_ORB_ARROW],sizeof(orb_oam)));
+    assert(std::equal(arrow_pixels.begin(),arrow_pixels.end(),shared_gfx));
+    assert(!std::memcmp(boss_arrow,BossArrow_tiles,64));
+    assert(!ink_count() && test_dma_fill_bytes==fills && test_dma_copy_bytes==copies);
+    assert(stage_timer==timer && stage_score==score && test_effects.size()==sounds && irand()==random);
+    assert(test_heap_attempts==heap && test_obj_attempts==objects);
+
+    camera.left=64;s.entity.left=0;s.entity.top=96;
+    for(auto sheet:{SG_SHEET_SPHERE,SG_SHEET_FLASH,SG_SHEET_PERSON}) {
+        s.sheet=sheet;s.cel=0;s.phase=SG_TRANSFORM;boss_render_frame();
+        assert(!test_objs[OAM_SLOT_BOSS_ARROW].hidden && test_objs[OAM_SLOT_BOSS_ARROW].gfx==boss_arrow);
+        assert(!std::memcmp(boss_arrow,BossArrow_tiles,64));
+    }
+    for(auto phase:{SG_ENTRANCE,SG_DEFEATED}) {
+        s.phase=phase;boss_render_frame();assert(test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+    }
+    s.phase=SG_SPHERE;boss_render_frame();orb_indicator_render();
+    assert(!test_objs[OAM_SLOT_BOSS_ARROW].hidden && !test_objs[OAM_SLOT_ORB_ARROW].hidden);
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].y!=test_objs[OAM_SLOT_ORB_ARROW].y);
+    orb_set_in_portal(true);orb_indicator_render();
+    assert(test_objs[OAM_SLOT_ORB_ARROW].hidden && !test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+    orb_set_in_portal(false);orb_indicator_render();
+    orb_render_hide();assert(!test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+    orb_indicator_render();
+    const int boss_y=test_objs[OAM_SLOT_BOSS_ARROW].y,orb_y=test_objs[OAM_SLOT_ORB_ARROW].y;
+    video_apply_death_shake(4,false);
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].y==boss_y && test_objs[OAM_SLOT_ORB_ARROW].y==orb_y);
+    video_apply_death_shake(-4,false); // undo the test's additive actor displacement
+    {
+        CanvasForegroundScope foreground;
+        assert(test_objs[OAM_SLOT_BOSS_ARROW].priority==1 && test_objs[OAM_SLOT_ORB_ARROW].priority==1);
+    }
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].priority==0 && test_objs[OAM_SLOT_ORB_ARROW].priority==0);
+    boss_render_hide();assert(test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+    assert(!test_objs[OAM_SLOT_ORB_ARROW].hidden); // independent OAM and graphics
+    // Simulate Konngara taking every byte of the shared 8bpp cache. Neither
+    // init reuse nor an inactive indicator may overwrite its active graphics.
+    std::memset(boss_gfx(),0x5a,4096);
+    assert(boss_render_init());boss_indicator_render(s.entity);
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+    for(int i=0;i<2048;++i) assert(boss_gfx()[i]==0x5a5a);
+    boss_render_frame();
+    assert(!test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+    assert(!std::memcmp(boss_arrow,BossArrow_tiles,64));
+    for(int i=1056;i<2048;++i) assert(boss_gfx()[i]==0x5a5a);
+    // Independent pixel oracle verifies red fill, purple edge and rear cutout.
+    const char *shape[]={"00000000","00000000","00000000","33330000",
+        "11113000","01111300","00111130","00011113","00011113",
+        "00111130","01111300","11113000","33330000","00000000",
+        "00000000","00000000"};
+    for(int y=0;y<16;++y) for(int x=0;x<8;++x)
+        assert(obj_pixel(OAM_SLOT_BOSS_ARROW,x,y)==shape[y][x]-'0');
+    assert(std::equal(arrow_pixels.begin(),arrow_pixels.end(),shared_gfx));
+    boss_render_frame();stage_entrance_prepare();
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].hidden && test_objs[OAM_SLOT_ORB_ARROW].hidden);
+    assert(test_heap_attempts==heap && test_obj_attempts==objects);
+
+    s=saved;camera.left=old_camera;orb_set_position(old_orb.x_position,old_orb.y_position);orb_set_in_portal(old_portal);
+    bgSetScroll(g_bg_id_canvas,0,0);video_apply_camera();
+    player_render_frame();shots_render_frame();orb_render_frame();item_render_frame();orb_indicator_render();
+    boss_render_hide();boss_render_frame();
+    std::puts("Boss indicator: independent red/purple notched pixels, cache handoff/restoration, every camera/odd-coordinate edge, partial visibility, height clamps, all forms, unchanged orb, portal/shake/foreground/entrance/defeat cleanup, frozen state/RNG and zero new heap/OBJ allocations or per-frame uploads passed");
+}
+
 int main()
 {
     static_assert(PLAYFIELD_W == 640 && PLAYFIELD_H == 336);
@@ -1191,6 +1304,7 @@ int main()
     camera.left = 64; canvas_clear(); pellet_render_frame(); assert(ink_count() > 0);
     singyoku_init(); assert(singyoku_state().entity.left == 272 && singyoku_state().entity.top == 96);
     boss_render_frame(); assert(test_objs[40].x == 64 && test_objs[40].y == 24 && test_objs[40].priority == 1);
+    check_boss_indicator();
 
     // HUD/arrow issue zero software canvas writes; BG0 tile rows + OAM only.
     canvas_playfield_clip(false); canvas_clear(); upper_hud_render(6, 5, 1000);

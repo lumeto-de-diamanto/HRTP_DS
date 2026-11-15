@@ -13,9 +13,15 @@
 #include "sprites/SingyokuSphere.h"
 #include "sprites/SingyokuFlash.h"
 #include "sprites/SingyokuPerson.h"
+#include "sprites/BossArrow.h"
 
 namespace {
 constexpr int boss_slot = BOSS_OAM_SLOT, boss_palette = 3, frame_bytes = 64 * 64 / 2;
+// SinGyoku uses only the first 2KiB of the shared 4KiB cache. Konngara owns
+// all 4KiB; boss_render_hide() invalidates this tail before that handoff.
+u16 *indicator_gfx() { return boss_gfx() ? boss_gfx() + frame_bytes / 2 : nullptr; }
+static_assert(sizeof(BossArrow_tiles) == 64);
+static_assert(frame_bytes + sizeof(BossArrow_tiles) <= 4096);
 bool initialized;
 int last_image = -1;
 u16 palette[16];
@@ -55,6 +61,7 @@ bool boss_render_init()
 void boss_render_hide()
 {
     oamSetHidden(&oamMain, boss_slot, true);
+    oamSetHidden(&oamMain, OAM_SLOT_BOSS_ARROW, true);
     last_image = -1;
 }
 
@@ -63,6 +70,9 @@ void boss_render_frame()
     const auto &s = singyoku_state();
     const int image = (int)s.sheet * 8 + s.cel;
     if (last_image < 0) {
+        // Restore once per SinGyoku activation, never on side-effect-free init
+        // reuse or while Konngara's 8bpp head/slash cache is active.
+        std::memcpy(indicator_gfx(), BossArrow_tiles, sizeof(BossArrow_tiles));
         for (int i = 0; i < 16; ++i)
             palette[i] = BG_PALETTE[(i - 1) & 15];
         std::memcpy(SPRITE_PALETTE + boss_palette * 16, palette, sizeof(palette));
@@ -106,6 +116,13 @@ void boss_render_frame()
     oamSet(&oamMain, boss_slot, x, y,
         OAM_PRIORITY_GAMEPLAY, boss_palette, SpriteSize_64x64, SpriteColorFormat_16Color,
         boss_gfx(), -1, false, !view_visible(x, y, 64, 64), false, false, false);
+    boss_indicator_render(s.entity,s.phase!=SG_ENTRANCE && s.phase!=SG_DEFEATED);
+}
+
+void boss_indicator_render(const BossEntity &boss,bool visible)
+{
+    offscreen_indicator_render(OAM_SLOT_BOSS_ARROW,boss.left,boss.top,boss.width,boss.height,
+        last_image >= 0 ? indicator_gfx() : nullptr,!visible);
 }
 
 RouteChoice boss_defeat_and_select_route()

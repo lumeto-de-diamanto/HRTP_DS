@@ -487,6 +487,19 @@ void test_stage_bonus_awards()
         for(int tick=0;tick<3;++tick) gameplay_tick(0,0);
         assert(stage_score==bonus_expected_score); // next stage/entrance cannot repeat the award
     }
+    // The actual render loop must publish the same offscreen boss marker,
+    // then suppress it throughout a subsequent regular-stage entrance.
+    stage_load(0,4,false,true);
+    auto &offscreen_boss=const_cast<SinGyokuState&>(singyoku_state());
+    offscreen_boss.phase=SG_SPHERE;offscreen_boss.entity.left=544;offscreen_boss.entity.top=96;
+    camera.left=0;render_frame();
+    assert(!test_objs[OAM_SLOT_BOSS_ARROW].hidden && !test_objs[OAM_SLOT_BOSS_ARROW].hflip);
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].x==247 && test_objs[OAM_SLOT_BOSS_ARROW].y==57);
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].gfx!=test_objs[OAM_SLOT_ORB_ARROW].gfx);
+    test_vblank_hook=[](){assert(test_objs[OAM_SLOT_BOSS_ARROW].hidden);};
+    stage_load(0,0,false,true);test_vblank_hook=nullptr;
+    assert(test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+
     // The natural boss/route transition must not throw away the accumulated
     // card-stage bonus either. Use the real lethal-orb/route UI path.
     for(int target:{1,2}) {
@@ -846,11 +859,11 @@ void test_player_death()
 
 static u16 bomb_master_reference(int f,u16 normal)
 {
-    // Independent frame inventory: full white, three fading steps, neutral,
-    // then the previously approved five-frame neutral/Up5 discharge cadence.
-    static const u16 bridge[]={0x4010,0x400c,0x4008,0x4004,0};
-    if(f>=50 && f<=54) return bridge[f-50];
-    if(f>=55 && f<140) return ((f-50)/5)%2 ? 0x4005 : 0;
+    // Independent inventory for the existing eight-frame fade, then the
+    // unchanged neutral/Up5 cadence on its original discharge clock.
+    static const u16 bridge[]={0x4010,0x400e,0x400c,0x400a,0x4008,0x4006,0x4004,0x4002};
+    if(f>=50 && f<=57) return bridge[f-50];
+    if(f>=58 && f<140) return ((f-50)/5)%2 ? 0x4005 : 0;
     return normal;
 }
 
@@ -858,7 +871,7 @@ static void observe_bomb_flash_commit()
 {
     const int f=player_bomb().frame();
     if(f>=50) assert(REG_VCOUNT>=192 && REG_VCOUNT<200);
-    if(f>=50 && f<=54) assert(REG_MASTER_BRIGHT==bomb_master_reference(f,0));
+    if(f>=50 && f<=58) assert(REG_MASTER_BRIGHT==bomb_master_reference(f,0));
 }
 
 void test_bombs()
@@ -892,14 +905,14 @@ void test_bombs()
     assert(REG_BLDCNT==0x0123 && REG_BLDALPHA==0x0506 && video_fade()==7 && REG_WINOUT==0x401f);
     assert(BG_PALETTE[0]==0 && BG_PALETTE[1]==0x7fff);
     video_bomb_prepare(true,50,1000);video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4010);
-    for(int f=51;f<=54;++f) {
+    for(int f=51;f<=58;++f) {
         video_bomb_prepare(true,f,950+f);video_bomb_commit();
         assert(REG_MASTER_BRIGHT==bomb_master_reference(f,0) && REG_MASTER_BRIGHT_SUB==0x4002);
         assert(BG_PALETTE[0]==0x7fff && BG_PALETTE[1]==RGB15(12,12,31));
         video_bomb_pause(true);assert(REG_MASTER_BRIGHT==0x8003);
         video_bomb_pause(false);assert(REG_MASTER_BRIGHT==bomb_master_reference(f,0));
     }
-    video_bomb_prepare(true,55,1005);video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4005);
+    video_bomb_prepare(true,59,1009);video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4005);
     { CanvasForegroundScope foreground;video_canvas_effect_commit();assert(REG_MASTER_BRIGHT==0x8003); }
     video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4005);
     video_bomb_pause(true);assert(REG_MASTER_BRIGHT==0x8003);
@@ -982,7 +995,7 @@ void test_bombs()
             if(y<UPPER_HUD_H) assert(!c);
             if(f>=50) assert(!c); // no software discharge pixels at all
         }
-        if((f>=50 && f<=54) || f==100) {
+        if((f>=50 && f<=58) || f==100) {
             const size_t bytes=test_dma_fill_bytes,copies=test_dma_copy_bytes;
             bomb_render_frame();video_bomb_prepare(true,f,f);video_bomb_commit();
             assert(bytes==test_dma_fill_bytes && copies==test_dma_copy_bytes); // register/palette-only redraw
@@ -1031,7 +1044,7 @@ void test_bombs()
             assert(test_objs[OAM_SLOT_HUD_LIVES].y==hud_y);
         } else assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY.written==original_y && REG_WINOUT==original_window);
         if(f==49) assert(stage_cardcombo_cur==0);
-        if((f>=50 && f<=54) || f==85 || f==148 || f==156) {
+        if((f>=50 && f<=58) || f==85 || f==148 || f==156) {
             const unsigned paused_frame=frame,paused_timer=stage_timer;
             const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,brightness=REG_BLDY.written,window=REG_WINOUT;
             const u16 master=REG_MASTER_BRIGHT;
@@ -1091,5 +1104,5 @@ void test_bombs()
     }
     start_new_game();camera.snap_center();
     assert(test_obj_count==79 && test_heap_count==baseline_blocks && test_heap_bytes==baseline_heap);
-    std::puts("Bombs: unchanged mechanics/kuji, four-frame native white-flash fade hiding the palette switch on regular/SinGyoku/Konngara stages, bottom unchanged, original pulse/shake/recovery/SFX, sparse redraws, pause at every fade step and exact brightness cleanup passed");
+    std::puts("Bombs: unchanged mechanics/kuji, existing eight-frame native white-flash fade on regular/SinGyoku/Konngara stages, bottom unchanged, original pulse/shake/recovery/SFX, sparse redraws, pause at every fade step and exact brightness cleanup passed");
 }

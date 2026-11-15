@@ -1,0 +1,26 @@
+/* XPM */
+/* Right-facing boss chevron: red fill, purple outline, transparent rear notch.
+ * Overlay slots: 0 transparent, 1 red, 3 purple. Flip in OAM for left.
+ */
+static const char *boss_arrow[] = {
+"8 16 3 1",
+". c None",
+"R c #FF0000",
+"P c #A020F0",
+"........",
+"........",
+"........",
+"PPPP....",
+"RRRRP...",
+".RRRRP..",
+"..RRRRP.",
+"...RRRRP",
+"...RRRRP",
+"..RRRRP.",
+".RRRRP..",
+"RRRRP...",
+"PPPP....",
+"........",
+"........",
+"........"
+};

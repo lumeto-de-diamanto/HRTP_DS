@@ -47,6 +47,8 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertIn('nitrofs/konngara_slash.bin', before)
                 self.assertIn('nitrofs/konngara_defeat.bin', before)
                 self.assertIn('assets/processed/sprites/BombKuji.h', before)
+                self.assertIn('assets/processed/sprites/OrbArrow.h', before)
+                self.assertIn('assets/processed/sprites/BossArrow.h', before)
                 self.assertIn('assets/processed/backgrounds/HudPattern.h', before)
                 self.assertIn('assets/processed/backgrounds/RoundResults.h', before)
                 self.assertIn('assets/processed/fonts/ResultsSerif.h', before)
@@ -75,6 +77,8 @@ class AssetBuildTests(unittest.TestCase):
                                'assets/hdi_dump/CLEAR3.GRP', 'assets/processed/backgrounds/HudPattern.h',
                                 'assets/processed/backgrounds/RoundResults.h',
                                 'assets/processed/fonts/ResultsSerif.h',
+                                 'assets/processed/sprites/OrbArrow.h',
+                                 'assets/processed/sprites/BossArrow.h',
                                 'nitrofs/licenses/LibreBodoni-OFL.txt'):
                     (root / path).unlink()
                 self.make_assets(root, jobs)

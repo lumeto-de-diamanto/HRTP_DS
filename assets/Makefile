@@ -65,6 +65,7 @@ assets: $(NITROFS_DIR)/konngara_slash.bin
 assets: $(NITROFS_DIR)/konngara_defeat.bin
 assets: $(BACKGROUND_BINS)
 assets: $(SPRITES_DIR)/OrbArrow.h
+assets: $(SPRITES_DIR)/BossArrow.h
 assets: $(SPRITES_DIR)/Shape8x8.h
 assets: $(SPRITES_DIR)/BombKuji.h
 assets: $(BACKGROUND_DIR)/HudPattern.h
@@ -92,6 +93,9 @@ $(SPRITES_DIR)/Shape8x8.h: $(ASSETS_DIR)/sprites/shape8x8.bmp $(TOOLS_DIR)/mono_
 
 $(SPRITES_DIR)/OrbArrow.h: $(ASSETS_DIR)/sprites/orb_arrow.xpm $(TOOLS_DIR)/orb_arrow_to_h.py
 	$(PYTHON) $(TOOLS_DIR)/orb_arrow_to_h.py $< $@
+
+$(SPRITES_DIR)/BossArrow.h: $(ASSETS_DIR)/sprites/boss_arrow.xpm $(TOOLS_DIR)/orb_arrow_to_h.py
+	$(PYTHON) $(TOOLS_DIR)/orb_arrow_to_h.py $< $@ --boss
 
 assets-clean:
 	@echo "  ASSETS clean"

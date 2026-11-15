@@ -86,7 +86,7 @@ class RomPackagingTests(unittest.TestCase):
             self.assertTrue(layout_bytes(scene) in self.arm9, f'missing/stale STAGE{scene}')
 
     def test_linked_singyoku_bos_sheets(self):
-        for name in ('SingyokuSphere', 'SingyokuFlash', 'SingyokuPerson'):
+        for name in ('SingyokuSphere', 'SingyokuFlash', 'SingyokuPerson', 'OrbArrow', 'BossArrow'):
             text = Path(f'assets/processed/sprites/{name}.h').read_text()
             words = [int(v, 16) for v in re.findall(r'0x[0-9a-fA-F]+', text)]
             self.assertTrue(words)

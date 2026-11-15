@@ -58,6 +58,7 @@ Feature cases stay in small modules, with packaging assertions in one place.
   * [x] HUD
     * [x] Top screen HUD
     * [x] Bottom screen HUD
+  * [x] Orb and boss arrows
   * [x] Font
 * [x] Core gameplay
   * [x] Player controls

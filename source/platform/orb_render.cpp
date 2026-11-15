@@ -35,6 +35,7 @@ bool orb_render_init(void)
     static_assert(sizeof(OrbArrow_tiles) == 64);
     memcpy(arrow_gfx, OrbArrow_tiles, sizeof(OrbArrow_tiles));
     oamSetHidden(&oamMain, OAM_SLOT_ORB_ARROW, true);
+    oamSetHidden(&oamMain, OAM_SLOT_BOSS_ARROW, true);
     allocation.commit();
     return true;
 }
@@ -65,14 +66,19 @@ void orb_render_hide()
 void orb_indicator_render()
 {
     const auto &s = orb_get_state();
-    const auto marker = orb_indicator(camera, s.x_position, s.y_position, ORB_W, ORB_H);
-    if (!marker.direction || orb_get_in_portal() || !arrow_gfx) {
-        oamSetHidden(&oamMain, OAM_SLOT_ORB_ARROW, true);
+    offscreen_indicator_render(OAM_SLOT_ORB_ARROW,s.x_position,s.y_position,ORB_W,ORB_H,arrow_gfx,orb_get_in_portal());
+}
+
+void offscreen_indicator_render(int slot,int left,int top,int width,int height,u16 *gfx,bool hidden)
+{
+    const auto marker = orb_indicator(camera,left,top,width,height);
+    if (!marker.direction || hidden || !gfx) {
+        oamSetHidden(&oamMain, slot, true);
         return;
     }
     // Reuse the fixed arrow graphic as a single flipped/moved OBJ.
-    const bool left = marker.direction < 0;
-    oamSet(&oamMain, OAM_SLOT_ORB_ARROW, marker.x - (left ? 1 : 6), marker.y - 7,
+    const bool points_left = marker.direction < 0;
+    oamSet(&oamMain, slot, marker.x - (points_left ? 1 : 6), marker.y - 7,
         0, OBJ_PAL_OVERLAY, SpriteSize_8x16, SpriteColorFormat_16Color,
-        arrow_gfx, -1, false, false, left, false, false);
+        gfx, -1, false, false, points_left, false, false);
 }

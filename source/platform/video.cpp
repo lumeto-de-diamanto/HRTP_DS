@@ -124,7 +124,7 @@ void video_apply_death_shake(int down_pixels, bool konngara)
     bgSetScroll(g_bg_id_background, konngara ? camera.left : background_scroll_x(), -down_pixels);
     bgSetScroll(g_bg_id_canvas, 0, -down_pixels);
     if (down_pixels) for (int slot = 0; slot < 128; ++slot) {
-        if (slot == OAM_SLOT_ORB_ARROW || (slot >= 48 && slot < 75)) continue;
+        if (slot == OAM_SLOT_ORB_ARROW || slot == OAM_SLOT_BOSS_ARROW || (slot >= 48 && slot < 75)) continue;
         const auto &entry = oamMain.oamMemory[slot];
         oamSetXY(&oamMain, slot, entry.x, entry.y + down_pixels);
     }
@@ -167,7 +167,7 @@ void video_bomb_prepare(bool active,int local_frame,unsigned gameplay_frame)
         bomb_phase=local_frame>=50 ? 1 : 0;
         bomb_inverted=bomb_phase==1;
         // Full white bridges the final kuji image and discharge, then fades
-        // over four frames (Up16/12/8/4, neutral at54).
+        // over eight frames (Up16/14/12/10/8/6/4/2), then resumes the pulse at58.
         // The palette swap stays at frame50, hidden beneath native master
         // brightness, without delaying damage/SFX or shifting the Up5 pulse.
         if(local_frame>=50 && local_frame<58) bomb_master=(1<<14)|((58-local_frame)*2);
@@ -284,6 +284,7 @@ void video_modal_effect_end()
 static void hud_oam_priority(int priority)
 {
     oamSetPriority(&oamMain, OAM_SLOT_ORB_ARROW, priority);
+    oamSetPriority(&oamMain, OAM_SLOT_BOSS_ARROW, priority);
     for (int slot = OAM_SLOT_HUD_LIVES; slot < OAM_SLOT_HUD_LIVES + 12; ++slot)
         oamSetPriority(&oamMain, slot, priority);
     for (int slot = OAM_SLOT_HUD_BOMBS; slot < OAM_SLOT_HUD_BOMBS + 5; ++slot)

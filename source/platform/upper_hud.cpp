@@ -49,6 +49,7 @@ bool upper_hud_init()
         SPRITE_PALETTE[OBJ_PAL_HUD_ICONS * 16 + i] = HudIcons_palette[i];
     SPRITE_PALETTE[OBJ_PAL_OVERLAY * 16 + 1] = RGB15(31, 0, 0);
     SPRITE_PALETTE[OBJ_PAL_OVERLAY * 16 + 2] = RGB15(31, 31, 31);
+    SPRITE_PALETTE[OBJ_PAL_OVERLAY * 16 + 3] = RGB15(20, 4, 30); // boss outline #A020F0
     // Compact boss resources leave144px for all original bosses' <=18 HP,
     // plus a16px gap before the halfwidth timer.
     // Eight points per64px OBJ keeps the scanline budget comfortably small.

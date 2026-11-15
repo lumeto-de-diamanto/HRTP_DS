@@ -32,12 +32,13 @@ static const int OAM_PRIORITY_GAMEPLAY = 1;
 // Overlay OAM: ahead of BG2, separate from gameplay's existing palette banks.
 constexpr int OAM_SLOT_ORB_ARROW = 11;
 constexpr int OAM_SLOT_DEATH_EFFECT = 12; // 12..16; reuse resident MIKO graphics
+constexpr int OAM_SLOT_BOSS_ARROW = 17; // distinct red/purple notched boss marker
 constexpr int OAM_SLOT_HUD_LIVES = 48; // 48..59 reserved; five icons or icon+count
 constexpr int OAM_SLOT_HUD_BOMBS = 60; // 60..64
 constexpr int OAM_SLOT_HUD_HP = 72;    // 72..74: eight original-size points per OBJ
 constexpr int OAM_HUD_HP_COUNT = 3;    // room for all original bosses' <=18 HP
 constexpr int OBJ_PAL_HUD_ICONS = 5;
-constexpr int OBJ_PAL_OVERLAY = 6;     // 0 transparent, 1 red, 2 white
+constexpr int OBJ_PAL_OVERLAY = 6;     // 0 transparent, 1 red, 2 white, 3 purple
 
 void video_init();
 void video_apply_camera();

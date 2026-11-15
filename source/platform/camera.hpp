@@ -37,6 +37,8 @@ constexpr bool view_visible(int x, int y, int width, int height) {
 }
 
 struct OrbIndicator { int direction, x, y; }; // -1 left, +1 right, 0 hidden
+// Shared geometry also accepts boss frame bounds; padding/hitbox insets are not
+// part of the visible extent. Keep the approved orb edge placement unchanged.
 inline OrbIndicator orb_indicator(const Camera &view, int left, int top, int width, int height) {
     const int x = view.x(left), w = width / 2;
     const int side = x + w <= 0 ? -1 : x >= VIEW_W ? 1 : 0;
