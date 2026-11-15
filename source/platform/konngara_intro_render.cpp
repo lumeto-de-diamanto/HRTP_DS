@@ -118,6 +118,7 @@ static bool play_intro(bool preview)
         KonngaraIntro timeline;
         KonngaraIntroFrame frame{}, previous{KI_DONE, -1, -1, -1, -2, false};
         while (timeline.next(frame)) {
+            const bool first_frame=previous.phase==KI_DONE;
             if (frame.ramp != previous.ramp || frame.syllable_step != previous.syllable_step)
                 art.colors(colors, frame.ramp, frame.syllable_step);
             if (frame.line_on_top != previous.line_on_top || frame.arena_from != previous.arena_from ||
@@ -126,6 +127,10 @@ static bool play_intro(bool preview)
             if (frame.shake_sound) mdrv2_se_play(9);
             previous = frame;
             swiWaitForVBlank();
+            // The outgoing stage stays black through loading and the first
+            // complete opaque image. Reuse this frame's VBlank, preserving all
+            // 711 source intro frames and the single ALICE start.
+            if(first_frame) video_stage_reveal(true);
         }
         // Preview-only review hold; NOT part of the source entrance timeline.
         if(preview) {

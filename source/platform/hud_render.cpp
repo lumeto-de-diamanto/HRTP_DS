@@ -273,7 +273,8 @@ static void touhou_reiiden_animate()
     bgSetScale(g_bg_id_canvas, 32, 32); // inverse scale: 256/8
     for (int i = 0; i < 6; i++) {
         bgSetScroll(g_bg_id_canvas, (i % 2) * 32, CANVAS_H);
-        bgUpdate();
+        if(i==0) video_stage_reveal();
+        else bgUpdate();
         mdrv2_se_play(SFX_TITLE_GLYPH);
         if (i + 1 < 6)
             prepare_title_mask((i + 1) % 2, JIS_TOUHOU_REIIDEN[i + 1]);

@@ -241,6 +241,8 @@ void test_konngara_review()
 
 namespace {
 int bonus_from_stage,bonus_expected_score,bonus_visible_frames;
+int bonus_fade_frames,bonus_black_frames,bonus_kanji_frames,bonus_waits,bonus_frozen_timer;
+unsigned bonus_frozen_frame;
 int route_expected_score,route_result_frames,route_result_timer;
 unsigned route_result_frame;
 size_t route_sfx_start;
@@ -248,6 +250,24 @@ void observe_bonus_award()
 {
     assert(stage_score==bonus_expected_score && hiscore>=bonus_expected_score);
     test_keys_down=test_keys_held=0;
+    if(++bonus_waits==1) { bonus_frozen_timer=stage_timer;bonus_frozen_frame=frame; }
+    if(current_stage==bonus_from_stage) {
+        assert(stage_timer==unsigned(bonus_frozen_timer) && frame==bonus_frozen_frame);
+        if(REG_MASTER_BRIGHT&31) {
+            assert(bonus_from_stage==3 && ++bonus_fade_frames<=16);
+            assert(REG_MASTER_BRIGHT==(0x8000|bonus_fade_frames));
+            assert(!REG_MASTER_BRIGHT_SUB);
+        }
+    } else if(REG_MASTER_BRIGHT&31) {
+        assert(bonus_from_stage==3 && ++bonus_black_frames==1);
+        assert(current_stage==4 && REG_MASTER_BRIGHT==0x8010 && !REG_MASTER_BRIGHT_SUB);
+        assert(test_bgs[2].sy==32 && test_bgs[2].y==CANVAS_H);
+        assert(bonus_fade_frames==16); // never expose a partially loaded arena
+    } else if(test_bgs[2].sy==32) {
+        assert(bonus_from_stage==3 && bonus_black_frames==1);
+        assert(!REG_MASTER_BRIGHT_SUB);
+        ++bonus_kanji_frames;
+    }
     if(current_stage==bonus_from_stage && (REG_BLDCNT&0x3f)==BLEND_SRC_BG0) {
         // Hold the result for several input frames, then confirm with both
         // buttons held. Neither drawing nor repeated input may add it again.
@@ -257,6 +277,7 @@ void observe_bonus_award()
 
 bool stage20_entering;
 int stage20_entry_waits,stage20_defeat_waits,stage20_entry_frame;
+int stage20_fade_waits,stage20_black_waits,stage20_fade_timer;
 int stage20_carry_score;
 int stage20_frozen_score,stage20_frozen_timer,stage20_frozen_frame;
 
@@ -264,6 +285,14 @@ void observe_stage20()
 {
     if(!stage_has_konngara(current_scene,current_stage)) {
         test_keys_down=KEY_A; // dismiss the existing Stage19 bonus screen
+        if(stage20_entering && (REG_MASTER_BRIGHT&31)) {
+            assert(current_scene==6 && current_stage==3);
+            assert(++stage20_fade_waits<=16 && REG_MASTER_BRIGHT==(0x8000|stage20_fade_waits));
+            assert(!REG_MASTER_BRIGHT_SUB && stage_score==stage20_carry_score);
+            assert(lives==6 && rem_bombs==4 && frame==unsigned(stage20_entry_frame));
+            if(stage20_fade_waits==1) stage20_fade_timer=stage_timer;
+            assert(stage_timer==unsigned(stage20_fade_timer));
+        }
         return;
     }
     test_keys_down=0;
@@ -272,6 +301,15 @@ void observe_stage20()
         assert(stage_score==stage20_carry_score && lives==6 && rem_bombs==4 && stage_timer==8000);
         assert(frame==unsigned(stage20_entry_frame) && konngara.state().frame==0 && konngara.state().health.hp==18);
         assert(REG_WININ==0x1D1D); // intro mask retained through first combat commit
+        assert(stage20_fade_waits==16 && !REG_MASTER_BRIGHT_SUB);
+        if(stage20_entry_waits==1) {
+            assert(REG_MASTER_BRIGHT==0x8010 && ++stage20_black_waits==1);
+            // First black-in frame is complete and opaque, not a transparent
+            // canvas exposing the Stage20 arena during loading.
+            assert(!g_canvas_target);
+            for(int y=0;y<VIEW_H;++y) for(int x=0;x<VIEW_W;++x)
+                assert(*canvas_at(x,y)&0x8000);
+        } else assert(!REG_MASTER_BRIGHT);
     } else if(konngara.state().complete) {
         if(!stage20_defeat_waits) {
             stage20_frozen_score=stage_score;stage20_frozen_timer=stage_timer;stage20_frozen_frame=frame;
@@ -298,11 +336,16 @@ void test_stage_bonus_awards()
         const StageBonus bonus=stagebonus_compute(stage_number(0,stage),lives);
         assert(bonus.total==(3000+700+1700+stage*200)*10);
         bonus_from_stage=stage;bonus_expected_score=stage_score+bonus.total;bonus_visible_frames=0;
+        bonus_fade_frames=bonus_black_frames=bonus_kanji_frames=bonus_waits=0;
         stage_cards_removed_count=stage_card_total;
         test_vblank_hook=observe_bonus_award;
         gameplay_tick(0,0);
         test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
         assert(bonus_visible_frames==29 && current_scene==0 && current_stage==stage+1);
+        assert(bonus_fade_frames==(stage==3 ? 16 : 0));
+        assert(bonus_black_frames==(stage==3 ? 1 : 0));
+        assert(bonus_kanji_frames==(stage==3 ? 48 : 0));
+        assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
         assert(stage_score==bonus_expected_score && hiscore==bonus_expected_score);
         for(int tick=0;tick<3;++tick) gameplay_tick(0,0);
         assert(stage_score==bonus_expected_score); // next stage/entrance cannot repeat the award
@@ -343,7 +386,7 @@ void test_stage_bonus_awards()
     assert(stage_score==before+3000+round_bonus); // no repeat after results/route handoff
     hiscore=std::max(hiscore,saved_high);
     start_new_game();assert(stage_score==0);
-    std::puts("Stage bonus: displayed x10 sum credited once before results, high score, held-confirm/no repeat, ordinary/boss/route carry and new-game reset passed");
+    std::puts("Stage bonus: credited once, ordinary stages unchanged, real Stage4->5 bonus/fade/black-held load/48-frame kanji order, frozen timer/frame, boss/route carry and new-game reset passed");
 }
 
 void test_konngara_stage20()
@@ -366,12 +409,15 @@ void test_konngara_stage20()
     stage_cards_removed_count=stage_card_total; // test-only cleared card field
     stage20_carry_score=stage_score+stagebonus_compute(19,lives).total;
     stage20_entry_frame=frame;stage20_entering=true;
+    stage20_entry_waits=stage20_fade_waits=stage20_black_waits=0;
     const int plays=starts;
     test_vblank_hook=observe_stage20;
     gameplay_tick(0,0); // real19->20 progression, score/lives/resources preserved
     stage20_entering=false;
     assert(stage_has_konngara(current_scene,current_stage) && global_stage_num()==20);
     assert(stage20_entry_waits==712 && starts==plays+1 && !wait_for_shot && g_canvas_target);
+    assert(stage20_fade_waits==16 && stage20_black_waits==1);
+    assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
     assert(test_obj_count==80 && test_obj_used==31936 && REG_WININ==0x1919);
     // A normal-game boss miss keeps both the orb and the real run's lives.
     orb_set_position(123,147);player_is_hit=true;gameplay_tick(0,0);
@@ -429,7 +475,7 @@ void test_konngara_stage20()
     assert(!jigoku_cleared && !g_canvas_target && test_obj_count==79 && test_obj_used==27840);
     assert(test_heap_count==baseline_blocks && test_heap_bytes==baseline_heap && wait_for_shot);
     camera.snap_center();
-    std::puts("Actual Stage20:19->20 carry,711-frame intro+one handoff, single ALICE start,18HP/8000 timer, global lives/bombs, boss miss, buffered pause, lethal bonus, defeat+120-frame clear hold and terminal/exit cleanup passed");
+    std::puts("Actual Stage20:19->20 top-only black fade with bottom HUD unchanged, black-held load/first opaque image,711-frame intro+one handoff, single ALICE start, carry/resources, boss miss/pause, lethal bonus, defeat+clear hold and terminal cleanup passed");
 }
 
 // Extend the existing real-game integration check rather than create another

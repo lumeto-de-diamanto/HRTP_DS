@@ -26,6 +26,7 @@
 #include "main/stage/timer.hpp"
 #include "main/random.hpp"
 #include "sound_effects.hpp"
+#include "font16x16.hpp"
 #include "stagedat/stagedat0.h"
 #include "stagedat/stagedat1.h"
 #include "stagedat/stagedat2.h"
@@ -51,6 +52,61 @@ bool title;
 bool boss;
 unsigned timer;
 bool occupied[STAGE_ROWS][STAGE_COLS];
+std::vector<u16> fade_main,fade_sub,fade_palettes;
+std::vector<u8> fade_oam;
+int fade_waits,black_waits,reveal_waits,mask_commits;
+u16 fade_master,fade_sub_master,fade_control,fade_alpha,fade_y,fade_window_in,fade_window_out;
+
+void check_mask(int index)
+{
+    assert(test_bgs[2].sx==32 && test_bgs[2].sy==32);
+    assert(test_bgs[2].x==(index%2)*32 && test_bgs[2].y==CANVAS_H);
+    const u16 *glyph=font16x16_find(JIS_TOUHOU_REIIDEN[index]);assert(glyph);
+    for(int y=0;y<24;++y) for(int x=0;x<32;++x) {
+        const bool ink=x>=8 && x<24 && y>=4 && y<20 && (glyph[y-4]&(0x8000>>(x-8)));
+        assert(*canvas_at(test_bgs[2].x+x,CANVAS_H+y)==(ink ? 0 : 0x8000));
+    }
+}
+
+void observe_fade()
+{
+    assert(++fade_waits<=17);
+    const int amount=fade_waits-1;
+    assert(REG_MASTER_BRIGHT==(amount ? 0x8000|amount : fade_master));
+    assert(REG_MASTER_BRIGHT_SUB==fade_sub_master);
+    assert(std::equal(fade_main.begin(),fade_main.end(),test_vram.pixels));
+    assert(std::equal(fade_sub.begin(),fade_sub.end(),test_sub_vram.pixels));
+    assert(!std::memcmp(fade_oam.data(),test_objs,sizeof(test_objs)));
+    assert(std::equal(fade_palettes.begin(),fade_palettes.begin()+256,BG_PALETTE));
+    assert(std::equal(fade_palettes.begin()+256,fade_palettes.begin()+512,SPRITE_PALETTE));
+    assert(std::equal(fade_palettes.begin()+512,fade_palettes.end(),BG_PALETTE_SUB));
+    assert(REG_BLDCNT==fade_control && REG_BLDALPHA==fade_alpha && video_fade()==fade_y);
+    assert(REG_WININ==fade_window_in && REG_WINOUT==fade_window_out);
+    assert(stage_timer==timer && stage_score==12345);
+    assert(player_get_state().x_position==player.x_position && player_get_state().y_position==player.y_position);
+    assert(orb_get_state().x_position==orb.x_position && orb_get_state().y_position==orb.y_position);
+}
+
+void observe_black_load()
+{
+    assert(REG_MASTER_BRIGHT==0x8010 && REG_MASTER_BRIGHT_SUB==fade_sub_master);
+}
+
+void observe_first_mask_commit()
+{
+    if(mask_commits) return;
+    observe_black_load();check_mask(0);++mask_commits;
+}
+
+void observe_reveal()
+{
+    if(REG_MASTER_BRIGHT==0x8010) {
+        observe_black_load();assert(++black_waits==1);return;
+    }
+    assert(mask_commits==1 && ++reveal_waits<=118);
+    assert(REG_MASTER_BRIGHT==fade_master && REG_MASTER_BRIGHT_SUB==fade_sub_master);
+    if(reveal_waits<=48) check_mask((reveal_waits-1)/8);
+}
 
 void check_cell(int left, int top, int obj)
 {
@@ -207,6 +263,58 @@ void run(const ds_stage_layout_t &layout, bool show_title, bool prepare_boss = f
     assert(orb_get_state().x_position == orb.x_position && orb_get_state().y_position == orb.y_position);
     orb_set_position(320, 120); orb_render_frame(); assert(!test_objs[10].hidden);
 }
+
+void check_fade_handoff()
+{
+    const u16 old_master=REG_MASTER_BRIGHT,old_sub_master=REG_MASTER_BRIGHT_SUB;
+    for(int pass=0;pass<2;++pass) {
+        // Full-white canvas ink and top-screen actors/HUD must fade too, with
+        // no palette rewrite, framebuffer snapshot, hidden OAM or simulation.
+        // The bottom screen must retain even a nondefault brightness value.
+        canvas_playfield_clip(false);canvas_fill_rect(0,0,16,32,0x7fff);
+        tiles_put(19,9,STGOBJ_BUMPER);
+        stage_score=12345;timer=stage_timer;player=player_get_state();orb=orb_get_state();
+        fade_master=pass ? 0x4003 : 0;fade_sub_master=pass ? 0x8002 : 0;
+        REG_MASTER_BRIGHT=fade_master;REG_MASTER_BRIGHT_SUB=fade_sub_master;
+        fade_control=REG_BLDCNT;fade_alpha=REG_BLDALPHA;fade_y=video_fade();
+        fade_window_in=REG_WININ;fade_window_out=REG_WINOUT;
+        fade_main.assign(std::begin(test_vram.pixels),std::end(test_vram.pixels));
+        fade_sub.assign(std::begin(test_sub_vram.pixels),std::end(test_sub_vram.pixels));
+        const auto *oam=reinterpret_cast<const u8*>(test_objs);
+        fade_oam.assign(oam,oam+sizeof(test_objs));
+        fade_palettes.assign(BG_PALETTE,BG_PALETTE+256);
+        fade_palettes.insert(fade_palettes.end(),SPRITE_PALETTE,SPRITE_PALETTE+256);
+        fade_palettes.insert(fade_palettes.end(),BG_PALETTE_SUB,BG_PALETTE_SUB+256);
+        const auto heap=test_heap_attempts,obj=test_obj_attempts,dma=test_dma_copy_calls;
+        const auto fills=test_dma_fill_bytes,effects=test_effects.size();
+        initialize_irand(732);const int random=irand();initialize_irand(732);
+        fade_waits=black_waits=reveal_waits=mask_commits=0;
+        test_vblank_hook=observe_fade;video_stage_fade_out();
+        video_stage_fade_out(); // repeated prepare cannot restart the fade
+        test_vblank_hook=nullptr;
+        assert(fade_waits==17 && test_effects.size()==effects && irand()==random);
+        assert(test_heap_attempts==heap && test_obj_attempts==obj);
+        assert(test_dma_copy_calls==dma && test_dma_fill_bytes==fills);
+        observe_black_load();
+
+        test_dma_fill_hook=observe_black_load;
+        stage_entrance_prepare();load_boss_background();palette_apply_round();
+        static const u8 empty[STAGE_ROWS][STAGE_COLS]={};stage_init(empty,empty);stage_reset();
+        camera.snap_center();video_apply_camera();
+        test_dma_fill_hook=nullptr;observe_black_load();
+        const auto entrance_heap=test_heap_attempts,entrance_obj=test_obj_attempts;
+        test_bg_update_hook=observe_first_mask_commit;test_vblank_hook=observe_reveal;
+        stage_entrance_animate(5,true);
+        test_bg_update_hook=nullptr;test_vblank_hook=nullptr;
+        assert(black_waits==1 && mask_commits==1 && reveal_waits==118);
+        assert(test_heap_attempts==entrance_heap && test_obj_attempts==entrance_obj);
+        assert(test_effects.size()==effects+6);
+        // Already-released entrances do not add waits or reinstate black.
+        video_stage_reveal();assert(reveal_waits==118);
+        assert(REG_MASTER_BRIGHT==fade_master && REG_MASTER_BRIGHT_SUB==fade_sub_master);
+    }
+    REG_MASTER_BRIGHT=old_master;REG_MASTER_BRIGHT_SUB=old_sub_master;
+}
 }
 
 void test_stage_entrances()
@@ -229,5 +337,6 @@ void test_stage_entrances()
         for (bool show_title : {false, true}) run(layout, show_title);
     }
     run(ds_stage_layout_t{}, true, true); // boss palette prepared, OAM still hidden
-    std::puts("Stage entrance: all28 regular layouts including Makai18's cross, bitfield card counts/HP, empty cells at every reveal frame, scene/boss titles, 0/1/49/50/51/200 cards, frozen state/RNG, HUD/camera restoration and zero allocations passed");
+    check_fade_handoff();
+    std::puts("Stage entrance: all28 layouts/card ripples, sixteen-step top-only fade with bottom brightness and VRAM/OAM/palettes untouched, black-held boss load, atomic first kanji/six-mask reveal, exact brightness restoration, frozen state/RNG and zero allocations passed");
 }

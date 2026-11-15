@@ -87,9 +87,7 @@ Feature cases stay in small modules, with packaging assertions in one place.
   * [x] Icon
   * [ ] Smooth transitions
     * [ ] Between two regular stages
-    * [ ] From a regular stage to a boss stage
-    * [ ] Resetting a boss stage
-    * [ ] Resetting a regular stage
+    * [x] From a regular stage to a boss stage
     * [ ] From boss defeat results to regular stage
 
 ## Layout

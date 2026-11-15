@@ -61,8 +61,13 @@ static u16 expected_pixel(const std::array<int, 6> &f, int x, int y) {
     return color;
 }
 
+static bool entering_from_black;
 static void observe() {
     assert(playing && ++ticks <= 831);
+    if(entering_from_black) {
+        assert(REG_MASTER_BRIGHT==(ticks==1 ? 0x8010 : 0));
+        assert(!REG_MASTER_BRIGHT_SUB);
+    }
     const auto &f = trace[std::min<int>(ticks - 1, trace.size() - 1)];
     assert(REG_WININ == 0x1D1D && test_bgs[0].priority == 1 && test_bgs[2].priority == 0);
     for (int slot : {OAM_SLOT_ORB_ARROW, OAM_SLOT_HUD_LIVES, OAM_SLOT_HUD_BOMBS, OAM_SLOT_HUD_HP})
@@ -153,6 +158,18 @@ int main() {
         assert(ticks == 831 && REG_WININ == 0x1D1D && test_bgs[0].priority == 1);
     }
     assert(REG_WININ == 0x1919 && test_bgs[0].priority == 0);
+    // Natural boss entry uses the same intro pixels/cues/timing as preview,
+    // releasing the preceding top-only fade at its EXISTING first-frame wait.
+    test_vblank_hook=nullptr;
+    video_stage_fade_out();
+    assert(REG_MASTER_BRIGHT==0x8010 && !REG_MASTER_BRIGHT_SUB);
+    const int entry_starts=starts,entry_stops=stops,entry_sfx_stops=sfx_stops;
+    entering_from_black=true;ticks=sounds=0;test_vblank_hook=observe;
+    assert(konngara_intro_play());
+    entering_from_black=false;
+    assert(ticks==711 && sounds==4 && !REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
+    assert(starts==entry_starts+1 && stops==entry_stops+1 && sfx_stops==entry_sfx_stops+1);
+    assert(test_heap_count==0 && test_heap_bytes==0 && test_obj_attempts==obj_attempts);
     test_vblank_hook = nullptr;
     allow_play = false;
     assert(!konngara_intro_preview());

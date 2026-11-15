@@ -83,6 +83,7 @@ static void check_konngara(bool okay,const char *part)
     if(okay) return;
     const char *audio_error=music_error();
     konngara_view.end();music_stop();
+    video_stage_reveal(); // an entrance failure must not hide the error console
     consoleDemoInit();
     if(strcmp(part,"defeat")==0) {
         const auto &d=konngara_defeat_diagnostics();
@@ -447,6 +448,11 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         stagebonus_run(bonus,global_stage_num());
         int next=current_stage+1;
         if(next>=scene_stage_count(current_scene)) next=0; // other unported bosses remain gated
+        // All bosses share the outgoing black fade. Keep black until the first
+        // kanji mask or Konngara intro image is ready; regular stages retain
+        // their existing ripple/banner.
+        if(stage_has_boss(current_scene,next))
+            video_stage_fade_out();
         stage_load(current_scene,next,false,true);
         if(stage_has_konngara(current_scene,current_stage)) return;
     }

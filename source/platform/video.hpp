@@ -45,6 +45,13 @@ void video_apply_camera();
 // never calculate or restore an effect by reading the hardware register.
 void video_set_fade(u16 amount);
 u16 video_fade();
+// Fade the outgoing stage's top screen/HUD to black and retain it through boss
+// loading. No pixels, palettes, simulation or bottom-screen brightness change.
+void video_stage_fade_out();
+// Commit a prepared first kanji mask/intro image, then release the fade in the
+// same VBlank. Renderers with their own first-frame wait may reuse that VBlank.
+// Without a pending fade, this only commits background settings.
+void video_stage_reveal(bool already_in_vblank = false);
 // Apply after rebuilding gameplay shadow OAM, before its VBlank commit. The
 // fixed HUD stays put; scenery, canvas, boss and player shake together.
 void video_apply_death_shake(int down_pixels, bool konngara);
