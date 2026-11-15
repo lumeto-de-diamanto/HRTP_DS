@@ -844,6 +844,23 @@ void test_player_death()
     std::puts("Player death: original cels/edge clipping,99-frame miss/31-frame fatal burst, frozen gameplay, full attack reset/grace, resource recovery, retry/new-run input gating and boss buffer/OBJ cleanup passed");
 }
 
+static u16 bomb_master_reference(int f,u16 normal)
+{
+    // Independent frame inventory: full white, three fading steps, neutral,
+    // then the previously approved five-frame neutral/Up5 discharge cadence.
+    static const u16 bridge[]={0x4010,0x400c,0x4008,0x4004,0};
+    if(f>=50 && f<=54) return bridge[f-50];
+    if(f>=55 && f<140) return ((f-50)/5)%2 ? 0x4005 : 0;
+    return normal;
+}
+
+static void observe_bomb_flash_commit()
+{
+    const int f=player_bomb().frame();
+    if(f>=50) assert(REG_VCOUNT>=192 && REG_VCOUNT<200);
+    if(f>=50 && f<=54) assert(REG_MASTER_BRIGHT==bomb_master_reference(f,0));
+}
+
 void test_bombs()
 {
     const u16 original_control=REG_BLDCNT,original_alpha=REG_BLDALPHA,original_y=REG_BLDY.written,original_window=REG_WINOUT;
@@ -865,7 +882,23 @@ void test_bombs()
     assert(BG_PALETTE[0]==0x7fff && BG_PALETTE[1]==RGB15(12,12,31));
     assert(REG_BLDCNT==0 && REG_BLDALPHA==0x0506 && REG_WINOUT==0x403f);
     assert(!(REG_WININ&0x2020));
-    assert(REG_MASTER_BRIGHT==0 && REG_MASTER_BRIGHT_SUB==0x4002);
+    assert(REG_MASTER_BRIGHT==0x4010 && REG_MASTER_BRIGHT_SUB==0x4002);
+    video_bomb_pause(true);assert(REG_MASTER_BRIGHT==0x8003);
+    video_bomb_pause(false);assert(REG_MASTER_BRIGHT==0x4010);
+    { CanvasForegroundScope foreground;video_canvas_effect_commit();assert(REG_MASTER_BRIGHT==0x8003); }
+    video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4010);
+    video_bomb_reset(); // cancellation at full white cannot leave the screen white
+    assert(REG_MASTER_BRIGHT==0x8003 && REG_MASTER_BRIGHT_SUB==0x4002);
+    assert(REG_BLDCNT==0x0123 && REG_BLDALPHA==0x0506 && video_fade()==7 && REG_WINOUT==0x401f);
+    assert(BG_PALETTE[0]==0 && BG_PALETTE[1]==0x7fff);
+    video_bomb_prepare(true,50,1000);video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4010);
+    for(int f=51;f<=54;++f) {
+        video_bomb_prepare(true,f,950+f);video_bomb_commit();
+        assert(REG_MASTER_BRIGHT==bomb_master_reference(f,0) && REG_MASTER_BRIGHT_SUB==0x4002);
+        assert(BG_PALETTE[0]==0x7fff && BG_PALETTE[1]==RGB15(12,12,31));
+        video_bomb_pause(true);assert(REG_MASTER_BRIGHT==0x8003);
+        video_bomb_pause(false);assert(REG_MASTER_BRIGHT==bomb_master_reference(f,0));
+    }
     video_bomb_prepare(true,55,1005);video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4005);
     { CanvasForegroundScope foreground;video_canvas_effect_commit();assert(REG_MASTER_BRIGHT==0x8003); }
     video_bomb_commit();assert(REG_MASTER_BRIGHT==0x4005);
@@ -924,6 +957,7 @@ void test_bombs()
     player_update(KEY_X,KEY_X);
     assert(player_bomb().pending() && rem_bombs==2 && pellet_speed==-3);
     int previous_x=player_get_state().x_position;
+    int white_frames=0;
     for(int f=0;f<=140;++f) {
         player_update(KEY_X|KEY_LEFT|KEY_B,KEY_X); // even repeated direct presses cannot retrigger
         assert(player_bomb().frame()==f && player_bomb().active()==(f<140));
@@ -940,14 +974,15 @@ void test_bombs()
         assert(REG_BLDCNT==(f>=50 ? 0 : original_control));
         static const int shakes[]={4,0,8,0};
         assert(video_bomb_shake()==(f>=52 && f<140 ? shakes[(f/4)%4] : 0));
-        assert(REG_MASTER_BRIGHT==(f>=50 && f<140 ? (((f-50)/5)%2 ? 0x4005 : 0) : original_master));
+        assert(REG_MASTER_BRIGHT==bomb_master_reference(f,original_master));
+        white_frames+=REG_MASTER_BRIGHT==0x4010;
         assert(REG_MASTER_BRIGHT_SUB==original_sub_master);
         for(int y=0;y<VIEW_H;++y) for(int x=0;x<VIEW_W;++x) {
             const u16 c=*canvas_at(x,y);
             if(y<UPPER_HUD_H) assert(!c);
             if(f>=50) assert(!c); // no software discharge pixels at all
         }
-        if(f==100) {
+        if((f>=50 && f<=54) || f==100) {
             const size_t bytes=test_dma_fill_bytes,copies=test_dma_copy_bytes;
             bomb_render_frame();video_bomb_prepare(true,f,f);video_bomb_commit();
             assert(bytes==test_dma_fill_bytes && copies==test_dma_copy_bytes); // register/palette-only redraw
@@ -957,6 +992,7 @@ void test_bombs()
         assert(std::equal(obj.begin(),obj.end(),SPRITE_PALETTE));
     }
     assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_BOMB_START)==1);
+    assert(white_frames==1);
     assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_BOMB_ACTIVE)==8);
     assert(test_obj_attempts==objects && test_heap_attempts==heap);
     for(int age=1;age<=32;++age) { video_bomb_prepare(false,140,140+age);video_bomb_commit(); }
@@ -972,15 +1008,18 @@ void test_bombs()
     for(int i=0;i<stage_card_total;++i) stage_cards[i].hp=CARD_HP_MAX-1; // keep the fixture stage alive
     gameplay_tick(KEY_X,KEY_X);assert(!wait_for_shot && player_bomb().pending());
     const int hud_y=test_objs[OAM_SLOT_HUD_LIVES].y;
+    white_frames=0;
     for(int f=0;f<=172;++f) {
         const size_t bytes=test_dma_copy_bytes;
-        test_bg_update_hook=[](){if(player_bomb().frame()>=50) assert(REG_VCOUNT>=192 && REG_VCOUNT<200);};
+        test_bg_update_hook=observe_bomb_flash_commit;
         orb_set_position(10000,200);gameplay_tick(0,0);
         test_bg_update_hook=nullptr;
         assert(player_bomb().frame()==(f<140?f:140) && rem_bombs==1 && lives==3 && current_stage==0);
         assert(player_bomb().active()==(f<140) && player_bomb().damaging()==(f>=50 && f<140));
         assert(bool(g_canvas_target)==(f<172) && regular_bomb_canvas_owned==(f<172));
-        assert(REG_MASTER_BRIGHT==(f>=50 && f<140 ? (((f-50)/5)%2 ? 0x4005 : 0) : original_master));
+        assert(REG_MASTER_BRIGHT==bomb_master_reference(f,original_master));
+        white_frames+=REG_MASTER_BRIGHT==0x4010;
+        assert(REG_MASTER_BRIGHT_SUB==original_sub_master);
         if(f>=52) assert(test_dma_copy_bytes-bytes<86016); // no compulsory84KiB stream
         if(f>=50 && f<172) {
             assert(REG_BLDALPHA==original_alpha && (REG_WINOUT&0x20));
@@ -992,7 +1031,7 @@ void test_bombs()
             assert(test_objs[OAM_SLOT_HUD_LIVES].y==hud_y);
         } else assert(REG_BLDCNT==original_control && REG_BLDALPHA==original_alpha && REG_BLDY.written==original_y && REG_WINOUT==original_window);
         if(f==49) assert(stage_cardcombo_cur==0);
-        if(f==85 || f==148 || f==156) {
+        if((f>=50 && f<=54) || f==85 || f==148 || f==156) {
             const unsigned paused_frame=frame,paused_timer=stage_timer;
             const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,brightness=REG_BLDY.written,window=REG_WINOUT;
             const u16 master=REG_MASTER_BRIGHT;
@@ -1013,7 +1052,7 @@ void test_bombs()
             assert(std::equal(obj_palette.begin(),obj_palette.end(),SPRITE_PALETTE));
         }
     }
-    assert(stage_cardcombo_cur>0);
+    assert(stage_cardcombo_cur>0 && white_frames==1);
     Pellets.init();Items.init();shots_initialize();popup_clear();player_initialize();
     canvas_begin_frame();assert(std::all_of(canvas_at(0,0),canvas_at(0,0)+VIEW_W*VIEW_H,[](u16 c){return c==0;}));
 
@@ -1026,15 +1065,19 @@ void test_bombs()
         const int hp=scene==0 ? singyoku_state().health.hp : konngara.state().health.hp;
         const auto allocation_count=test_heap_attempts,obj_count=test_obj_attempts;
         orb_set_position(10000,200);gameplay_tick(KEY_X,KEY_X);
+        white_frames=0;
         for(int f=0;f<=172;++f) {
             const size_t bytes=test_dma_copy_bytes;
-            test_bg_update_hook=[](){if(player_bomb().frame()>=50) assert(REG_VCOUNT>=192 && REG_VCOUNT<200);};
+            test_bg_update_hook=observe_bomb_flash_commit;
             orb_set_position(10000,200);gameplay_tick(0,0);
             test_bg_update_hook=nullptr;
             if(f>=52) assert(test_dma_copy_bytes-bytes<86016);
-            assert(REG_MASTER_BRIGHT==(f>=50 && f<140 ? (((f-50)/5)%2 ? 0x4005 : 0) : original_master));
+            assert(REG_MASTER_BRIGHT==bomb_master_reference(f,original_master));
+            white_frames+=REG_MASTER_BRIGHT==0x4010;
+            assert(REG_MASTER_BRIGHT_SUB==original_sub_master);
         }
         assert((scene==0?singyoku_state().health.hp:konngara.state().health.hp)==hp-(remaining_lives==0?2:0));
+        assert(white_frames==1);
         assert(rem_bombs==0 && lives==remaining_lives && player_is_invincible());
         assert(test_heap_attempts==allocation_count && test_obj_attempts==obj_count);
         assert(!regular_bomb_canvas_owned && bool(g_canvas_target)==(scene==6));
@@ -1048,5 +1091,5 @@ void test_bombs()
     }
     start_new_game();camera.snap_center();
     assert(test_obj_count==79 && test_heap_count==baseline_blocks && test_heap_bytes==baseline_heap);
-    std::puts("Bombs: unchanged mechanics/kuji, white/indigo palettes,5-frame0/5 master pulse, source shake, white recovery, sparse uploads, frozen pause and exact brightness/boss/navigation cleanup passed");
+    std::puts("Bombs: unchanged mechanics/kuji, four-frame native white-flash fade hiding the palette switch on regular/SinGyoku/Konngara stages, bottom unchanged, original pulse/shake/recovery/SFX, sparse redraws, pause at every fade step and exact brightness cleanup passed");
 }

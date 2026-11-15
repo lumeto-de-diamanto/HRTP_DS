@@ -166,7 +166,12 @@ void video_bomb_prepare(bool active,int local_frame,unsigned gameplay_frame)
         // retriggering gameplay damage. Its approved kuji intro is unmodified.
         bomb_phase=local_frame>=50 ? 1 : 0;
         bomb_inverted=bomb_phase==1;
-        if(bomb_phase && ((local_frame-50)/5)%2) bomb_master=(1<<14)|5;
+        // Full white bridges the final kuji image and discharge, then fades
+        // over four frames (Up16/12/8/4, neutral at54).
+        // The palette swap stays at frame50, hidden beneath native master
+        // brightness, without delaying damage/SFX or shifting the Up5 pulse.
+        if(local_frame>=50 && local_frame<58) bomb_master=(1<<14)|((58-local_frame)*2);
+        else if(bomb_phase && ((local_frame-50)/5)%2) bomb_master=(1<<14)|5;
         if(bomb_phase && local_frame>=52) {
             static const int shake[]={4,0,8,0};
             bomb_shake_y=shake[(local_frame/4)%4];
