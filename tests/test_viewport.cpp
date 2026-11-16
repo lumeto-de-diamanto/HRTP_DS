@@ -274,14 +274,16 @@ int result_exit_fade_frames,result_hidden_cleanup_commits;
 size_t result_sub_calls;
 std::vector<u16> result_reference_font;
 std::vector<u8> result_reference_labels;
+int result_heading_x,result_heading_advance,result_complete_x,result_prompt_x,result_prompt_y;
 
-void result_strip(const char *s,int &first,int &cells)
+void result_strip(const char *s,int &first,int &cells,int &columns)
 {
-    const char *labels[]={"STAGE","COMPLETE","Time","Max Combo","Bomb/Life","Clear","Total","A or B"};
+    const char *labels[]={"STAGE","COMPLETE","Time","Max Combo","Bomb/Life","Clear","Total","Hit A or B Key"};
     for(int i=0;i<8;++i) if(!std::strcmp(s,labels[i])) {
-        first=result_reference_labels[(10+i)*2];cells=result_reference_labels[(10+i)*2+1];return;
+        first=result_reference_labels[(10+i)*4];cells=result_reference_labels[(10+i)*4+1];
+        columns=result_reference_labels[(10+i)*4+2];return;
     }
-    first=-1;cells=std::strlen(s);
+    first=-1;columns=cells=std::strlen(s);
 }
 
 const u16 *result_glyph(char c)
@@ -292,12 +294,60 @@ const u16 *result_glyph(char c)
 
 void result_label(int x,int y,const char *s)
 {
-    int first,cells;result_strip(s,first,cells);
-    for(int i=0;i<cells;++i,x+=16) {
+    int first,cells,columns;result_strip(s,first,cells,columns);
+    for(int i=0;i<cells;++i) {
         const u16 *glyph=first<0 ? result_glyph(s[i]) : result_reference_font.data()+(first+i)*16;
-        for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx)
-            result_label_ink[y+gy][x+gx]=glyph && (glyph[gy]&(0x8000>>gx));
+        for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx) {
+            const int px=x+(i%columns)*16+gx,py=y+(i/columns)*16+gy;
+            if(px>=0 && px<256 && py>=0 && py<192)
+                result_label_ink[py][px]=glyph && (glyph[gy]&(0x8000>>gx));
+        }
     }
+}
+
+struct ResultInkBounds { int left=256,top=192,right=-1,bottom=-1; };
+
+ResultInkBounds result_bounds(const char *s)
+{
+    int first,cells,columns;result_strip(s,first,cells,columns);ResultInkBounds b;
+    for(int i=0;i<cells;++i) {
+        const u16 *glyph=first<0 ? result_glyph(s[i]) : result_reference_font.data()+(first+i)*16;
+        for(int y=0;y<16;++y) for(int x=0;x<16;++x) if(glyph[y]&(0x8000>>x)) {
+            const int px=i%columns*16+x,py=i/columns*16+y;
+            b.left=std::min(b.left,px);b.right=std::max(b.right,px);
+            b.top=std::min(b.top,py);b.bottom=std::max(b.bottom,py);
+        }
+    }
+    return b;
+}
+
+int result_center_x(const char *s)
+{
+    const auto b=result_bounds(s);return (256-(b.right-b.left+1))/2-b.left;
+}
+
+void result_prepare_labels(int stage)
+{
+    char digits[3]={char('0'+stage/10),char('0'+stage%10),0};
+    const auto a=result_bounds("STAGE"),b=result_bounds(digits);
+    result_heading_advance=result_reference_labels[10*4+2]*16+16;
+    const int left=std::min(a.left,result_heading_advance+b.left);
+    const int right=std::max(a.right,result_heading_advance+b.right);
+    result_heading_x=(256-(right-left+1))/2-left;
+    result_complete_x=result_center_x("COMPLETE");result_prompt_x=result_center_x("Hit A or B Key");
+    result_prompt_y=190-result_bounds("Hit A or B Key").bottom;
+    result_label(result_heading_x,8,"STAGE");result_label(result_heading_x+result_heading_advance,8,digits);
+    result_label(result_complete_x,25,"COMPLETE");
+    result_label(8,56,"Time");result_label(8,80,"Max Combo");result_label(8,104,"Bomb/Life");
+    result_label(8,128,"Clear");result_label(8,152,"Total");
+    // Ink, rather than padded glyph/cell advances, is centered to within the
+    // unavoidable one-pixel difference for odd-width strings.
+    assert(std::abs((result_heading_x+left)-(255-result_heading_x-right))<=1);
+    for(const char *s:{"COMPLETE","Hit A or B Key"}) {
+        const auto bounds=result_bounds(s);const int x=result_center_x(s);
+        assert(std::abs((x+bounds.left)-(255-x-bounds.right))<=1);
+    }
+    assert(result_bounds("COMPLETE").top==0 && result_prompt_y==170);
 }
 
 u16 captured_boss_pixel(int x,int y) {
@@ -305,11 +355,12 @@ u16 captured_boss_pixel(int x,int y) {
 }
 
 static void check_result_text(int x,int y,const char *s) {
-    int first,cells;result_strip(s,first,cells);
-    for(int i=0;i<cells;++i,x+=16) {
+    int first,cells,columns;result_strip(s,first,cells,columns);
+    for(int i=0;i<cells;++i) {
         const u16 *glyph=first<0 ? result_glyph(s[i]) : result_reference_font.data()+(first+i)*16;
         for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx) {
-            const int px=x+gx,py=y+gy;
+            const int px=x+(i%columns)*16+gx,py=y+(i/columns)*16+gy;
+            if(px<0 || px>=256 || py<0 || py>=192) continue;
             const u16 entry=BG_MAP_RAM(31)[py/8*32+px/8];
             const u16 word=BG_TILE_RAM(4)[(entry&1023)*16+(py%8)*2+(px%8)/4];
             const int ink=word>>((px%4)*4)&15;
@@ -374,9 +425,9 @@ void observe_round_results() {
         // The complete incoming label map is prepared already, but BG0 must
         // stay hidden: labels travel WITH incoming strips, never over the boss.
         assert(!(REG_DISPCNT&(1<<8)));
-        check_result_text(64,8,"STAGE");check_result_text(64,24,"COMPLETE");
+        check_result_text(result_heading_x,8,"STAGE");check_result_text(result_complete_x,25,"COMPLETE");
         char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};
-        check_result_text(160,8,stage);
+        check_result_text(result_heading_x+result_heading_advance,8,stage);
         check_result_text(8,56,"Time");check_result_text(8,80,"Max Combo");
         check_result_text(8,104,"Bomb/Life");check_result_text(8,128,"Clear");check_result_text(8,152,"Total");
     }
@@ -397,15 +448,21 @@ void observe_round_results() {
     }
     // A OR B: keep stale confirmations asserted for nine frames, then release
     // and deliberately confirm. Rolling/opening may not consume held input.
-    if(!(BG_MAP_RAM(31)[22*32+10]&1023)) return;
+    if(!std::any_of(BG_MAP_RAM(31)+21*32,BG_MAP_RAM(31)+24*32,[](u16 entry){return entry&1023;})) return;
     if(!fading) ++result_prompt_frames;
     if(result_prompt_frames==1 || fading) {
-        check_result_text(64,8,"STAGE");
+        check_result_text(result_heading_x,8,"STAGE");
         char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};
-        check_result_text(160,8,stage);check_result_text(64,24,"COMPLETE");
+        check_result_text(result_heading_x+result_heading_advance,8,stage);check_result_text(result_complete_x,25,"COMPLETE");
         check_result_text(8,56,"Time");check_result_text(8,80,"Max Combo");
         check_result_text(8,104,"Bomb/Life");check_result_text(8,128,"Clear");
-        check_result_text(8,152,"Total");check_result_text(80,176,"A or B");
+        check_result_text(8,152,"Total");check_result_text(result_prompt_x,result_prompt_y,"Hit A or B Key");
+        result_label(result_prompt_x,result_prompt_y,"Hit A or B Key");
+        for(int y=0;y<192;++y) if(y<48 || y>=168) for(int x=0;x<256;++x) {
+            const u16 entry=BG_MAP_RAM(31)[y/8*32+x/8];
+            const u16 word=BG_TILE_RAM(4)[(entry&1023)*16+(y%8)*2+(x%8)/4];
+            assert(bool(word>>((x%4)*4)&15)==result_label_ink[y][x]);
+        }
         const int values[]={result_bonus.time*10,result_bonus.combo*10,result_bonus.resources*10,result_bonus.stage*10,result_bonus.total};
         const int rows[]={56,80,104,128,152},digits[]={5,5,5,6,6};
         for(int i=0;i<5;++i) {
@@ -434,7 +491,7 @@ static void check_round_results() {
     result_reference_font.resize(font.size()/2);
     for(unsigned i=0;i<font.size()/2;++i) result_reference_font[i]=font[i*2]|(font[i*2+1]<<8);
     result_reference_labels=read_bytes("results-labels.bin");
-    assert(result_reference_labels.size()==18*2);
+    assert(result_reference_labels.size()==18*4);
     const int old_timer=stage_timer,old_combo=stage_cardcombo_max,old_bombs=rem_bombs;
     stage_timer=1000;stage_cardcombo_max=7;rem_bombs=5;
     auto bonus=roundbonus_compute(5,6);
@@ -460,7 +517,7 @@ static void check_round_results() {
     const auto items=Items;const auto pellets=Pellets;
     test_effects.reserve(test_effects.size()+4096);
     const auto heap=test_heap_attempts,obj=test_obj_attempts;
-    for(int replay=0;replay<2;++replay) {
+    for(int replay=0;replay<3;++replay) {
         hud_invalidate();hud_render(3,replay ? 15 : 5);hud_radar_render();
         // Distinct edge pixels exercise odd/even shifts, seam/last rows and all
         // real HUD inks, alongside the actual score/rank/radar text and frame.
@@ -476,12 +533,9 @@ static void check_round_results() {
         result_sub_calls=sub_calls.size();result_zipper_frames=result_incoming_text=0;
         result_exit_fade_frames=result_hidden_cleanup_commits=0;
         result_bonus=replay ? StageBonus{6553,6553,6553,65530,851890} : StageBonus{};
-        result_stage=replay ? 15 : 5;result_frames=result_prompt_frames=0;
+        result_stage=replay==0 ? 5 : replay==1 ? 10 : 15;result_frames=result_prompt_frames=0;
         std::memset(result_label_ink,0,sizeof(result_label_ink));
-        result_label(64,8,"STAGE");result_label(64,24,"COMPLETE");
-        char stage[3]={char('0'+result_stage/10),char('0'+result_stage%10),0};result_label(160,8,stage);
-        result_label(8,56,"Time");result_label(8,80,"Max Combo");result_label(8,104,"Bomb/Life");
-        result_label(8,128,"Clear");result_label(8,152,"Total");
+        result_prepare_labels(result_stage);
         result_score=stage_score;result_timer=stage_timer;
         REG_BLDCNT=0x124;REG_BLDALPHA=0x507;video_set_fade(3);
         REG_MASTER_BRIGHT=(1<<14)|2;REG_MASTER_BRIGHT_SUB=(1<<14)|1;
@@ -525,7 +579,7 @@ static void check_round_results() {
     REG_MASTER_BRIGHT=master;REG_MASTER_BRIGHT_SUB=sub_master;
     REG_DISPCAPCNT=capture;
     hud_render(3,1);hud_radar_render();
-    std::puts("Round results: Libre Bodoni pixels/one384-row zipper intact, zero/max rolling, held-confirm release, synchronized sixteen-step fade of both result screens, cleanup under black, exact dual brightness restoration at reveal and zero heap/OBJ allocations passed");
+    std::puts("Round results: ink-centered05/10/15 headings, exact one-pixel COMPLETE shift, full centered Hit A or B Key/descender pixels, unchanged Bodoni numerals/one384-row zipper/zero-max tally, held-confirm release, dual fade/black-held cleanup, restored VRAM/registers and zero heap/OBJ allocations passed");
 }
 
 static int foreground_frames, covered_hud_frames, title_frames;

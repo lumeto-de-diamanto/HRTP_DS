@@ -11,7 +11,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from font16x16 import glyph_rows, load_bitmap, required_chars, sjis_to_jis
 from font16x16_chars import PRODUCTION_CHARS
-from results_serif_to_h import ALPHABET, build as build_serif, glyphs as serif_glyphs
+from results_serif_to_h import ALPHABET, build as build_serif, glyphs as serif_glyphs, read_strips
 from test_viewport_assets import results_font_bytes, results_font_strips
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +38,7 @@ class FontTests(unittest.TestCase):
             widths.append(bits.bit_length() - (bits & -bits).bit_length() + 1)
         self.assertEqual(widths, [15, 11, 13, 13, 15, 13, 13, 13, 13, 13])
         self.assertTrue(all(not row & 1 for glyph in digits for row in glyph))
-        for label in ('Time', 'Max Combo', 'Bomb/Life', 'Clear', 'Total', 'A or B'):
+        for label in ('Time', 'Max Combo', 'Bomb/Life', 'Clear', 'Total', 'Hit A or B Key'):
             self.assertIn('COMMENT ' + label + '\n', text)
         header = build_serif(text)
         body = header.split('ResultsSerif_rows', 1)[1]
@@ -47,15 +47,65 @@ class FontTests(unittest.TestCase):
                          results_font_bytes(ROOT / 'assets/fonts/results_serif.bdf'))
         self.assertIn('SIL OFL 1.1', header)
         for bad in [text.replace('CHARS 18', 'CHARS 19'),
-                    text.replace('FONT_ASCENT 16', 'FONT_ASCENT 12'),
+                    text.replace('FONT_ASCENT 24', 'FONT_ASCENT 12'),
                     text.replace('ENCODING 48', 'ENCODING 49'),
                     text.replace('BBX 16 16 0 0', 'BBX 17 16 0 0', 1),
                     text.replace('DWIDTH 16 0', 'DWIDTH 32 0', 1),
                     text.replace('ENCODING 57344', 'ENCODING 57444'),
+                    text.replace('BBX 144 24 0 0', 'BBX 144 16 0 0'),
                     text.replace('ENDFONT', ''),
                     text.replace('BITMAP\n', 'BITMAP\nFFFF\n', 1)]:
             with self.assertRaises(ValueError):
                 build_serif(bad)
+
+    def test_results_serif_ink_metrics_and_unclipped_prompt(self):
+        text = (ROOT / 'assets/fonts/results_serif.bdf').read_text()
+        strips, dimensions = read_strips(text)
+        header = build_serif(text)
+        expected = {'columns': [], 'ink_left': [], 'ink_top': [], 'ink_width': [], 'ink_height': []}
+        for strip, (width, height) in zip(strips, dimensions):
+            dots = [(i%(width//16)*16+x, i//(width//16)*16+y)
+                    for i, cell in enumerate(strip) for y, row in enumerate(cell)
+                    for x in range(16) if row & (0x8000>>x)]
+            left, right = min(x for x, _ in dots), max(x for x, _ in dots)
+            top, bottom = min(y for _, y in dots), max(y for _, y in dots)
+            self.assertLess(bottom, height)
+            for name, value in zip(expected, (width//16, left, top, right-left+1, bottom-top+1)):
+                expected[name].append(value)
+        for name, values in expected.items():
+            actual = re.search(r'ResultsSerif_' + name + r'\[\] = \{([^}]+)\}', header)[1]
+            self.assertEqual(list(map(int, re.findall(r'\d+', actual))), values)
+        self.assertEqual(dimensions[-1], (144, 24))
+        self.assertEqual((expected['ink_width'][-1], expected['ink_height'][-1]), (131, 21))
+        self.assertTrue(any(strips[-1][i][y] for i in range(9,18) for y in range(5)))
+        self.assertTrue(all(strips[-1][i][y] == 0 for i in range(9,18) for y in range(5,16)))
+        self.assertNotIn('COMMENT A or B\n', text)
+
+    def test_results_centered_layout_fits_existing_vram_and_stack_budget(self):
+        strips, dimensions = read_strips((ROOT / 'assets/fonts/results_serif.bdf').read_text())
+        dots = [{(i%(w//16)*16+x, i//(w//16)*16+y)
+                 for i, cell in enumerate(strip) for y, row in enumerate(cell)
+                 for x in range(16) if row & (0x8000>>x)}
+                for strip, (w, _) in zip(strips, dimensions)]
+        def center(points):
+            left, right = min(x for x, _ in points), max(x for x, _ in points)
+            origin = (256-(right-left+1))//2-left
+            self.assertLessEqual(abs(origin+left-(255-origin-right)), 1)
+            return {(origin+x, y) for x, y in points}
+        complete = {(x,y+25) for x,y in center(dots[11])}
+        prompt = {(x,y+190-max(y for _,y in dots[17])) for x,y in center(dots[17])}
+        max_tiles = 0
+        for stage in range(100):
+            advance = dimensions[10][0]+16
+            heading = dots[10] | {(x+advance,y) for x,y in dots[stage//10]} | {(x+advance+16,y) for x,y in dots[stage%10]}
+            ink = {(x,y+8) for x,y in center(heading)} | complete | prompt
+            self.assertTrue(all(0<=x<256 and 0<=y<192 for x,y in ink))
+            max_tiles = max(max_tiles,len({(x//8,y//8) for x,y in ink}))
+        self.assertLessEqual(max_tiles,128)
+        value_cells = 10+sum(len(strip) for strip in strips[12:17])
+        backup_bytes = (1+value_cells*4+128)*32
+        self.assertEqual(backup_bytes,8608)
+        self.assertLessEqual(backup_bytes,9*1024)
 
     def test_results_serif_cli_has_no_system_font_or_freetype_dependency(self):
         with tempfile.TemporaryDirectory(prefix='hrtp-serif-', dir='/tmp/opencode') as directory:

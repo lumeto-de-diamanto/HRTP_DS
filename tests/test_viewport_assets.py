@@ -28,9 +28,11 @@ def results_font_strips(path=Path('assets/fonts/results_serif.bdf')):
     for block in path.read_text().split('STARTCHAR ')[1:]:
         metrics, bitmap = block.split('BITMAP\n', 1)
         char = chr(int(re.search(r'^ENCODING (\d+)$', metrics, re.M)[1]))
-        width = int(re.search(r'^BBX (\d+) ', metrics, re.M)[1])
+        width, height = map(int, re.search(r'^BBX (\d+) (\d+) ', metrics, re.M).groups())
         rows = bitmap.split('\nENDCHAR', 1)[0].splitlines()
-        glyphs[char] = [[int(row[x:x+4], 16) for row in rows] for x in range(0, width // 4, 4)]
+        rows += ['0' * (width // 4)] * (-height % 16)
+        glyphs[char] = [[int(row[x:x+4], 16) for row in rows[y:y+16]]
+                        for y in range(0, height, 16) for x in range(0, width // 4, 4)]
     return [glyphs[char] for char in '0123456789' + ''.join(map(chr, range(0xE000, 0xE008)))]
 
 
@@ -134,7 +136,11 @@ def run_renderer(binary):
     runtime.mkdir(parents=True, exist_ok=True)
     (runtime / 'results-font.bin').write_bytes(results_font_bytes())
     strips = results_font_strips()
-    sizes = [(sum(map(len, strips[:i])), len(strip)) for i, strip in enumerate(strips)]
+    text = Path('assets/fonts/results_serif.bdf').read_text()
+    dimensions = [tuple(map(int, re.search(r'^BBX (\d+) (\d+) ', block, re.M).groups()))
+                  for block in text.split('STARTCHAR ')[1:]]
+    sizes = [(sum(map(len, strips[:i])), len(strip), dimensions[i][0]//16, dimensions[i][1])
+             for i, strip in enumerate(strips)]
     (runtime / 'results-labels.bin').write_bytes(bytes(v for pair in sizes for v in pair))
     pillar,_,_=load_bmp(Path('assets/sprites/pillar.bmp'))
     (runtime / 'mima-pillar.bin').write_bytes(bytes(p for x in (0,32)

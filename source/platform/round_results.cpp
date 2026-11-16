@@ -15,9 +15,22 @@
 namespace {
 constexpr int results_map=31, results_tiles=4, pattern_block=16, art_base=32;
 constexpr int screen_height=192,joined_height=screen_height*2;
-constexpr int font_cells=sizeof(ResultsSerif_rows)/sizeof(ResultsSerif_rows[0]);
-constexpr int font_words=(1+font_cells*4)*16;
+constexpr int source_cells=sizeof(ResultsSerif_rows)/sizeof(ResultsSerif_rows[0]);
+// Only numbers/tally labels need reusable atlas cells. Centered text is baked
+// pixel-exact into a bounded tile pool, not an extra bitmap or OAM allocation.
+constexpr int value_first=ResultsSerif_first[ResultsSerif_Time];
+constexpr int value_end=ResultsSerif_first[ResultsSerif_Prompt];
+constexpr int font_cells=10+value_end-value_first;
+constexpr int font_tiles=1+font_cells*4,layout_tiles=128;
+constexpr int font_words=(font_tiles+layout_tiles)*16;
 static_assert(font_words*2<16*1024,"results font must fit the saved BG3 scratch region");
+static_assert(font_words*2<=9*1024,"keep the stack-backed results scratch backup bounded");
+int next_layout_tile;
+
+constexpr int atlas_cell(int source)
+{
+    return source<10 ? source : source>=value_first && source<value_end ? 10+source-value_first : -1;
+}
 
 void frame()
 {
@@ -30,20 +43,22 @@ void bake_font()
 {
     u16 *out=BG_TILE_RAM(results_tiles);
     dmaFillHalfWords(0,out,font_words*2);
-    for(int c=0;c<font_cells;++c) {
+    next_layout_tile=font_tiles;
+    for(int c=0;c<source_cells;++c) {
+        const int target=atlas_cell(c);if(target<0) continue;
         const u16 *glyph=ResultsSerif_rows[c];
         for(int tile=0;tile<4;++tile) for(int y=0;y<8;++y) for(int half=0;half<2;++half) {
             u16 packed=0;
             for(int x=0;x<4;++x)
                 if(glyph[(tile/2)*8+y]&(0x8000>>((tile%2)*8+half*4+x))) packed|=1<<(x*4);
-            out[(1+c*4+tile)*16+y*2+half]=packed;
+            out[(1+target*4+tile)*16+y*2+half]=packed;
         }
     }
 }
 
 void cell(int x,int y,int index)
 {
-    const int tile=1+index*4;
+    const int tile=1+atlas_cell(index)*4;
     for(int dy=0;dy<2;++dy) for(int dx=0;dx<2;++dx)
         BG_MAP_RAM(results_map)[(y/8+dy)*32+x/8+dx]=(tile+dy*2+dx)|TILE_PALETTE(TEXT_PAL_RED);
 }
@@ -55,10 +70,53 @@ void label(int x,int y,ResultsSerif_label id)
     for(int i=0;i<ResultsSerif_cells[id];++i) cell(x+i*16,y,ResultsSerif_first[id]+i);
 }
 
+void layout_pixel(int x,int y)
+{
+    if(unsigned(x)>=256 || unsigned(y)>=screen_height) return;
+    u16 &entry=BG_MAP_RAM(results_map)[y/8*32+x/8];
+    int tile=entry&1023;
+    if(!tile) {
+        if(next_layout_tile>=font_tiles+layout_tiles) return;
+        tile=next_layout_tile++;entry=tile|TILE_PALETTE(TEXT_PAL_RED);
+    }
+    // Halfword writes: a byte write to DS VRAM would be discarded.
+    BG_TILE_RAM(results_tiles)[tile*16+(y%8)*2+(x%8)/4]|=1<<((x%4)*4);
+}
+
+void layout_cell(int x,int y,int source)
+{
+    const auto *glyph=ResultsSerif_rows[source];
+    for(int gy=0;gy<16;++gy) for(int gx=0;gx<16;++gx)
+        if(glyph[gy]&(0x8000>>gx)) layout_pixel(x+gx,y+gy);
+}
+
+void layout_label(int x,int y,ResultsSerif_label id)
+{
+    const int columns=ResultsSerif_columns[id];
+    for(int i=0;i<ResultsSerif_cells[id];++i)
+        layout_cell(x+(i%columns)*16,y+(i/columns)*16,ResultsSerif_first[id]+i);
+}
+
+void centered_label(int y,ResultsSerif_label id)
+{
+    layout_label((256-ResultsSerif_ink_width[id])/2-ResultsSerif_ink_left[id],y,id);
+}
+
 void labels(int stage)
 {
-    label(64,8,ResultsSerif_Stage);letter(160,8,'0'+stage/10%10);letter(176,8,'0'+stage%10);
-    label(64,24,ResultsSerif_Complete);
+    const int digits[]={stage/10%10,stage%10};
+    const int advance=ResultsSerif_columns[ResultsSerif_Stage]*16+16;
+    int left=ResultsSerif_ink_left[ResultsSerif_Stage];
+    int right=left+ResultsSerif_ink_width[ResultsSerif_Stage];
+    for(int i=0;i<2;++i) {
+        const int first=advance+i*16+ResultsSerif_ink_left[digits[i]];
+        if(first<left) left=first;
+        const int end=first+ResultsSerif_ink_width[digits[i]];if(end>right) right=end;
+    }
+    const int origin=(256-(right-left))/2-left;
+    layout_label(origin,8,ResultsSerif_Stage);
+    for(int i=0;i<2;++i) layout_cell(origin+advance+i*16,8,digits[i]);
+    centered_label(25,ResultsSerif_Complete); // exactly one pixel below the old row24
     label(8,56,ResultsSerif_Time);label(8,80,ResultsSerif_MaxCombo);label(8,104,ResultsSerif_BombLife);
     label(8,128,ResultsSerif_Clear);label(8,152,ResultsSerif_Total);
 }
@@ -273,7 +331,9 @@ void round_results_run(const StageBonus &bonus,int stage)
     roll_number(248,104,bonus.resources*10,5,clock);
     roll_number(248,128,bonus.stage*10,6,clock);
     roll_number(248,152,bonus.total,6,clock);
-    label(80,176,ResultsSerif_Prompt);
+    // Keep the original bottom ink row190; preserve the new y-descender rather
+    // than squeezing the longer prompt into the old15-row capital-only strip.
+    centered_label(191-ResultsSerif_ink_height[ResultsSerif_Prompt]-ResultsSerif_ink_top[ResultsSerif_Prompt],ResultsSerif_Prompt);
     // A held route confirmation (including presses during rolling) must be
     // released before a new edge can acknowledge the finished results.
     bool released=false;

@@ -339,7 +339,7 @@ void observe_route_handoff()
         if(REG_MASTER_BRIGHT&31) {
             assert(++route_exit_fade_frames<=16 && REG_MASTER_BRIGHT==(0x8000|route_exit_fade_frames));
             assert(REG_MASTER_BRIGHT_SUB==REG_MASTER_BRIGHT && test_bgs[3].map==16);
-            assert(BG_MAP_RAM(31)[22*32+10]&1023); // finished tally/prompt still displayed
+            assert(std::any_of(BG_MAP_RAM(31)+21*32,BG_MAP_RAM(31)+24*32,[](u16 entry){return entry&1023;})); // prompt still displayed
         }
     } else if(current_scene==route_target_scene) {
         assert(current_stage==0 && stage_score==route_expected_score && frame==route_result_frame);

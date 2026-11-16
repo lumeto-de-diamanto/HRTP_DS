@@ -15,8 +15,9 @@ Libre Bodoni Bold derivative. Other screens still use the selected `assets/font.
   preserve rolling and right alignment.
 * Labels: 20 x 20 pixels per em, HarfBuzz default shaping/kerning and normal
   proportional advances. Each complete string is precomposed, left-aligned
-  and vertically centered in a 16-pixel-high strip, padded to 16-pixel cells.
-  Padding is only at the end, never between letters.
+  in16-pixel-high strips, except the prompt's 24-row strip, which preserves
+  the descender in “Key” at the same 20×20 ppem. Padding is only at the end
+  and below the bitmap, never between letters.
 
 The BDF contains ten ASCII numerals plus eight private-use strip glyphs:
 
@@ -29,13 +30,19 @@ The BDF contains ten ASCII numerals plus eight private-use strip glyphs:
 | U+E004 | Bomb/Life |
 | U+E005 | Clear |
 | U+E006 | Total |
-| U+E007 | A or B |
+| U+E007 | Hit A or B Key |
 
 The BDF is the build input on purpose: no system font, installed FreeType,
 HarfBuzz, network access or rasterizer-version-dependent output is needed to
 build the game. `tools/results_serif_to_h.py` validates and packs its exact rows
-and strip lengths. Runtime uses the existing BG0 tiles and zipper compositor,
-not a font engine. Text positions, numeric cells and animation cadence are unchanged.
+and strip dimensions, padding 24-row data to two rows of 16×16 cells. It also
+exports actual ink bounds for pixel-accurate centering. Runtime uses the existing
+BG0 tiles and zipper compositor, not a font engine.
+
+The results refinement centers the combined STAGE/number line and COMPLETE
+independently on their visible ink; COMPLETE moves down exactly one pixel.
+The full prompt is centered and keeps its bottom ink row at 190. Numerals,
+other label pixels, tally positions and animation cadence are unchanged.
 
 Copyright 2012 The Libre Bodoni Project Authors. The bitmap derivative remains
 under the [SIL Open Font License 1.1](../licenses/LibreBodoni-OFL.txt).
