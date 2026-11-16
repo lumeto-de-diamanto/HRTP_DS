@@ -5,3 +5,4 @@
 // erased properly.
 
 void pellet_render_frame();
+void pellet_render_colored(unsigned short ink); // Mima-local palette effects

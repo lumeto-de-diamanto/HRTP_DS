@@ -158,8 +158,10 @@ static bool group_velocity_set(Subpixel &ret_x, Subpixel &ret_y,
 
 void CPellets::init()
 {
+    spawn_with_cloud=false;
     for (int i = 0; i < PELLET_COUNT; i++) {
         p[i].moving = false;
+        p[i].cloud_frame=0;p[i].cloud_released=false;
         p[i].motion_type = PM_REGULAR;
         p[i].decay_frame = 0;
         p[i].from_group = PG_NONE;
@@ -175,10 +177,11 @@ void CPellets::add_group(int left, int top, pellet_group_t group,
     int i = 0;
 
     for (int slot = 0; slot < PELLET_COUNT; slot++) {
-        if (p[slot].moving)
+        if (p[slot].moving || p[slot].cloud_frame)
             continue;
         Pellet &pel = p[slot];
-        pel.moving = true;
+        pel.moving = !spawn_with_cloud;
+        pel.cloud_frame=spawn_with_cloud ? 1 : 0;pel.cloud_released=false;
         pel.motion_type = PM_REGULAR;
         pel.cur_left.set(left);
         pel.cur_top.set(top);
@@ -203,10 +206,11 @@ void CPellets::add_single(int left, int top, int angle, subpixel_t speed,
                           pellet_motion_t motion, subpixel_t fixed_motion_speed)
 {
     for (int slot = 0; slot < PELLET_COUNT; slot++) {
-        if (p[slot].moving)
+        if (p[slot].moving || p[slot].cloud_frame)
             continue;
         Pellet &pel = p[slot];
-        pel.moving = true;
+        pel.moving = !spawn_with_cloud;
+        pel.cloud_frame=spawn_with_cloud ? 1 : 0;pel.cloud_released=false;
         pel.motion_type = motion;
         pel.cur_left.set(left);
         pel.cur_top.set(top);
@@ -226,9 +230,17 @@ int CPellets::alive_count() const
 {
     int n = 0;
     for (int i = 0; i < PELLET_COUNT; i++)
-        if (p[i].moving)
+        if (p[i].moving || p[i].cloud_frame)
             n++;
     return n;
+}
+
+void CPellets::reset_nonclouds()
+{
+    for(auto &pellet:p) if(pellet.moving) {
+        pellet.moving=false;pellet.decay_frame=0;pellet.cloud_frame=0;
+        pellet.cloud_released=false;
+    }
 }
 
 void CPellets::decay()
@@ -251,6 +263,7 @@ bool CPellets::update()
 
     for (int i = 0; i < PELLET_COUNT; i++) {
         Pellet &pel = p[i];
+        pel.cloud_released=false;
         if (!pel.moving)
             continue;
 
@@ -383,6 +396,10 @@ bool CPellets::update()
                 pel.moving = false;
             }
         }
+    }
+    // Release AFTER movement/hit tests; no damage or early motion in a cloud.
+    for(auto &pel:p) if(pel.cloud_frame && ++pel.cloud_frame==9) {
+        pel.cloud_frame=0;pel.moving=true;pel.cloud_released=true;
     }
     return player_hit;
 }

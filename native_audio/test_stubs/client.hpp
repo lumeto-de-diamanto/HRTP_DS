@@ -12,6 +12,7 @@ public:
     bool stop() { calls.push_back("stop"); return sendOK; }
     bool load(const char *path) { calls.push_back(path); return loadOK; }
     bool play() { calls.push_back("play"); return sendOK; }
+    bool fadeOut() { calls.push_back("fade"); return sendOK; }
     bool loadSfx(const char *path) { calls.push_back(path); return loadOK; }
     bool playSfx(unsigned id) { calls.push_back("sfx:" + std::to_string(id)); return sendOK; }
     bool stopSfx() { calls.push_back("sfx:stop"); return sendOK; }

@@ -160,13 +160,17 @@ def host_tests(args):
         combat = eng('main/boss/konngara_phase1', 'main/boss/boss', 'main/player/shot',
                      'main/math/vector', 'main/math/trig')
         run('phase1', ['tests/test_konngara_phase1.cpp', *combat])
+        run('mima_phase1', ['tests/test_mima_phase1.cpp',
+                            *eng('main/boss/mima_phase1','main/bullet/missile','main/bullet/shootout_laser','main/boss/boss',
+                                 'main/player/shot','main/math/vector','main/math/trig')])
         for phase in (3, 5):
             run(f'phase{phase}', [f'tests/test_konngara_phase{phase}.cpp', *combat,
                                   *eng('main/boss/konngara', 'main/bullet/shootout_laser')])
 
     if selected('graphics'):
         viewport = ['tests/test_viewport.cpp', 'tests/heap_probe.cpp',
-                    'tests/test_stage_entrance.cpp', 'tests/test_konngara_review.cpp']
+                    'tests/test_stage_entrance.cpp', 'tests/test_konngara_review.cpp',
+                    'tests/test_mima_review.cpp','tests/test_mima_phase1_review.cpp']
         for pattern in ('main/player/*.cpp', 'main/boss/*.cpp', 'main/bullet/*.cpp',
                         'main/math/*.cpp'):
             viewport += sorted(str(p) for p in Path('source/engine').glob(pattern))
@@ -177,7 +181,8 @@ def host_tests(args):
             'player_render orb_render shot_render item_render pellet_render popup boss_render '
             'palette_fx text_layer stage_entrance boss_gfx konngara_art_render '
             'konngara_combat_render konngara_combat_review konngara_defeat_render '
-            'konngara_intro_render menu_render bomb_render round_results').split()]
+            'konngara_intro_render menu_render bomb_render round_results mima_render mima_review '
+            'mima_combat_render mima_phase1_review mima_defeat_render').split()]
         intro = ['tests/test_konngara.cpp', 'tests/heap_probe.cpp',
                  *eng('main/boss/konngara_intro', 'main/math/trig')]
         intro += [platform + p + '.cpp' for p in

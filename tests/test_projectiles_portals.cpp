@@ -259,11 +259,41 @@ static void portals()
     std::puts("Portals: single/paired/self fallback, both slot orders, all 60 frames/19 exit forces, cooldown/reset/re-entry passed");
 }
 
+static void delay_clouds()
+{
+    orb_set_position(10000,10000);invincible=true;rank=RANK_EASY;pellet_speed=0;
+    shots_initialize();Pellets.init();Pellets.spawn_with_cloud=true;
+    Pellets.add_single(100,100,0,32);Pellets.spawn_with_cloud=false;
+    const int x=Pellets.at(0).cur_left.v;
+    for(int age=2;age<=8;++age) {
+        assert(!Pellets.update());const auto &p=Pellets.at(0);
+        assert(p.cloud_frame==age && !p.moving && p.cur_left.v==x && Pellets.alive_count()==1);
+        Pellets.decay();assert(!p.decay_frame); // bombs do not invent moving clouds
+    }
+    Pellets.update();assert(Pellets.at(0).moving && !Pellets.at(0).cloud_frame && Pellets.at(0).cloud_released);
+    assert(Pellets.at(0).cur_left.v==x);
+    Pellets.update();assert(!Pellets.at(0).cloud_released && Pellets.at(0).cur_left.v==x+32);
+    Pellets.init();Pellets.spawn_with_cloud=true;
+    for(int i=0;i<101;++i) Pellets.add_single(100+i,100,0,32);
+    assert(Pellets.alive_count()==100);
+    Pellets.init();assert(!Pellets.spawn_with_cloud && !Pellets.alive_count());
+    Pellets.add_single(100,100,0,32);Pellets.decay();
+    Pellets.spawn_with_cloud=true;Pellets.add_single(200,100,0,32);Pellets.spawn_with_cloud=false;
+    const auto cloud=Pellets.at(1);
+    Pellets.reset_nonclouds();
+    assert(!Pellets.at(0).moving && !Pellets.at(0).decay_frame && Pellets.alive_count()==1);
+    assert(!std::memcmp(&cloud,&Pellets.at(1),sizeof(cloud)));
+    Pellets.reset_nonclouds();assert(!std::memcmp(&cloud,&Pellets.at(1),sizeof(cloud)));
+    Pellets.init();
+    std::puts("Delay clouds: source2..8 cel timing, release after movement/collision, reserved100-slot capacity, unchanged bomb behavior and ordinary-pellet default passed");
+}
+
 int main(int argc, char **argv)
 {
     if (argc == 1) card_presence_and_hp();
     if (argc == 1 || std::strcmp(argv[1], "orb") == 0) orb_ceiling_bounces();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();
+    if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) delay_clouds();
     if (argc == 1 || std::strcmp(argv[1], "ofuda") == 0) ofuda_contacts();
     if (argc == 1 || std::strcmp(argv[1], "portals") == 0) portals();
 }

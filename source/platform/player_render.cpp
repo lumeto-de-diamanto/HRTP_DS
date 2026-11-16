@@ -120,6 +120,15 @@ void player_invincibility_render_frame()
     }
 }
 
+void player_render_default()
+{
+    const auto &state=player_get_state();
+    const int x=camera.x(state.x_position),y=Camera::y(state.y_position);
+    for(int i=0;i<5;++i) oamSetHidden(&oamMain,OAM_SLOT_DEATH_EFFECT+i,true);
+    oamSet(&oamMain,0,x,y,OAM_PRIORITY_GAMEPLAY,0,SpriteSize_16x16,SpriteColorFormat_16Color,
+        g_regular_gfx[SPRITE_IDLE_LEFT],-1,false,!view_visible(x,y,16,16),false,false,false);
+}
+
 static void death_puff_put(int left, int top, int cel)
 {
     const auto *tiles = reinterpret_cast<const u8 *>(Miko_tiles) + cel * REGULAR_FRAME_BYTES;

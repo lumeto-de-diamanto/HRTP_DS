@@ -10,4 +10,6 @@ void music_play_scene(int scene);
 void music_pause();
 void music_resume();
 void music_stop();
+// Fire-and-forget original two-native-tick fade; no VBlank/ACK or SFX changes.
+void music_fade_out_nonblock();
 const char *music_error();

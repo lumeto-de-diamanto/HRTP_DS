@@ -11,8 +11,8 @@ template<class T> inline T &testRegister(T (&registers)[16], unsigned channel) {
 inline uint32_t REG_SNDCAP0CNT{}, REG_SNDCAP1CNT{}, REG_SNDCAP0DAD{}, REG_SNDCAP1DAD{};
 inline uint32_t REG_SNDCAP0LEN{}, REG_SNDCAP1LEN{}, testAck{};
 inline bool testSendOK = true, testAutoAck = true, testAckPending = false;
-inline uint32_t testReply = 0, testSfxValue = 0;
-inline unsigned testSends[2]{}, testWaits = 0;
+inline uint32_t testReply = 0, testSfxValue = 0, testFadeValue = 0;
+inline unsigned testSends[3]{}, testWaits = 0;
 inline void *testSharedAddress = nullptr;
 inline const void *testLastFlush = nullptr;
 inline unsigned testFlushedBytes = 0;
@@ -32,13 +32,14 @@ inline unsigned testFlushedBytes = 0;
 #define SNDCAPCNT_ONESHOT (1u << 2)
 #define SND0CAPCNT_SOURCE_LEFT_MIXER 0
 #define SND1CAPCNT_SOURCE_RIGHT_MIXER 0
-enum { FIFO_USER_01 = 0, FIFO_USER_02 = 1, IRQ_TIMER1 = 1, ClockDivider_64 = 64 };
+enum { FIFO_USER_01 = 0, FIFO_USER_02 = 1, FIFO_USER_03 = 2, IRQ_TIMER1 = 1, ClockDivider_64 = 64 };
 inline void irqDisable(unsigned) {}
 inline void irqEnable(unsigned) {}
 inline bool fifoSendValue32(unsigned fifo, uint32_t value) {
     ++testSends[fifo];
     if (!testSendOK) return false;
     if (fifo == FIFO_USER_02) testSfxValue = value;
+    else if (fifo == FIFO_USER_03) testFadeValue = value;
     else { testAck = value; testAckPending = testAutoAck; }
     return true;
 }

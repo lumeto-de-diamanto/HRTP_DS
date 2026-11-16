@@ -27,11 +27,12 @@ HDI_DUMP_STAMP   := $(HDI_DUMP_DIR)/.stamp
 # Extraction creates multiple files at once. Explicit grouped targets let Make
 # find these inputs on the FIRST build and recover a deleted member safely
 # under -j. A stamp alone cannot describe an implicit rule's missing input.
-HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 CLEAR3 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
+HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 BOSS3 CLEAR3 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
 HDI_FILES := $(PACKFILE) $(addprefix $(HDI_DUMP_DIR)/,$(addsuffix .GRP,$(HDI_GRP_NAMES))) $(HDI_DUMP_DIR)/BOSS8.GRZ
-PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN KUZI1.GRC KUZI2.GRC BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
+PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN KUZI1.GRC KUZI2.GRC BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS BOSS3_1.BOS BOSS3_2.BOS BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
+PACKFILE_NAMES += BOSS3_M.PTN
 PACKFILE_FILES := $(addprefix $(PACKFILE_DIR)/,$(PACKFILE_NAMES))
-BACKGROUND_BINS := $(addprefix $(NITROFS_DIR)/,$(addsuffix .bin,st0 st1 st2 st3 st4 st5 st6 boss1))
+BACKGROUND_BINS := $(addprefix $(NITROFS_DIR)/,$(addsuffix .bin,st0 st1 st2 st3 st4 st5 st6 boss1 boss3))
 
 # If ANY extraction peer was deleted, regenerate the whole group before its
 # first consumer. Otherwise a late missing peer could re-extract files after
@@ -71,6 +72,31 @@ assets: $(SPRITES_DIR)/BombKuji.h
 assets: $(BACKGROUND_DIR)/HudPattern.h
 assets: $(BACKGROUND_DIR)/RoundResults.h
 assets: $(FONT_DIR)/ResultsSerif.h $(NITROFS_DIR)/licenses/LibreBodoni-OFL.txt
+assets: $(BACKGROUND_DIR)/boss3.h $(NITROFS_DIR)/mima_art.bin
+assets: $(SPRITES_DIR)/Missile.h $(SPRITES_DIR)/PelletCloud.h $(BACKGROUND_DIR)/MimaPaletteFx.h
+assets: $(SPRITES_DIR)/Pillar.h
+assets: $(BACKGROUND_DIR)/MimaDefeatPalette.h
+
+$(BACKGROUND_DIR)/MimaDefeatPalette.h: $(HDI_DUMP_DIR)/BOSS3.GRP $(TOOLS_DIR)/mima_defeat_palette_to_h.py $(TOOLS_DIR)/grp_to_bin.py
+	$(PYTHON) $(TOOLS_DIR)/mima_defeat_palette_to_h.py $< $@
+
+$(SPRITES_DIR)/Pillar.h: $(ASSETS_DIR)/sprites/pillar.bmp $(TOOLS_DIR)/pillar_to_h.py $(TOOLS_DIR)/mono_bmp_to_h.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/pillar_to_h.py $< $@
+
+$(SPRITES_DIR)/Missile.h: $(PACKFILE_DIR)/BOSS3_M.PTN $(TOOLS_DIR)/ptn_to_h.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/ptn_to_h.py $< $(SPRITES_DIR) Missile --quarter --halve dither --linear
+
+$(SPRITES_DIR)/PelletCloud.h: $(ASSETS_DIR)/sprites/pellet_cloud.bmp $(TOOLS_DIR)/mono_bmp_to_h.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/mono_bmp_to_h.py $< $(SPRITES_DIR) --name PelletCloud --cel-size 16 --halve rare
+
+$(BACKGROUND_DIR)/MimaPaletteFx.h: $(HDI_DUMP_DIR)/BOSS3.GRP $(TOOLS_DIR)/mima_palette_to_h.py $(TOOLS_DIR)/grp_to_bin.py
+	$(PYTHON) $(TOOLS_DIR)/mima_palette_to_h.py $< $@
+
+$(NITROFS_DIR)/mima_art.bin: $(PACKFILE_DIR)/BOSS3_1.BOS $(PACKFILE_DIR)/BOSS3_2.BOS $(HDI_DUMP_DIR)/BOSS3.GRP $(TOOLS_DIR)/mima_to_bin.py $(TOOLS_DIR)/bos_to_h.py $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/mima_to_bin.py $(PACKFILE_DIR) $(HDI_DUMP_DIR)/BOSS3.GRP $@
+
+$(BACKGROUND_DIR)/boss3.h $(NITROFS_DIR)/boss3.bin &: $(HDI_DUMP_DIR)/BOSS3.GRP $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/grp_to_bin.py $< $(BACKGROUND_DIR) $(NITROFS_DIR) boss3 --halve topleft2
 
 $(FONT_DIR)/ResultsSerif.h: $(ASSETS_DIR)/fonts/results_serif.bdf $(TOOLS_DIR)/results_serif_to_h.py
 	$(PYTHON) $(TOOLS_DIR)/results_serif_to_h.py $< $@

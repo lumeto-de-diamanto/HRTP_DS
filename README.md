@@ -52,7 +52,7 @@ Feature cases stay in small modules, with packaging assertions in one place.
 * [ ] Display
   * [x] Bullets
   * [x] Lasers, thin and thick
-  * [ ] Missiles
+  * [x] Missiles
   * [x] Bitmap background
   * [x] Tiles, turrets and barriers
   * [x] HUD
@@ -73,7 +73,7 @@ Feature cases stay in small modules, with packaging assertions in one place.
 * [ ] Bosses
   * [x] SinGyoku
   * [ ] YuugenMagan
-  * [ ] Mima
+  * [x] Mima
   * [ ] Elis
   * [ ] Kikuri
   * [ ] Sariel
@@ -112,7 +112,7 @@ Current controls:
 * **X**, or **A + B twice** — bomb.
 * **START** — pause/resume.
 * **SELECT + d-pad** — dev stage navigator (←/→: stage, ↑/↓: scene;
-  Shrine and the last Jigoku scene have five stages, other scenes four)
+  Shrine and Jigoku scenes 6–10/16–20 have five stages, other scenes four)
 
 ## AI disclaimer
 

@@ -8,6 +8,9 @@ enum NsOpcode { NS_NOTE = 1, NS_VOLUME, NS_LFO, NS_PAN, NS_PATCH,
                 NS_RHYTHM_LEVEL, NS_REL_VOLUME };
 enum NsCommand { NS_PLAY = 1, NS_RELEASE, NS_PAUSE, NS_RESUME, NS_MASK,
                   NS_SEEK, NS_CAPTURE, NS_SFX_LOAD };
+// FIFO_USER_03 carries a nonzero24-bit NS_PLAY generation to request a music
+// fade without an ACK. Old requests cannot attenuate a replacement/restarted song.
+constexpr uint32_t NS_PLAY_GENERATION_MASK = 0xffffffu;
 enum { NS_NO_LOOP = 0xffffffffu, NS_NO_GATE = 0xffffu };
 
 struct NsHeader {

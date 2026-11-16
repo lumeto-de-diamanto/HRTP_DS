@@ -8,7 +8,7 @@
 void stage_entrance_prepare()
 {
     // Includes orb/indicator, shots, items and the boss, but not HUD slots 48+.
-    for (int slot = 0; slot <= 40; ++slot) oamSetHidden(&oamMain, slot, true);
+    for (int slot = 0; slot <= 41; ++slot) oamSetHidden(&oamMain, slot, true);
     oamUpdate(&oamMain);
     stage_render_clear();
     canvas_clear();
@@ -18,7 +18,7 @@ void stage_entrance_animate(int stage_num, bool show_title)
 {
     // A boss may have prepared its frame/palette since prepare(). Keep that
     // shadow OAM hidden too, without resetting the boss's image/palette cache.
-    for (int slot = 0; slot <= 40; ++slot) oamSetHidden(&oamMain, slot, true);
+    for (int slot = 0; slot <= 41; ++slot) oamSetHidden(&oamMain, slot, true);
     if (show_title) {
         // Source first_stage_in_scene path: static cards, no player or orb.
         stage_render_frame();

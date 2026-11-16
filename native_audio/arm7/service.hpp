@@ -113,6 +113,7 @@ volatile NsShared *shared = nullptr;
 volatile uint32_t pending = 0;
 volatile bool nativeMode = false, paused = false, seeking = false, exiting = false;
 uint32_t maxCycles = 0;
+volatile uint32_t playbackGeneration = 0;
 
 void publish() {
     if (shared) engine.publish(shared->status, nativeMode, paused, maxCycles);
@@ -128,6 +129,7 @@ void audioInterrupt() {
     const uint16_t before = TIMER_DATA(2);
     if (clockPhase.interrupt(engine.tempo)) {
         engine.step();
+        if (engine.fade.finished) { nativeMode = false; captureStop(); }
         if (shared->status.captureState == 1 &&
             !(REG_SNDCAP0CNT & SNDCAPCNT_START_BUSY) && !(REG_SNDCAP1CNT & SNDCAPCNT_START_BUSY))
             shared->status.captureState = 2;
@@ -157,6 +159,14 @@ void sfxHandler(uint32_t value, void *) {
 #endif
 }
 
+void fadeHandler(uint32_t generation, void *) {
+    const int oldIME = enterCriticalSection();
+    if (!exiting && !seeking && nativeMode && generation &&
+        generation <= NS_PLAY_GENERATION_MASK && generation == playbackGeneration)
+        engine.beginFadeOut();
+    leaveCriticalSection(oldIME);
+}
+
 uint32_t command(uint32_t value) {
     if (!shared) return 1;
     const unsigned op = value >> 24;
@@ -167,6 +177,7 @@ uint32_t command(uint32_t value) {
     case NS_PLAY: {
         // This is still the previous song's ownership map. Stop it before
         // prepareMapping commits the replacement and reset starts any notes.
+        playbackGeneration = 0;
         hardware.stopAll();
         engine.header = nullptr;
         for (auto &voice : engine.voices) voice.active = false;
@@ -183,9 +194,11 @@ uint32_t command(uint32_t value) {
         hardware.blob = reinterpret_cast<const uint8_t *>(address);
         clockPhase.phase = 0; maxCycles = 0;
         engine.reset();
+        playbackGeneration = arg;
         break;
     }
     case NS_RELEASE:
+        playbackGeneration = 0; engine.fade = {};
         captureStop(); hardware.stopAll();
         nativeMode = false; paused = false;
         engine.header = nullptr; // caller may free the old blob after this ACK
@@ -253,6 +266,7 @@ void init() {
     fifoSetAddressHandler(FIFO_USER_01, addressHandler, nullptr);
     fifoSetValue32Handler(FIFO_USER_01, commandHandler, nullptr);
     fifoSetValue32Handler(FIFO_USER_02, sfxHandler, nullptr);
+    fifoSetValue32Handler(FIFO_USER_03, fadeHandler, nullptr);
     // Timer 2 belongs to libnds' system counter. Read it for profiling without
     // repurposing it (doing so would break filesystem/system timing).
     systemCounterSetup();

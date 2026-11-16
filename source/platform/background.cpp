@@ -12,6 +12,7 @@
 #include "backgrounds/st5.h"
 #include "backgrounds/st6.h"
 #include "backgrounds/boss1.h"
+#include "backgrounds/boss3.h"
 
 #include "file_load.c"
 #include "video.hpp"
@@ -31,17 +32,17 @@ static const size_t scene_palette_sizes[7] = {
     sizeof(st6_palette),
 };
 
-static void load_named_background(const char *file_name, const unsigned short *palette, size_t palette_size, bool boss) {
+static bool load_named_background(const char *file_name, const unsigned short *palette, size_t palette_size, bool boss) {
     void *bin_buf;
     size_t bin_size;
     if (!file_load(file_name, &bin_buf, &bin_size)) {
         printf("Error opening %s!", file_name);
-        return;
+        return false;
     }
     if (bin_size != BACKGROUND_W * VIEW_H) {
         printf("Invalid background size: %s", file_name);
         free(bin_buf);
-        return;
+        return false;
     }
     // Palette budget: backgrounds use entries 0..207 only (palette.hpp).
     // Entries 0..15 hold the original GRP colors (the round palette).
@@ -59,6 +60,7 @@ static void load_named_background(const char *file_name, const unsigned short *p
     boss_background = boss;
     video_apply_camera();
     bgShow(g_bg_id_background);
+    return true;
 }
 
 void load_background(int scene) {
@@ -71,4 +73,8 @@ void load_background(int scene) {
 
 void load_boss_background() {
     load_named_background("nitro:/boss1.bin", boss1_palette, sizeof(boss1_palette), true);
+}
+
+bool load_mima_background() {
+    return load_named_background("nitro:/boss3.bin",boss3_palette,sizeof(boss3_palette),true);
 }

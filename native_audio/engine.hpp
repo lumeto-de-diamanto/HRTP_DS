@@ -62,6 +62,10 @@ public:
         MdrvSoftwareLfo pitch{0, {}}, amp{0, {}};
     };
     struct Cursor { uint32_t index = 0, epoch = 0; };
+    struct FadeOut {
+        bool active = false, finished = false;
+        unsigned attenuation = 0, remaining = 2;
+    } fade;
     explicit Engine(Backend &backend) : hw(backend) {}
     const NsHeader *header = nullptr;
     const NsSample *samples = nullptr;
@@ -127,6 +131,7 @@ public:
 
     void reset() {
         hw.stopAll();
+        fade = {};
         tick = notes = loops = errors = 0;
         tempo = header ? header->tempo : 76;
         for (unsigned slot = 0; slot < NS_SLOTS; ++slot) {
@@ -140,6 +145,7 @@ public:
 
     void step() {
         if (!header || tick == UINT32_MAX) { ++errors; return; }
+        if (fade.finished) return;
         ++tick;
         for (unsigned slot = 0; slot < NS_SLOTS; ++slot) {
             auto &v = voices[slot];
@@ -171,11 +177,15 @@ public:
                 if (v.releasing && !v.level) stop(slot);
             } else if (!v.gate) stop(slot);
             if (!v.active) continue;
-            const int delta = v.pitch.tick(slot >= 6);
-            v.amp.tick(slot >= 6);
-            if (slot < 6) {
-                const int changed = std::max(1, int(v.fnum) + delta);
-                v.period = std::clamp<uint32_t>((uint32_t(v.basePeriod) * v.fnum + changed / 2) / changed, 1, 65535);
+            // MDRV2's fade branch substitutes the global attenuation for AM
+            // and bypasses software pitch/AM LFO ticks; notes/envelopes continue.
+            if (!fade.active) {
+                const int delta = v.pitch.tick(slot >= 6);
+                v.amp.tick(slot >= 6);
+                if (slot < 6) {
+                    const int changed = std::max(1, int(v.fnum) + delta);
+                    v.period = std::clamp<uint32_t>((uint32_t(v.basePeriod) * v.fnum + changed / 2) / changed, 1, 65535);
+                }
             }
             if (!hw.silent && !hw.busy(slot) && !v.countedEnd && v.age > 1 && v.gate &&
                 !(slot >= 9 && v.gate == NS_NO_GATE)) {
@@ -185,6 +195,22 @@ public:
             update(slot);
         }
         processEvents();
+        // Driver0x119d1..0x11a09 updates attenuation AFTER channel work:
+        // level1 becomes audible on tick3; level127 stops music at tick254.
+        if (fade.active && --fade.remaining == 0) {
+            fade.remaining = 2;
+            if (++fade.attenuation == 127) {
+                fade.active = false; fade.finished = true;
+                hw.stopAll();
+                for (auto &voice : voices) { voice.active = false; voice.gain = 0; }
+            }
+        }
+    }
+
+    bool beginFadeOut() {
+        if (!header) return false;
+        if (!fade.active && !fade.finished) { fade = {}; fade.active = true; }
+        return true; // repeated requests never restart or brighten a fade
     }
 
     void stop(unsigned slot) { voices[slot].active = false; hw.stop(slot); }
@@ -235,13 +261,20 @@ private:
     }
     void update(unsigned slot) {
         auto &v = voices[slot];
+        const int amplitude = fade.active ? int(fade.attenuation) : v.amp.value;
         if (slot < 6) {
-            int tl = std::min(127, ((127 - v.volume) + v.amp.value) & 255);
+            int tl = std::min(127, ((127 - v.volume) + amplitude) & 255);
             v.gain = gains[127 - tl];
         } else if (slot < 9) {
-            int level = v.level * (v.volume + 1) / 256 - (v.amp.value >> 3);
+            int level = v.level * (v.volume + 1) / 256 - (amplitude >> 3);
             v.gain = gains[128 + std::clamp(level, 0, 15)];
-        } else v.gain = v.rhythmLog ? rhythm_gain(v.volume) : uint32_t(v.volume) * 65535 / 1953;
+        } else {
+            const unsigned attenuation = fade.active ? fade.attenuation >> 1 : 0;
+            v.gain = v.rhythmLog ? rhythm_gain(v.volume + attenuation) : uint32_t(v.volume) * 65535 / 1953;
+            // Legacy linear containers lack separate master/drum levels.
+            // Current soundtrack tracks use the original log-level metadata.
+            if (!v.rhythmLog && fade.active) v.gain = uint32_t(v.gain) * rhythm_gain(attenuation) / 65535;
+        }
         const uint16_t gain = (mask & (1u << slot)) && v.pan && v.mixer ? v.gain : 0;
         hw.control(slot, v.period, gain, v.pan == 1 ? 0 : v.pan == 2 ? 127 : 64);
     }

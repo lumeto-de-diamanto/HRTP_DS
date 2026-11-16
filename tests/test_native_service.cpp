@@ -109,6 +109,37 @@ static void exerciseSong(NsShared *mailbox, const void *data, unsigned bytes) {
     snapshot.unchanged();
     for (unsigned ch = 0; ch < 16; ++ch) if (ch != 3 && ch != 8) assert(testSound[ch] == 0);
     assert(send(NS_PLAY) == 0 && engine.tick == 0);
+    // The renderer/ARM9 need not advance a frame: ARM7's native timer owns the
+    // entire fade. Exercise it with live SFX and replacement/restart races.
+    assert(send(NS_PLAY,0x101)==0);
+    fadeHandler(0,nullptr);fadeHandler(0x102,nullptr);fadeHandler(0x1000000,nullptr);
+    assert(!engine.fade.active);
+    seeking=true;fadeHandler(0x101,nullptr);seeking=false;assert(!engine.fade.active);
+    fadeHandler(0x101,nullptr);assert(engine.fade.active && !engine.fade.attenuation);
+    while(engine.tick<40) audioInterrupt();
+    const auto fade=engine.fade;const auto fadeTick=engine.tick;
+    assert(send(NS_PAUSE)==0);
+    for(int i=0;i<100;++i) audioInterrupt();
+    assert(engine.tick==fadeTick && engine.fade.attenuation==fade.attenuation && engine.fade.remaining==fade.remaining);
+    assert(send(NS_RESUME)==0);snapshot.unchanged();
+    assert(send(NS_PLAY,0x102)==0 && engine.tick==0 && !engine.fade.active && !engine.fade.finished);
+    fadeHandler(0x101,nullptr);assert(!engine.fade.active); // stale request cannot fade the new play
+    fadeHandler(0x102,nullptr);assert(engine.fade.active);
+    for(unsigned tick=1;tick<=254;++tick) {
+        while(engine.tick<tick) { assert(nativeMode);audioInterrupt(); }
+        assert(engine.fade.attenuation==tick/2);
+        if(tick==51) { const auto state=engine.fade;fadeHandler(0x102,nullptr);assert(engine.fade.remaining==state.remaining); }
+        snapshot.unchanged();
+    }
+    assert(!nativeMode && engine.fade.finished && engine.header); // blob still owned until RELEASE ACK
+    const auto end=engine.tick;audioInterrupt();assert(engine.tick==end);
+    fadeHandler(0x102,nullptr);assert(!engine.fade.active);
+    assert(send(NS_RESUME)==0 && !nativeMode);
+    for(unsigned ch=0;ch<16;++ch) if(ch!=3 && ch!=8) assert(!testSound[ch]);
+    assert(send(NS_RELEASE)==0 && !engine.header && !playbackGeneration);
+    fadeHandler(0x102,nullptr);assert(!engine.fade.active);
+    assert(send(NS_PLAY,0x103)==0 && nativeMode && engine.tick==0 && !engine.fade.finished);
+    snapshot.unchanged();
     reinterpret_cast<NsHeader *>(0x02000000)->version = 99;
     assert(send(NS_PLAY) != 0 && !nativeMode && !engine.header);
     assert(send(NS_MASK, 1) != 0);
@@ -216,5 +247,5 @@ int main(int argc, char **argv) {
     sfxHandler(1, nullptr);
     for (auto value : testSound) assert(value == 0);
     assert(munmap(ram, 0x400000) == 0);
-    std::puts("ARM7 game service: reserved DS3/8, SSG0 remap/collision, SFX bank, music lifecycle isolation and shutdown passed");
+    std::puts("ARM7 game service: reserved DS3/8, SSG0 remap/collision, SFX bank, native-timer fade/pause/replay/stale-generation rejection/automatic silence and release ownership isolation passed");
 }

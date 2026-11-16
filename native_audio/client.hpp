@@ -40,6 +40,7 @@ public:
     }
     bool stop() {
         if (!send(NS_RELEASE)) return false;
+        playGeneration = 0;
         return true;
     }
     bool unload() {
@@ -69,7 +70,19 @@ public:
         shared->blobBytes = bytes;
         return true;
     }
-    bool play() { return blob && send(NS_PLAY); }
+    bool play() {
+        if (!blob) return false;
+        nextGeneration = (nextGeneration + 1) & NS_PLAY_GENERATION_MASK;
+        if (!nextGeneration) nextGeneration = 1;
+        playGeneration = 0;
+        if (!send(NS_PLAY, nextGeneration)) return false;
+        playGeneration = nextGeneration;
+        return true;
+    }
+    bool fadeOut() {
+        return healthy && shared && blob && playGeneration &&
+            fifoSendValue32(FIFO_USER_03, playGeneration);
+    }
     bool loadSfx(const char *path) {
         if (!healthy || !shared) return false;
         FILE *file = std::fopen(path, "rb");
@@ -134,5 +147,6 @@ private:
     uint8_t *sfxBlob = nullptr, *uncertainSfx = nullptr;
     uint32_t sfxBytes = 0;
     bool acknowledged = false;
+    uint32_t nextGeneration = 0, playGeneration = 0;
 };
 } // namespace native_audio

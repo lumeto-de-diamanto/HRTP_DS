@@ -1,11 +1,12 @@
 #pragma once
 
-// Only implemented bosses are reachable; Jigoku's last scene now includes20.
-constexpr int scene_stage_count(int scene) { return scene == 0 || scene == 6 ? 5 : 4; }
+// Only implemented bosses are reachable, including Jigoku Stage10 and20.
+constexpr int scene_stage_count(int scene) { return scene == 0 || scene == 2 || scene == 6 ? 5 : 4; }
 constexpr bool stage_has_singyoku(int scene, int stage) { return scene == 0 && stage == 4; }
+constexpr bool stage_has_mima(int scene, int stage) { return scene == 2 && stage == 4; }
 constexpr bool stage_has_konngara(int scene, int stage) { return scene == 6 && stage == 4; }
 constexpr bool stage_has_boss(int scene, int stage) {
-    return stage_has_singyoku(scene,stage) || stage_has_konngara(scene,stage);
+    return stage_has_singyoku(scene,stage) || stage_has_mima(scene,stage) || stage_has_konngara(scene,stage);
 }
 constexpr int stage_number(int scene, int stage)
 {

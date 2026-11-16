@@ -49,6 +49,8 @@
 #include "upper_hud.hpp"
 #include "konngara_intro_render.hpp"
 #include "konngara_combat_render.hpp"
+#include "mima_combat_render.hpp"
+#include "backgrounds/MimaPaletteFx.h"
 
 #include "stagedat/stagedat0.h"
 #include "stagedat/stagedat1.h"
@@ -73,6 +75,8 @@ static unsigned int frame;
 static bool wait_for_shot; // ReC98 stage_wait_for_shot_to_begin
 static KonngaraCombat konngara;
 static KonngaraCombatView konngara_view;
+static MimaPhase1 mima;
+static MimaCombatView mima_view;
 static bool jigoku_cleared;
 static const PlayerDeathFrame *player_death_frame;
 alignas(4) static u16 regular_bomb_canvas[256*256];
@@ -113,6 +117,14 @@ static void check_music()
         swiWaitForVBlank();
 }
 
+static void check_mima(bool okay,const char *part)
+{
+    if(okay) return;
+    mima_view.end();music_stop();video_stage_reveal();consoleDemoInit();
+    printf("Mima %s asset/audio error\n%s",part,music_error());
+    while(true) swiWaitForVBlank();
+}
+
 // The game's own 1-based stage number (Shrine = 1-5, then route stages
 // 6-20). Makai and Jigoku are *parallel* routes: scenes 1/2 are both
 // stages 6-10, 3/4 are 11-15, 5/6 are 16-20.
@@ -134,6 +146,10 @@ static void render_hud()
         const auto &s=konngara.state();
         upper_hud_boss(s.health.hp,s.hp_displayed,10,16);
         radar_boss={344,156,!s.complete}; // centre of the source112x72 Konngara hitbox
+    } else if(stage_has_mima(current_scene,current_stage)) {
+        const auto &s=mima.state();
+        upper_hud_boss(s.health.hp,s.hp_displayed,2,6);
+        radar_boss={s.entity.left+64,s.entity.top+80,!s.checkpoint};
     } else upper_hud_boss_hide();
     hud_render(lives, global_stage_num());
     hud_radar_render(radar_boss);
@@ -143,10 +159,11 @@ static void render_frame()
 {
     const bool boss = stage_has_singyoku(current_scene, current_stage);
     const bool final_boss=stage_has_konngara(current_scene,current_stage);
+    const bool mima_boss=stage_has_mima(current_scene,current_stage);
     video_bomb_prepare(!player_death_frame && player_bomb().active(),player_bomb().frame(),frame);
     if(!final_boss && (player_bomb().active() || video_bomb_effect_active()) && !g_canvas_target)
         regular_bomb_canvas_owned=canvas_buffer_begin(regular_bomb_canvas);
-    if(!final_boss && !player_death_frame && !g_canvas_target) video_apply_camera();
+    if(!final_boss && !mima_boss && !player_death_frame && !g_canvas_target) video_apply_camera();
     stage_render_frame();
     // Erase only previous effects; the background scrolls in hardware and
     // BG0/OAM HUD elements never go through the software canvas.
@@ -154,10 +171,14 @@ static void render_frame()
     canvas_playfield_clip(true);
     if(!player_death_frame) player_invincibility_render_frame();
     if(final_boss) check_konngara(konngara_view.frame(konngara.state()),"frame");
+    if(mima_boss) check_mima(mima_view.compose(mima.state(),mima.missiles()),"frame");
     if(!player_death_frame) player_render_frame();
     shots_render_frame();
     orb_render_frame();
-    pellet_render_frame();
+    if(mima_boss) {
+        const auto &s=mima.state();
+        pellet_render_colored(Mima_palette_fx[s.darkness/4][s.flash ? 1+s.flash_darkness/4 : 0][7]);
+    } else pellet_render_frame();
     item_render_frame();
     item_rings_frame();
     if(!player_death_frame) popup_render_frame(); // rendering normally ages these
@@ -167,15 +188,21 @@ static void render_frame()
     if(player_death_frame) player_render_death(*player_death_frame);
     canvas_playfield_clip(false);
     if(!player_death_frame) render_hud(); // source updates lost-life resources after recovery
-    if(player_death_frame) video_apply_death_shake(player_death_frame->shake_y,final_boss);
-    else {
-        bgSetScroll(g_bg_id_canvas,0,0);
-        bgSetScroll(g_bg_id_tiles,camera.left,0);
-        if(!final_boss) bgSetScroll(g_bg_id_background,background_scroll_x(),0);
-        if(player_bomb().active() || video_bomb_effect_active())
-            video_apply_death_shake(video_bomb_shake(),final_boss);
+    // Mima's early-VBlank presenter owns palette, camera and shake commits.
+    if(!mima_boss) {
+        if(player_death_frame) video_apply_death_shake(player_death_frame->shake_y,final_boss);
+        else {
+            bgSetScroll(g_bg_id_canvas,0,0);
+            bgSetScroll(g_bg_id_tiles,camera.left,0);
+            if(!final_boss) bgSetScroll(g_bg_id_background,background_scroll_x(),0);
+            if(player_bomb().active() || video_bomb_effect_active())
+                video_apply_death_shake(video_bomb_shake(),final_boss);
+        }
     }
-    if(final_boss) {
+    if(mima_boss) {
+        canvas_buffer_prepare();
+        do { swiWaitForVBlank(); } while(!mima_view.present(player_death_frame ? player_death_frame->shake_y : -1));
+    } else if(final_boss) {
         canvas_buffer_prepare(); // after lasers, pellets and all other effects
         do { swiWaitForVBlank(); } while(!konngara_view.present());
     } else if(g_canvas_target) {
@@ -223,6 +250,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     if (stage < 0 || stage >= scene_stage_count(scene)) stage = 0;
     const bool boss = stage_has_boss(scene, stage);
     const bool final_boss=stage_has_konngara(scene,stage);
+    const bool mima_boss=stage_has_mima(scene,stage);
     const bool previous_boss = stage_has_boss(current_scene, current_stage);
     const bool regular_handoff=preserve_score && !boss && !previous_boss &&
         scene==current_scene && stage==current_stage+1;
@@ -241,6 +269,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     }
     bgSetScroll(g_bg_id_canvas,0,0);
     konngara_view.end(); // also releases the temporary OBJ lease on navigation/restart
+    mima_view.end();
     video_bomb_reset();
     jigoku_cleared=false;
     upper_hud_invalidate();
@@ -263,7 +292,9 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     // cards/items render through (the original's ptn_load "retains the
     // current hardware palette").
     if(!regular_handoff) {
-        if (stage_has_singyoku(scene,stage)) load_boss_background(); else load_background(scene);
+        if (stage_has_singyoku(scene,stage)) load_boss_background();
+        else if(mima_boss) check_mima(load_mima_background(),"background");
+        else load_background(scene);
     }
     palette_apply_round();
 
@@ -304,7 +335,12 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         check_music();
         return; // ALICE continues from the entrance, without a second play call
     }
-    render_hud();
+    if(mima_boss) {
+        // The controller's direction draw belongs AFTER the spread-in. Do not
+        // reset it early merely to populate the title's fixed HUD.
+        upper_hud_render(lives,rem_bombs,stage_timer,UpperHudMode::Boss);
+        upper_hud_boss(12,0,2,6);hud_render(lives,10);hud_radar_render({320,200,true});
+    } else render_hud();
     // No fully rendered gameplay frame may expose the orb/cards before the
     // entrance. Later-stage card ripple precedes STAGE NN, as in ReC98.
     // Initialization may overrun VBlank. Affine BG reference-point writes
@@ -314,6 +350,14 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     video_apply_camera();
     stage_entrance_animate(global_stage_num(), current_stage == 0 || boss);
     wait_for_shot = !boss;
+    if(mima_boss) {
+        check_mima(mima_view.begin(true),"combat");
+        check_mima(music_play_track(NATIVE_LEGEND),"music");
+        check_mima(mima_entrance_play(mima_view),"entrance");
+        mima.reset(true); // both approved blocks; no practice resource presets
+        render_frame();
+        check_music();return; // LEGEND continues, never restart after spread-in
+    }
     if(regular_handoff && (REG_VCOUNT<192 || REG_VCOUNT>=200))
         do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
     render_frame(); // source life-loop handoff: player/orb appear before BGM
@@ -369,6 +413,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     if(serving && (keys_held&KEY_B)) { wait_for_shot=false;serving=false; }
     const bool boss=stage_has_boss(current_scene,current_stage);
     const bool final_boss=stage_has_konngara(current_scene,current_stage);
+    const bool mima_boss=stage_has_mima(current_scene,current_stage);
     const bool entrance=stage_has_singyoku(current_scene,current_stage) && singyoku_state().phase==SG_ENTRANCE;
     if(entrance) singyoku_update();
     else player_update(keys_held,keys_down);
@@ -395,7 +440,28 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 return;
             }
             konngara.update_lasers();
-        } else if(boss) {
+        } else if(mima_boss) {
+            mima.update(bomb_damage);
+            if(mima.state().checkpoint) {
+                // Lethal boss contact wins before any laser/orb/shot/pellet or
+                // timer pass, including an already-pending player hit.
+                player_is_hit=false;mima.clear_defeat_projectiles();Pellets.reset_nonclouds();
+                if(stage_score>hiscore) hiscore=stage_score;
+                render_hud();hud_radar_render();
+                check_mima(mima_view.defeat(mima.state()),"defeat");
+                player_bomb_cancel();
+                // Defeat leaves an empty canvas and the default Reimu pose.
+                // Release buffering BEFORE the existing hardware results capture.
+                mima_view.end();
+                const StageBonus bonus=roundbonus_compute(10,lives);
+                stage_score+=bonus.total;
+                if(stage_score>hiscore) hiscore=stage_score;
+                round_results_run(bonus,10);
+                stage_load(4,0,false,true);
+                return;
+            }
+            mima.update_lasers();
+        } else if(stage_has_singyoku(current_scene,current_stage)) {
             singyoku_update(bomb_damage);
             if(singyoku_state().phase==SG_DEFEATED) {
                 player_is_hit=false;
@@ -446,7 +512,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
             pellet_speed=pellet_speed>0 ? 0 : pellet_speed-2;
             if(pellet_speed<-15) pellet_speed=-15;
             stage_reset(); // reset obstacle/portal clocks, not cards, HP or orb
-            if(!final_boss) swiWaitForVBlank(); // hold the last effect before recovery
+            if(!final_boss && !mima_boss) swiWaitForVBlank(); // buffered bosses already held it
         }
     }
     if(!boss && stage_is_cleared()) {
@@ -471,7 +537,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         stage_load(current_scene,next,false,true);
         // stage_load already presented the first serve frame. A second regular
         // render here could rewrite affine scroll after that VBlank has ended.
-        if(!stage_has_boss(current_scene,current_stage) || stage_has_konngara(current_scene,current_stage)) return;
+        if(!stage_has_singyoku(current_scene,current_stage)) return;
     }
     if(stage_score>hiscore) hiscore=stage_score;
     camera.follow(player_center_x());render_frame();

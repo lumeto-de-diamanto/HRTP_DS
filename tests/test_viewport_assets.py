@@ -8,9 +8,11 @@ import subprocess
 import sys
 import unittest
 
-from grp_to_bin import decode_grp, halve_background
+from grp_to_bin import decode_grp, halve_background, pack_palette
 from ptn_to_h import decode_ptn
 from hud_pattern_to_h import pattern, results_crop
+from mono_bmp_to_h import load_bmp
+from halve_image import shrink_image
 
 
 def layout_bytes(scene):
@@ -45,11 +47,17 @@ class ViewportAssets(unittest.TestCase):
         self.assertLess(load.index('stage_entrance_prepare()'), load.index('load_boss_background()'))
         self.assertLess(load.index('player_initialize()'), load.index('stage_entrance_animate('))
         presentations = list(re.finditer(r'(?<!\w)render_frame\(\);', load))
-        self.assertEqual(len(presentations), 2)  # distinct real Konngara/ordinary entrances
+        self.assertEqual(len(presentations), 3)  # Konngara, Mima, ordinary entrances
         self.assertLess(load.index('konngara_intro_play()'), load.index('konngara_view.begin()'))
         self.assertLess(load.index('konngara_view.begin()'), presentations[0].start())
         self.assertLess(load.index('stage_entrance_animate('), presentations[1].start())
-        self.assertLess(presentations[1].start(), load.index('music_play_track('))
+        self.assertLess(load.index('load_mima_background()'), load.index('stage_entrance_animate('))
+        self.assertLess(load.index('stage_entrance_animate('), load.index('mima_view.begin(true)'))
+        self.assertLess(load.index('mima_view.begin(true)'), load.index('music_play_track(NATIVE_LEGEND)'))
+        self.assertLess(load.index('music_play_track(NATIVE_LEGEND)'), load.index('mima_entrance_play('))
+        self.assertLess(load.index('mima_entrance_play('), load.index('mima.reset(true)'))
+        self.assertLess(load.index('mima.reset(true)'), presentations[1].start())
+        self.assertLess(presentations[2].start(), load.index('music_play_track(NATIVE_POSITIVE)'))
         for path in Path('source/engine').rglob('*'):
             if path.suffix in ('.cpp', '.hpp', '.h'):
                 self.assertNotRegex(path.read_text(), r'#include\s*[<\"][^>\"]*camera\.')
@@ -67,7 +75,7 @@ class ViewportAssets(unittest.TestCase):
                                  data[50:] + expected_cards + bytes([int(stage != 4)]))
 
     def test_backgrounds_keep_all_source_columns(self):
-        for name in [f'ST{i}' for i in range(7)] + ['BOSS1']:
+        for name in [f'ST{i}' for i in range(7)] + ['BOSS1', 'BOSS3']:
             with self.subTest(background=name):
                 image, palette, size = decode_grp(Path(f'assets/hdi_dump/{name}.GRP').read_bytes())
                 self.assertEqual(size, (400, 640))
@@ -128,9 +136,27 @@ def run_renderer(binary):
     strips = results_font_strips()
     sizes = [(sum(map(len, strips[:i])), len(strip)) for i, strip in enumerate(strips)]
     (runtime / 'results-labels.bin').write_bytes(bytes(v for pair in sizes for v in pair))
+    pillar,_,_=load_bmp(Path('assets/sprites/pillar.bmp'))
+    (runtime / 'mima-pillar.bin').write_bytes(bytes(p for x in (0,32)
+        for row in shrink_image([row[x:x+32] for row in pillar],'rare') for p in row))
+    image,raw,_=decode_grp(Path('assets/hdi_dump/BOSS3.GRP').read_bytes())
+    half,normal=halve_background(image,raw);samples={}
+    for y,row in enumerate(half):
+        for x,index in enumerate(row):
+            samples[index]=[image[y*2+a][x*2+b] for a in range(2) for b in range(2)]
+    states=[]
+    for fading in (False,True):
+        for step in range(16):
+            colors=[tuple((max(c//17,15-step) if fading else min(15,c//17+step))*17 for c in rgb) for rgb in raw]
+            state=[]
+            for i in range(len(normal)):
+                rgb=colors[i] if i<16 else tuple(sum(colors[p][c]//4 for p in samples[i]) for c in range(3)) if i in samples else normal[i]
+                state+=pack_palette([rgb])
+            states+=state
+    (runtime / 'mima-defeat-palettes.bin').write_bytes(struct.pack('<'+'H'*len(states),*states))
     destination = runtime / 'nitro:'
     destination.mkdir(parents=True, exist_ok=True)
-    for name in [f'st{i}' for i in range(7)] + ['boss1']:
+    for name in [f'st{i}' for i in range(7)] + ['boss1', 'boss3', 'mima_art']:
         shutil.copyfile(f'nitrofs/{name}.bin', destination / f'{name}.bin')
     shutil.copyfile('nitrofs/konngara_art.bin', destination / 'konngara_art.bin')
     shutil.copyfile('nitrofs/konngara_combat.bin', destination / 'konngara_combat.bin')

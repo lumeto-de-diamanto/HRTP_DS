@@ -8,4 +8,5 @@
 
 void load_background(int scene); // 0..6
 void load_boss_background(); // current M5 boss arena: SinGyoku / BOSS1.GRP
+bool load_mima_background(); // review-only boss3 arena, full camera width
 int background_scroll_x(); // regular scenery: center-anchored 1/2 speed; bosses: 1:1

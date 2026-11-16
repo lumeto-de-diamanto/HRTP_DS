@@ -71,6 +71,8 @@ enum pellet_group_t {
 
 struct Pellet {
     bool moving;
+    int cloud_frame; // source delay cloud:1..8, not a moving/damaging pellet
+    bool cloud_released; // release frame has no pellet ink until next update
     unsigned char motion_type;
     Subpixel cur_left;
     Subpixel cur_top;
@@ -86,8 +88,11 @@ struct Pellet {
 
 struct CPellets {
     Pellet p[PELLET_COUNT];
+    bool spawn_with_cloud=false;
 
     void init();
+    // Source defeat clear: moving pellets only; pending delay clouds survive.
+    void reset_nonclouds();
     // Spawns the pellets of a predefined group at the given position.
     void add_group(int left, int top, pellet_group_t group, subpixel_t speed);
     void add_single(int left, int top, int angle, subpixel_t speed,

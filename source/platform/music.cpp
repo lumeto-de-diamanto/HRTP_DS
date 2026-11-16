@@ -10,6 +10,7 @@ namespace {
 bool initialized;
 bool playing;
 bool paused;
+bool fading;
 int loaded_track = -1;
 native_audio::Client player;
 const char *error_message = "";
@@ -28,6 +29,7 @@ bool fail(const char *message)
     error_message = message;
     playing = false;
     paused = false;
+    fading = false;
     return false;
 }
 
@@ -50,6 +52,14 @@ void music_stop()
         error_message = "Native audio stop failed; buffer retained";
     playing = false;
     paused = false;
+    fading = false;
+}
+
+void music_fade_out_nonblock()
+{
+    if (!initialized || !playing || fading) return;
+    if (player.fadeOut()) fading = true;
+    else error_message = "Native music fade request failed";
 }
 
 bool music_play_track(NativeTrackId track)
@@ -60,7 +70,7 @@ bool music_play_track(NativeTrackId track)
         music_stop();
         return fail("Invalid native track");
     }
-    if (playing && loaded_track == track) {
+    if (playing && loaded_track == track && !fading) {
         if (paused)
             music_resume();
         return playing && !paused;
@@ -78,6 +88,7 @@ bool music_play_track(NativeTrackId track)
         return fail("ARM7 rejected native playback");
     playing = true;
     paused = false;
+    fading = false;
     error_message = "";
     return true;
 }

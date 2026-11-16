@@ -49,6 +49,13 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertIn('assets/processed/sprites/BombKuji.h', before)
                 self.assertIn('assets/processed/sprites/OrbArrow.h', before)
                 self.assertIn('assets/processed/sprites/BossArrow.h', before)
+                self.assertIn('assets/processed/backgrounds/boss3.h', before)
+                self.assertIn('nitrofs/boss3.bin', before)
+                self.assertIn('nitrofs/mima_art.bin', before)
+                for name in ('Missile','PelletCloud','Pillar'):
+                    self.assertIn(f'assets/processed/sprites/{name}.h', before)
+                self.assertIn('assets/processed/backgrounds/MimaPaletteFx.h', before)
+                self.assertIn('assets/processed/backgrounds/MimaDefeatPalette.h', before)
                 self.assertIn('assets/processed/backgrounds/HudPattern.h', before)
                 self.assertIn('assets/processed/backgrounds/RoundResults.h', before)
                 self.assertIn('assets/processed/fonts/ResultsSerif.h', before)
@@ -79,6 +86,15 @@ class AssetBuildTests(unittest.TestCase):
                                 'assets/processed/fonts/ResultsSerif.h',
                                  'assets/processed/sprites/OrbArrow.h',
                                  'assets/processed/sprites/BossArrow.h',
+                                 'assets/processed/backgrounds/boss3.h', 'nitrofs/boss3.bin',
+                                 'nitrofs/mima_art.bin', 'assets/hdi_dump/BOSS3.GRP',
+                                  'assets/packfile/BOSS3_1.BOS', 'assets/packfile/BOSS3_2.BOS',
+                                  'assets/packfile/BOSS3_M.PTN',
+                                  'assets/processed/sprites/Missile.h',
+                                   'assets/processed/sprites/PelletCloud.h',
+                                   'assets/processed/sprites/Pillar.h',
+                                   'assets/processed/backgrounds/MimaPaletteFx.h',
+                                   'assets/processed/backgrounds/MimaDefeatPalette.h',
                                 'nitrofs/licenses/LibreBodoni-OFL.txt'):
                     (root / path).unlink()
                 self.make_assets(root, jobs)

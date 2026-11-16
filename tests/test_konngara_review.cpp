@@ -116,8 +116,13 @@ void observe()
 }
 }
 
+int test_mima_music_starts=0,test_mima_pauses=0,test_mima_resumes=0,test_mima_stops=0,test_mima_fades=0;
+bool test_mima_music_allowed=true;
+void music_pause() { ++test_mima_pauses; }
+void music_resume() { ++test_mima_resumes; }
 bool music_play_track(NativeTrackId id)
 {
+    if(id==NATIVE_LEGEND) { ++test_mima_music_starts;return test_mima_music_allowed; }
     if(id==NATIVE_POSITIVE) { ++starts;return allow_music; }
     assert(id == NATIVE_ALICE);
     ++starts;
@@ -128,7 +133,8 @@ bool music_play_track(NativeTrackId id)
     obj_attempts = test_obj_attempts;
     return allow_music;
 }
-void music_stop() { ++stops; }
+void music_stop() { ++stops;++test_mima_stops; }
+void music_fade_out_nonblock() { ++test_mima_fades; }
 void sfx_stop() { ++sfx_stops; }
 const char *music_error() { return ""; }
 void music_play_scene(int scene) { assert(scene>=0 && scene<7);++scene_plays[scene]; }
@@ -635,6 +641,8 @@ struct DeathProbe {
     unsigned game_frame=0, timer=0;
     int score=0, pellet_x=0, pellet_y=0, pellet_vx=0, pellet_vy=0;
     size_t allocations=0, objects=0;
+    bool mima_active=false;
+    MimaPhase1 frozen_mima;
 } death_probe;
 
 void observe_player_death()
@@ -645,7 +653,10 @@ void observe_player_death()
             p.game_frame=frame;p.timer=stage_timer;p.score=stage_score;
             p.orb_x=orb_get_state().x_position;p.orb_y=orb_get_state().y_position;
             p.player_x=player_get_state().x_position;
-            p.boss_frame=stage_has_konngara(current_scene,current_stage) ? konngara.state().frame : singyoku_state().frame;
+            p.boss_frame=stage_has_konngara(current_scene,current_stage) ? konngara.state().frame :
+                stage_has_mima(current_scene,current_stage) ? mima.state().frame : singyoku_state().frame;
+            p.mima_active=stage_has_mima(current_scene,current_stage);
+            if(p.mima_active) p.frozen_mima=mima;
             p.pellet_x=Pellets.at(0).cur_left.v;p.pellet_y=Pellets.at(0).cur_top.v;
             p.pellet_vx=Pellets.at(0).velocity.x.v;p.pellet_vy=Pellets.at(0).velocity.y.v;
         }
@@ -653,7 +664,9 @@ void observe_player_death()
         assert(frame==p.game_frame && stage_timer==p.timer && stage_score==p.score);
         assert(orb_get_state().x_position==p.orb_x && orb_get_state().y_position==p.orb_y);
         assert(player_get_state().x_position==p.player_x);
-        assert((stage_has_konngara(current_scene,current_stage) ? konngara.state().frame : singyoku_state().frame)==p.boss_frame);
+        if(p.mima_active) assert(!std::memcmp(&p.frozen_mima,&mima,sizeof(mima)));
+        assert((stage_has_konngara(current_scene,current_stage) ? konngara.state().frame :
+            stage_has_mima(current_scene,current_stage) ? mima.state().frame : singyoku_state().frame)==p.boss_frame);
         assert(Pellets.at(0).cur_left.v==p.pellet_x && Pellets.at(0).cur_top.v==p.pellet_y);
         if(player_death_frame->returning) {
             ++p.returning;
@@ -795,8 +808,8 @@ void test_player_death()
         assert(test_bgs[2].y==test_bgs[1].y && test_bgs[3].y==test_bgs[1].y);
         ++death_probe.burst_commits;
     };
-    // Ordinary stage, both bosses, and deaths during a large-sprite attack.
-    for(int scene:{0,6}) for(int stage:{0,4}) {
+    // Ordinary stages, all three bosses, and deaths during a large-sprite attack.
+    for(int scene:{0,2,6}) for(int stage:{0,4}) {
         test_vblank_hook=nullptr;stage_load(scene,stage);
         if(stage_has_singyoku(scene,stage)) for(int i=0;i<200;++i) singyoku_update();
         const int starting_bombs=scene==6 && stage==0 ? 0 : 5;
@@ -1069,13 +1082,13 @@ void test_bombs()
     Pellets.init();Items.init();shots_initialize();popup_clear();player_initialize();
     canvas_begin_frame();assert(std::all_of(canvas_at(0,0),canvas_at(0,0)+VIEW_W*VIEW_H,[](u16 c){return c==0;}));
 
-    // Both production bosses: source last-life restriction and GLOBAL frame
+    // All production bosses: source last-life restriction and GLOBAL frame
     // cadence, not bomb-local %50. Two damage events land at global100/150.
-    for(int scene:{0,6}) for(int remaining_lives:{1,0}) {
+    for(int scene:{0,2,6}) for(int remaining_lives:{1,0}) {
         stage_load(scene,4);
         if(scene==0) for(int i=0;i<200;++i) singyoku_update();
         lives=remaining_lives;rem_bombs=1;frame=48;
-        const int hp=scene==0 ? singyoku_state().health.hp : konngara.state().health.hp;
+        const int hp=scene==0 ? singyoku_state().health.hp : scene==2 ? mima.state().health.hp : konngara.state().health.hp;
         const auto allocation_count=test_heap_attempts,obj_count=test_obj_attempts;
         orb_set_position(10000,200);gameplay_tick(KEY_X,KEY_X);
         white_frames=0;
@@ -1089,11 +1102,11 @@ void test_bombs()
             white_frames+=REG_MASTER_BRIGHT==0x4010;
             assert(REG_MASTER_BRIGHT_SUB==original_sub_master);
         }
-        assert((scene==0?singyoku_state().health.hp:konngara.state().health.hp)==hp-(remaining_lives==0?2:0));
+        assert((scene==0?singyoku_state().health.hp:scene==2?mima.state().health.hp:konngara.state().health.hp)==hp-(remaining_lives==0?2:0));
         assert(white_frames==1);
         assert(rem_bombs==0 && lives==remaining_lives && player_is_invincible());
         assert(test_heap_attempts==allocation_count && test_obj_attempts==obj_count);
-        assert(!regular_bomb_canvas_owned && bool(g_canvas_target)==(scene==6));
+        assert(!regular_bomb_canvas_owned && bool(g_canvas_target)==(scene==2 || scene==6));
         rem_bombs=1;orb_set_position(10000,200);gameplay_tick(KEY_X,KEY_X);
         for(int f=0;f<=65;++f) { orb_set_position(10000,200);gameplay_tick(0,0); }
         assert(REG_MASTER_BRIGHT==0x4005);
@@ -1104,5 +1117,205 @@ void test_bombs()
     }
     start_new_game();camera.snap_center();
     assert(test_obj_count==79 && test_heap_count==baseline_blocks && test_heap_bytes==baseline_heap);
-    std::puts("Bombs: unchanged mechanics/kuji, existing eight-frame native white-flash fade on regular/SinGyoku/Konngara stages, bottom unchanged, original pulse/shake/recovery/SFX, sparse redraws, pause at every fade step and exact brightness cleanup passed");
+    std::puts("Bombs: unchanged mechanics/kuji, existing eight-frame native white-flash fade on regular/SinGyoku/Mima/Konngara stages, bottom unchanged, original pulse/shake/recovery/SFX, sparse redraws, pause at every fade step and exact brightness cleanup passed");
+}
+
+namespace {
+struct MimaGameProbe {
+    bool first_mask=false;
+    int title_waits=0,spread_waits=0,outgoing_fade=0,defeat_waits=0,results_waits=0,exit_fade=0,black_waits=0;
+    int score=0,bonus=0,old_starts=0,old_stops=0,old_fades=0;
+    unsigned timer=0,game_frame=0;
+    OrbState orb{};
+    size_t heap=0,objects=0,blocks=0,bytes=0;
+} mima_game;
+
+void observe_mima_entry()
+{
+    auto &p=mima_game;test_keys_down=KEY_A;test_keys_held=0;
+    assert(stage_score==p.score && lives==6 && rem_bombs==4 && frame==p.game_frame);
+    if(current_stage==3) {
+        if(REG_MASTER_BRIGHT&31) {
+            assert(++p.outgoing_fade<=16 && REG_MASTER_BRIGHT==(0x8000|p.outgoing_fade));
+            assert(!REG_MASTER_BRIGHT_SUB);
+        }
+        return;
+    }
+    assert(current_scene==2 && current_stage==4 && stage_timer==2000 && camera.left==32);
+    assert(p.outgoing_fade==16 && test_obj_count==79 && test_obj_used==27840);
+    if(!g_canvas_target) {
+        ++p.title_waits;
+        for(int slot=0;slot<=41;++slot) assert(test_objs[slot].hidden);
+        assert(test_mima_music_starts==p.old_starts);
+    } else {
+        assert(++p.spread_waits<=102 && p.title_waits>0);
+        assert(test_mima_music_starts==p.old_starts+1);
+        assert(!regular_bomb_canvas_owned && !player_bomb().active() && Pellets.alive_count()==0);
+        assert(player_get_state().x_position==PLAYER_LEFT_START && orb_get_state().x_position==PLAYFIELD_RIGHT-ORB_W-8);
+    }
+}
+
+u16 capture_mima_default(int x,int y)
+{
+    assert(!g_canvas_target && !player_is_hit && !player_bomb().active());
+    assert(test_objs[40].hidden && test_objs[41].hidden && test_objs[OAM_SLOT_BOSS_ARROW].hidden);
+    assert(test_objs[0].size==SpriteSize_16x16 && !test_objs[0].hflip);
+    assert(!std::memcmp(test_objs[0].gfx,Miko_tiles,128)); // source idle-left, not final attack pose
+    // The capture itself writes bank D (the old canvas), so inspect its
+    // required empty input only before the first captured pixel is stored.
+    if(x==0 && y==0) assert(std::all_of(canvas_at(0,0),canvas_at(0,CANVAS_H),[](u16 ink){return ink==0;}));
+    assert(test_heap_count==mima_game.blocks && test_heap_bytes==mima_game.bytes);
+    return 0x8000|((x+y)&31); // recognizable outgoing capture for the real zipper
+}
+
+void observe_mima_result_commit()
+{
+    auto &p=mima_game;
+    if(p.exit_fade!=16 || p.first_mask) return;
+    assert(REG_MASTER_BRIGHT==0x8010 && REG_MASTER_BRIGHT_SUB==0x8010 && !g_canvas_target);
+    if(current_scene==4 && test_bgs[2].sx==32 && test_bgs[2].y==CANVAS_H) {
+        assert(current_stage==0 && camera.left==32 && REG_VCOUNT>=192 && REG_VCOUNT<200);
+        const auto *glyph=font16x16_find(JIS_TOUHOU_REIIDEN[0]);assert(glyph);
+        for(int y=0;y<24;++y) for(int x=0;x<32;++x) {
+            const bool ink=x>=8 && x<24 && y>=4 && y<20 && (glyph[y-4]&(0x8000>>(x-8)));
+            assert(*canvas_at(x,CANVAS_H+y)==(ink ? 0 : 0x8000));
+        }
+        p.first_mask=true;
+    }
+}
+
+void observe_mima_defeat()
+{
+    auto &p=mima_game;test_keys_down=KEY_B;test_keys_held=0;
+    assert(!player_death_frame && !player_is_hit && lives==0 && rem_bombs==2 && frame==p.game_frame);
+    assert(test_obj_attempts==p.objects);
+    assert(test_mima_fades==p.old_fades+1);
+    if(current_scene==2) {
+        assert(test_heap_attempts==p.heap);
+        assert(current_stage==4 && stage_timer==p.timer && mima.state().checkpoint && mima.state().health.hp==0);
+        assert(orb_get_state().x_position==p.orb.x_position && orb_get_state().y_position==p.orb.y_position);
+        assert(test_mima_stops==p.old_stops); // no abrupt stop during defeat/results
+        if(g_canvas_target) {
+            assert(++p.defeat_waits<300 && stage_score==p.score);
+            assert(mima.missiles().alive_count()==0);
+            for(const auto &laser:mima.state().lasers) assert(!laser.alive);
+        } else {
+            assert(stage_score==p.score+p.bonus && hiscore>=stage_score);
+            if(test_bgs[0].map==31) {
+                assert(++p.results_waits<1200);
+                if(REG_MASTER_BRIGHT&31) {
+                    assert(++p.exit_fade<=16 && REG_MASTER_BRIGHT==(0x8000|p.exit_fade));
+                    assert(REG_MASTER_BRIGHT_SUB==REG_MASTER_BRIGHT && test_bgs[3].map==16);
+                }
+            }
+        }
+    } else {
+        assert(current_scene==4 && current_stage==0 && stage_score==p.score+p.bonus && p.exit_fade==16);
+        if(!p.first_mask) {
+            assert(++p.black_waits==1 && REG_MASTER_BRIGHT==0x8010 && REG_MASTER_BRIGHT_SUB==0x8010);
+        } else assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
+    }
+}
+}
+
+void test_mima_stage10()
+{
+    // Natural Stage9 clear awards its usual tally, fades once, and enters the
+    // real Stage10 title/spread-in without borrowing practice score/resources.
+    start_new_game();stage_load(2,3);
+    const auto resident_blocks=test_heap_count,resident_bytes=test_heap_bytes;
+    lives=6;rem_bombs=4;stage_score=45678;stage_timer=600;frame=100;
+    stage_cards_removed_count=stage_card_total;wait_for_shot=true;
+    mima_game={};
+    mima_game.score=stage_score+stagebonus_compute(9,lives).total;
+    mima_game.game_frame=frame;mima_game.old_starts=test_mima_music_starts;
+    test_vblank_hook=observe_mima_entry;
+    gameplay_tick(0,0);test_vblank_hook=nullptr;test_keys_down=0;
+    assert(current_scene==2 && current_stage==4 && !wait_for_shot);
+    assert(mima_game.spread_waits==102 && mima.state().frame==0 && mima.state().health.hp==12);
+    assert(g_canvas_target && test_heap_count==resident_blocks+2 && test_heap_bytes==resident_bytes+144432+131072);
+    assert(stage_score==mima_game.score && lives==6 && rem_bombs==4);
+
+    // Loader/entrance consume exactly the controller's one direction draw,
+    // after presentation. No title/spread-in frame advances timer or combat.
+    initialize_irand(3456);irand();const int next_random=irand();initialize_irand(3456);
+    stage_load(2,4,false,true);assert(irand()==next_random);
+    assert(mima.state().frame==0 && mima.state().hp_displayed==0);
+    const int initial_hp=mima.state().health.hp;
+    orb_set_position(mima.state().entity.left+48,mima.state().entity.top+48);
+    gameplay_tick(0,0);assert(mima.state().health.hp==initial_hp-1 && stage_score==mima_game.score+5000);
+    assert(mima.state().hp_displayed==1 && frame==101); // original one-point HP fill cadence
+
+    // Real six-HP handoff continues into block2 rather than the isolated
+    // first-block oracle's checkpoint. Retain run score, timer and resources.
+    auto &state=const_cast<MimaPhase1State &>(mima.state());
+    state.health.hp=6;state.health.invincible=false;state.pattern=99;
+    orb_set_position(500,100);gameplay_tick(0,0);assert(state.phase==2);
+    for(int i=0;state.phase==2;++i) { assert(i<80);orb_set_position(500,100);gameplay_tick(0,0); }
+    assert(state.phase==3 && !state.checkpoint && state.health.hp==6);
+    const auto boss=mima;const unsigned paused_frame=frame,paused_timer=stage_timer;
+    const auto paused_orb=orb_get_state();
+    const auto allocations=test_heap_attempts,objects=test_obj_attempts;
+    music_pause();test_vblank_hook=[](){check_pause_dimming();test_keys_down=KEY_B;};
+    assert(!pause_menu_run());music_resume();test_vblank_hook=nullptr;test_keys_down=0;
+    assert(!std::memcmp(&boss,&mima,sizeof(mima)) && frame==paused_frame && stage_timer==paused_timer);
+    assert(!std::memcmp(&paused_orb,&orb_get_state(),sizeof(paused_orb)));
+    assert(test_heap_attempts==allocations && test_obj_attempts==objects);
+
+    // Surviving miss: normal recovery, with the same frozen Mima state and
+    // one VBlank per approved buffered death step (no extra recovery wait).
+    lives=1;rem_bombs=1;Pellets.init();Pellets.add_single(100,100,64,16);
+    death_probe={};death_probe.allocations=test_heap_attempts;death_probe.objects=test_obj_attempts;
+    test_vblank_hook=observe_player_death;player_is_hit=true;gameplay_tick(0,0);
+    test_vblank_hook=nullptr;
+    assert(death_probe.waits==99 && lives==0 && rem_bombs==2 && state.health.hp==6 && state.phase==3);
+    assert(stage_timer==death_probe.timer+200 && player_is_invincible());
+
+    // Lethal contact wins a pending fatal miss. The approved defeat freezes
+    // orb/timer/frame and sends exactly one fade; results credit only the
+    // existing Stage10 round tally, then the black-held load enters Stage11.
+    state.health.hp=1;state.health.invincible=false;state.health.invincibility_frame=0;
+    assert(const_cast<MissilePool &>(mima.missiles()).add(100,100,1,1));
+    assert(shootout_laser_spawn(state.lasers[0],100,100,120,120));
+    orb_set_position(state.entity.left+48,state.entity.top+48);
+    stage_timer=777;
+    const int old_scene_plays=scene_plays[4];const auto captures=test_capture_count;
+    mima_game={};mima_game.score=stage_score+5000;mima_game.bonus=roundbonus_compute(10,lives).total;
+    mima_game.timer=stage_timer;mima_game.game_frame=frame;mima_game.orb=orb_get_state();
+    mima_game.old_fades=test_mima_fades;mima_game.old_stops=test_mima_stops;
+    mima_game.heap=test_heap_attempts;mima_game.objects=test_obj_attempts;
+    mima_game.blocks=resident_blocks;mima_game.bytes=resident_bytes;
+    test_capture_source=capture_mima_default;test_vblank_hook=observe_mima_defeat;
+    test_bg_update_hook=observe_mima_result_commit;
+    player_is_hit=true;gameplay_tick(0,0);
+    test_capture_source=nullptr;test_vblank_hook=nullptr;test_bg_update_hook=nullptr;
+    test_keys_down=test_keys_held=0;
+    assert(mima_game.defeat_waits>79 && mima_game.results_waits>200 && mima_game.first_mask && mima_game.black_waits==1);
+    assert(test_capture_count==captures+1 && test_mima_fades==mima_game.old_fades+1 && scene_plays[4]==old_scene_plays+1);
+    assert(current_scene==4 && current_stage==0 && global_stage_num()==11 && wait_for_shot && !jigoku_cleared);
+    assert(stage_score==mima_game.score+mima_game.bonus && lives==0 && rem_bombs==2 && stage_timer==1400);
+    assert(!g_canvas_target && test_heap_count==resident_blocks && test_heap_bytes==resident_bytes);
+    assert(test_obj_count==79 && test_obj_used==27840 && test_objs[40].hidden && test_objs[41].hidden);
+    const int credited=stage_score;gameplay_tick(0,0);assert(stage_score==credited); // no repeated boss bonus
+
+    // Navigation/restart also release both Mima allocations and leave shared
+    // SinGyoku/Konngara cache ownership intact, including repeated re-entry.
+    for(int replay=0;replay<3;++replay) {
+        stage_load(2,4);assert(g_canvas_target && mima.state().health.hp==12 && !mima.state().checkpoint);
+        stage_load(6,4);assert(g_canvas_target && test_obj_count==80);
+        stage_load(2,4);assert(g_canvas_target && test_obj_count==79);
+        stage_load(0,4);assert(!g_canvas_target && test_obj_count==79 && test_objs[41].hidden);
+        assert(test_heap_count==resident_blocks && test_heap_bytes==resident_bytes);
+    }
+    // Fatal Mima miss -> NEW GAME uses the real menu and clears buffered state.
+    stage_load(2,4);lives=0;stage_score=65432;
+    death_probe={};death_probe.fatal=true;death_probe.new_run=true;
+    death_probe.allocations=test_heap_attempts;death_probe.objects=test_obj_attempts;
+    test_vblank_hook=observe_player_death;player_is_hit=true;gameplay_tick(0,0);
+    test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+    assert(death_probe.waits==31 && death_probe.prompt>=4 && current_scene==0 && current_stage==0);
+    assert(lives==START_LIVES && rem_bombs==2 && !g_canvas_target && stage_score==0 && hiscore>=65432);
+    assert(test_heap_count==resident_blocks && test_heap_bytes==resident_bytes && test_obj_count==79);
+    start_new_game();camera.snap_center();
+    std::puts("Stage10: real9->10 title/101-frame spread-in, one LEGEND start, preserved run/RNG, both blocks, buffered pause/miss/fatal/new-run, lethal priority/native fade, default-pose unbuffered capture, one round tally, black-held10->11 and repeated boss-cache cleanup passed");
 }

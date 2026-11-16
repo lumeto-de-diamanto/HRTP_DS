@@ -63,6 +63,26 @@ class RomPackagingTests(unittest.TestCase):
         self.assertTrue(expected)
         self.assertEqual(nitro_files(self.rom), expected)
 
+    def test_mima_review_assets_are_packaged(self):
+        files = nitro_files(self.rom)
+        self.assertEqual(len(files['boss3.bin']), 320 * 192)
+        art = files['mima_art.bin']
+        self.assertEqual(struct.unpack_from('<4sHHHHI', art),
+                         (b'MIM1', 64, 96, 47, 3072, 144432))
+        self.assertEqual(len(art), 144432)
+        for name in ('Missile','PelletCloud','Pillar'):
+            text=Path(f'assets/processed/sprites/{name}.h').read_text().split('= {',1)[1].split('};',1)[0]
+            payload=bytes(map(int,re.findall(r'\b\d+\b',text)))
+            self.assertIn(payload,self.arm9,f'missing/stale {name}')
+        text=Path('assets/processed/backgrounds/MimaPaletteFx.h').read_text()
+        values=[int(v,16) for v in re.findall(r'0x[0-9A-F]+',text)]
+        self.assertIn(struct.pack('<'+'H'*len(values),*values),self.arm9)
+        text=Path('assets/processed/backgrounds/MimaDefeatPalette.h').read_text()
+        rgb=text.split('= {',1)[1].split('};',1)[0]
+        self.assertIn(bytes(map(int,re.findall(r'\b\d+\b',rgb))),self.arm9)
+        signatures=[int(v,16) for v in re.findall(r'0x[0-9A-F]+',text)]
+        self.assertIn(struct.pack('<'+'I'*len(signatures),*signatures),self.arm9)
+
     def test_complete_font_is_linked_into_arm9(self):
         text = Path('assets/processed/fonts/font16x16.h').read_text()
         self.assertIn('FONT16X16_GLYPH_COUNT 272', text)

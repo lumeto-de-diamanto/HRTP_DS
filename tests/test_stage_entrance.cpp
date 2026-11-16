@@ -164,7 +164,7 @@ void observe()
     assert(orb_get_state().sprite_number == orb.sprite_number && !orb_get_in_portal());
     if (boss) assert(singyoku_state().phase == SG_ENTRANCE && singyoku_state().frame == 0);
     assert(test_objs[0].hidden == title);
-    for (int slot = 1; slot <= 40; ++slot) assert(test_objs[slot].hidden);
+    for (int slot = 1; slot <= 41; ++slot) assert(test_objs[slot].hidden);
     assert(!test_objs[OAM_SLOT_HUD_LIVES].hidden && !test_objs[OAM_SLOT_HUD_BOMBS].hidden);
     assert(REG_WININ == (ripple ? 0x1919 : 0x1D1D));
     assert(test_objs[OAM_SLOT_HUD_LIVES].priority == (ripple ? 0 : 1));
@@ -202,11 +202,11 @@ void observe()
 void run(const ds_stage_layout_t &layout, bool show_title, bool prepare_boss = false)
 {
     // Simulate the stale visuals that a real stage change must discard.
-    for (int slot = 0; slot <= 40; ++slot) oamSetHidden(&oamMain, slot, false);
+    for (int slot = 0; slot <= 41; ++slot) oamSetHidden(&oamMain, slot, false);
     canvas_playfield_clip(false); canvas_fill_rect(0, 0, VIEW_W, VIEW_H, 0x7fff);
     tiles_put(19, 9, STGOBJ_BUMPER);
     stage_entrance_prepare();
-    for (int slot = 0; slot <= 40; ++slot) assert(test_objs[slot].hidden);
+    for (int slot = 0; slot <= 41; ++slot) assert(test_objs[slot].hidden);
     assert(std::all_of(BG_MAP_RAM(8), BG_MAP_RAM(8) + 2048, [](u16 v) { return v == 0; }));
     assert(std::all_of(canvas_at(0, 0), canvas_at(0, VIEW_H), [](u16 v) { return v == 0; }));
     stage_init(layout.obstacle, layout.card); stage_reset();

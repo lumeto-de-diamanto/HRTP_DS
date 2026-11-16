@@ -7,6 +7,7 @@
 #include "main/bullet/pellet.hpp"
 
 #include "sprites/Pellet.h"
+#include "sprites/PelletCloud.h"
 
 // Keep intact/shatter cels pure white
 // independently of the scene's indexed background and stage-object palette.
@@ -18,10 +19,24 @@ static const u16 PELLET_PAL[16] = {
 
 void pellet_render_frame()
 {
+    pellet_render_colored(PELLET_PAL[1]);
+}
+
+void pellet_render_colored(unsigned short ink)
+{
+    const u16 palette[]={0,ink};
     // The shared canvas is cleared once per frame, before any effects draw.
     // No stale screen-space erasures may punch holes after the camera moves.
     for (int i = 0; i < PELLET_COUNT; i++) {
         const Pellet &pel = Pellets.at(i);
+        if(pel.cloud_frame) {
+            const int age=pel.cloud_frame;
+            if((age>=2 && age<=4) || age>=6)
+                canvas_put_indexed(camera.x(pel.cur_left.to_pixel()&~7),Camera::y(pel.cur_top.to_pixel()),
+                    8,8,PelletCloud_cels[age>=6],palette);
+            continue;
+        }
+        if(pel.cloud_released) continue;
         if (!pel.moving)
             continue;
         // Destruction animation: cel 0 intact, cels 1..2 shatter stages
@@ -40,6 +55,6 @@ void pellet_render_frame()
         if (!view_visible(x, y, PELLET_SPRITE, PELLET_SPRITE))
             continue;
         canvas_put_indexed(x, y, PELLET_SPRITE, PELLET_SPRITE,
-                           Pellet_cels[cel], PELLET_PAL);
+                           Pellet_cels[cel], palette);
     }
 }

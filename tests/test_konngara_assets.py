@@ -2,6 +2,7 @@
 """Original-source composition and independent entrance trace/fixtures."""
 from array import array
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -91,14 +92,17 @@ class KonngaraAssets(unittest.TestCase):
         self.assertEqual(trace[476:489], [(3, y, y, 15, -1, 0) for y in range(400, -1, -32)])
         source = Path('source/main.cpp').read_text()
         navigation=source.split('if (keys_held & KEY_SELECT)',1)[1].split('// START = Esc',1)[0]
-        for key in ('R','L','A','B','X','Y'):
+        for key in ('L','R','A','B','X','Y'):
             self.assertNotRegex(navigation,rf'\bKEY_{key}\b')
-        for shortcut in ('konngara_intro_preview()','konngara_art_preview()','konngara_combat_review('):
+        for shortcut in ('konngara_intro_preview()','konngara_art_preview()','konngara_combat_review(',
+                         'mima_art_review(', 'mima_phase1_review('):
             self.assertNotIn(shortcut,source)
         self.assertIn('KEY_LEFT',navigation)
         self.assertIn('KEY_DOWN',navigation)
         # Actual Stage20 keeps its production intro after shortcuts are removed.
         self.assertIn('konngara_intro_play()',source)
+        self.assertIn('mima_entrance_play(mima_view)',source)
+        self.assertIn('mima.update(bomb_damage)',source)
         self.assertIn('stage_has_konngara',Path('source/engine/main/progression.hpp').read_text())
 
 

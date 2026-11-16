@@ -26,6 +26,13 @@ int main() {
     assert(calls.size() == 1 && calls[0] == std::to_string(NS_PAUSE));
     music_play_scene(0); // an idempotent play also resumes a paused scene
     assert(calls.size() == 2 && calls[1] == std::to_string(NS_RESUME));
+    calls.clear(); music_fade_out_nonblock(); music_fade_out_nonblock();
+    assert(calls.size()==1 && calls[0]=="fade"); // no stop/load or per-frame IPC
+    music_pause(); music_resume();
+    assert(calls.size()==3 && calls[1]==std::to_string(NS_PAUSE) && calls[2]==std::to_string(NS_RESUME));
+    calls.clear();music_play_scene(0);
+    assert(calls.size()==1 && calls[0]=="play"); // restart even when same track was fading/finished
+    calls.clear();music_play_scene(0);assert(calls.empty());
     music_stop(); calls.clear(); music_play_scene(0);
     assert(calls.size() == 1 && calls[0] == "play"); // game-over restarts without reloading PCM
     calls.clear(); music_play_scene(1);
@@ -41,6 +48,10 @@ int main() {
     loadOK = true;
     assert(music_play_track(NATIVE_ST1));
     assert(!music_error()[0]);
+    calls.clear();sendOK=false;music_fade_out_nonblock();
+    assert(calls.size()==1 && calls[0]=="fade" && music_error()[0]);
+    sendOK=true;music_fade_out_nonblock();assert(calls.size()==2 && calls[1]=="fade");
+    calls.clear();assert(music_play_track(NATIVE_ST1));assert(calls.size()==1 && calls[0]=="play");
     sendOK = false;
     music_pause();
     assert(music_error()[0]);
@@ -50,5 +61,5 @@ int main() {
     const auto dropped = sfx_dropped_requests();
     sendOK = false; mdrv2_se_play(SFX_CARD); sfx_stop(); sendOK = true;
     assert(sfx_dropped_requests() == dropped + 2);
-    std::puts("Gameplay native music: all tracks, scene alias, continuity, restart, pause/resume and failure checks passed");
+    std::puts("Gameplay native music: all tracks, scene alias, continuity, nonblocking/idempotent fade, pause/resume, same-track full-volume restart and failed-request retry checks passed");
 }

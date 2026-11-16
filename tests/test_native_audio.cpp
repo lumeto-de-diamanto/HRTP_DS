@@ -33,6 +33,55 @@ struct FakeHardware {
     }
 };
 
+static void fadeTests(const std::vector<char> &original) {
+    // A private clone keeps every checked-in/packaged PCM and sequence intact.
+    // Disable NOTE events and sustain one voice of every type for254 ticks.
+    auto blob=original;
+    auto *header=reinterpret_cast<NsHeader *>(blob.data());
+    auto *tracks=reinterpret_cast<NsTrack *>(blob.data()+header->trackOffset);
+    for(unsigned i=0;i<NS_SLOTS;++i) { tracks[i].count=0;tracks[i].loopIndex=NS_NO_LOOP; }
+    auto *sample=reinterpret_cast<NsSample *>(blob.data()+header->sampleOffset);
+    sample->flags=1;sample->loopStart=0;sample->loopEnd=sample->length;
+    sample->envelope[3]=255;sample->envelope[4]=0;
+    FakeHardware hw;native_audio::Engine<FakeHardware> engine(hw);
+    assert(!engine.beginFadeOut());assert(engine.load(blob.data(),blob.size()));engine.reset();
+    for(unsigned slot=0;slot<NS_SLOTS;++slot) {
+        auto &v=engine.voices[slot];v.active=true;v.sample=0;v.gate=NS_NO_GATE;
+        v.volume=slot<6?127:slot<9?15:0;v.rhythmLog=slot>=9;
+        if(slot==14) { v.rhythmLog=false;v.volume=1953; } // legacy linear fallback
+        v.level=255;v.stage=2;v.period=v.basePeriod=v.fnum=1000;
+        v.pitch.value=7;v.amp.value=23;
+        hw.start(slot,*sample,0,v.period);
+    }
+    engine.setMask(0x7fff);const unsigned starts=hw.starts;
+    const auto before=engine.voices[0];
+    assert(engine.beginFadeOut() && engine.fade.active && !engine.fade.attenuation && engine.tick==0);
+    assert(engine.voices[0].position==before.position && hw.starts==starts);
+    for(unsigned tick=1;tick<=254;++tick) {
+        if(tick==40) engine.setMask(0);
+        if(tick==80) engine.setMask(0x7fff);
+        if(tick==13 || tick==127) {
+            const auto fade=engine.fade;assert(engine.beginFadeOut());
+            assert(engine.fade.attenuation==fade.attenuation && engine.fade.remaining==fade.remaining);
+        }
+        engine.step();assert(engine.tick==tick && hw.starts==starts && !engine.errors);
+        assert(engine.fade.attenuation==tick/2 && engine.fade.finished==(tick==254));
+        for(unsigned slot=0;slot<NS_SLOTS;++slot) {
+            const auto &v=engine.voices[slot];const unsigned attenuation=(tick-1)/2;
+            const unsigned expected=slot<6 ? engine.gains[127-attenuation] :
+                slot<9 ? engine.gains[128+15-(attenuation>>3)] : native_audio::rhythm_gain(attenuation>>1);
+            if(tick<254) {
+                assert(v.active && v.gain==expected && v.period==1000 && v.age==tick);
+                assert(v.pitch.value==7 && v.amp.value==23); // fade replaces/fixes LFO, not its state
+                assert(hw.channels[slot].gain==((tick>=40 && tick<80)?0:expected));
+            } else assert(!v.active && !v.gain && !hw.channels[slot].enabled);
+        }
+    }
+    assert(engine.header && engine.beginFadeOut() && engine.fade.finished);
+    engine.step();assert(engine.tick==254 && !engine.errors); // completion cannot resurrect notes
+    engine.reset();assert(!engine.fade.active && !engine.fade.finished && !engine.fade.attenuation && engine.tick==0);
+}
+
 int main(int argc, char **argv) {
     assert(argc == 2 || argc == 3);
     std::ifstream f(argv[1], std::ios::binary);
@@ -161,6 +210,7 @@ int main(int argc, char **argv) {
     assert(hardware.starts == before);
     for (unsigned i = 0; i < header->commonPeriod * 3; ++i) { hardware.elapse(engine.tempo); engine.step(); }
     assert(engine.errors == 0 && engine.loops > 0);
+    fadeTests(blob);
 
     // Long-run exact timer phase: no VBlank clock and no rounded 61-Hz tempo.
     native_audio::Clock clock;
@@ -185,5 +235,5 @@ int main(int argc, char **argv) {
         assert(std::abs(int(actual) - int(gain / 2)) <= 256);
         last = actual;
     }
-    std::printf("Native engine: trace emitted; live tempo/pitch, no automation retriggers, independent loops, mute, early-end telemetry, clock and gain checks passed\n");
+    std::printf("Native engine: trace emitted; live tempo/pitch, no automation retriggers, independent loops, mute, early-end telemetry, clock/gain and exact254-tick per-source fade/idempotence/LFO/reset checks passed\n");
 }

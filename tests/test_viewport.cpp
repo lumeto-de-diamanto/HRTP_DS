@@ -52,9 +52,12 @@ void mdrv2_se_play(int id) { test_effects.push_back(id); }
 void test_stage_entrances();
 void test_konngara_review();
 void test_konngara_stage20();
+void test_mima_stage10();
 void test_stage_bonus_awards();
 void test_player_death();
 void test_bombs();
+void test_mima_review();
+void test_mima_phase1_review();
 extern PlayerState player;
 
 // Exercise the actual sub-screen VRAM backend while counting its drawing seam:
@@ -1523,8 +1526,11 @@ int main()
     test_konngara_review();
     test_stage_bonus_awards();
     test_konngara_stage20();
+    test_mima_stage10();
     test_player_death();
     test_bombs();
+    test_mima_review();
+    test_mima_phase1_review();
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     assert(test_sub_vram.before==0xC0FFEE11 && test_sub_vram.after==0xC0FFEE11);
     std::puts("Viewport: center-anchored parallax/boss 1:1, native halfwidth timer, six-life/five-bomb and18HP ink separation, cached HUD handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");

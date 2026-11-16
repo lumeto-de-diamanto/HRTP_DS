@@ -191,9 +191,39 @@ static void clientTests() {
     assert(unlink(path) == 0);
 }
 
+static void fadeClientTests() {
+    char path[]="/tmp/opencode/native-fade-test-XXXXXX";
+    const int fd=mkstemp(path);assert(fd>=0);
+    FILE *file=fdopen(fd,"wb");
+    // This test models transport/lifetime only; ARM7 parser/real-song tests
+    // separately validate music containers and fade DSP semantics.
+    const auto data=bank();assert(file && std::fwrite(data.data(),4,data.size(),file)==data.size() && std::fclose(file)==0);
+    native_audio::Client client;assert(client.init());void *sharedAllocation=testSharedAddress;
+    assert(!client.fadeOut());assert(client.load(path));assert(!client.fadeOut());assert(client.play());
+    const void *blob=client.data();const auto bytes=client.size();
+    const auto generation=testAck&NS_PLAY_GENERATION_MASK;
+    assert(generation && testAck>>24==NS_PLAY);
+    const auto sends=testSends[FIFO_USER_01],waits=testWaits;
+    testAutoAck=false;
+    assert(client.fadeOut() && testFadeValue==generation);
+    assert(client.fadeOut() && testFadeValue==generation);
+    assert(testSends[FIFO_USER_01]==sends && testWaits==waits && client.healthy);
+    assert(client.data()==blob && client.size()==bytes);
+    testSendOK=false;assert(!client.fadeOut() && client.healthy && testWaits==waits);testSendOK=true;
+    testAutoAck=true;assert(client.play());
+    const auto next=testAck&NS_PLAY_GENERATION_MASK;assert(next && next!=generation);
+    assert(client.fadeOut() && testFadeValue==next);
+    assert(client.stop());const auto messages=testSends[FIFO_USER_03];
+    assert(!client.fadeOut() && testSends[FIFO_USER_03]==messages);
+    assert(client.data()==blob); // stop/fade never free an acknowledged loaded song
+    assert(client.unload());assertFreed(blob);
+    std::free(sharedAllocation);assert(unlink(path)==0);
+}
+
 int main(int argc, char **argv) {
     portableTests();
     clientTests();
+    fadeClientTests();
     if (argc == 2) {
         std::ifstream file(argv[1], std::ios::binary);
         std::vector<char> bytes((std::istreambuf_iterator<char>(file)), {});
