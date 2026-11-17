@@ -64,6 +64,8 @@ void video_stage_reveal(bool already_in_vblank = false);
 void video_apply_death_shake(int down_pixels, bool konngara);
 // Cosmetic bomb timeline, independent of damage/protection. Preparation uses
 // gameplay time (pause/repeated rendering cannot advance the recovery).
+// Recovery uses one native main master-brightness ramp for the whole top image,
+// including the upper HUD. The sub screen and normal gameplay palettes are not faded.
 void video_bomb_prepare(bool active, int bomb_frame, unsigned gameplay_frame);
 bool video_bomb_effect_active();
 int video_bomb_shake();

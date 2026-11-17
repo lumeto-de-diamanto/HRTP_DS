@@ -447,6 +447,7 @@ int main()
         // its own tint or restore a stale pre-bomb flash/shade snapshot.
         state.bos_head=true; // deterministic native centre/neutral pose
         const u8 *native_head=gpu_asset.data()+dword(gpu_asset.data()+48+208*64+(int(KonngaraDirection::Center)*4)*8+4);
+        const u16 master_before_bomb=REG_MASTER_BRIGHT;
         video_bomb_prepare(true,60,1000);
         for(int shade:{0,15,4}) for(bool flash:{false,true}) {
             state.siddham_white=shade;state.health.flashing=flash;
@@ -460,17 +461,22 @@ int main()
         }
         video_bomb_prepare(false,140,1090);
         for(unsigned age=0;age<=32;++age) {
+            if(age==5 || age==12 || age==20 || age==27) {
+                state.siddham_white=age%16;state.health.flashing=!state.health.flashing;
+            }
             video_bomb_prepare(false,140,1090+age);assert(view.frame(state));present(view);
             for(unsigned i=0;i<208;++i) {
-                const u16 normal=word(gpu_asset.data()+48+((4*2+1)*208+i)*2);
+                const u16 normal=word(gpu_asset.data()+48+((state.siddham_white*2+int(state.health.flashing))*208+i)*2);
                 assert(BG_PALETTE[i]==(age<16 ? video_bomb_indigo(normal) : normal));
             }
             for(unsigned i=0;i<144;++i) {
-                const u16 normal=word(native_head+((4*2+1)*144+i)*2);
+                const u16 normal=word(native_head+((state.siddham_white*2+int(state.health.flashing))*144+i)*2);
                 const u16 c=age<16 ? video_bomb_indigo(normal) : normal;
-                const int t=age<=16 ? int(age) : 32-int(age),r=c&31,g=(c>>5)&31,b=(c>>10)&31;
-                assert(SPRITE_PALETTE[112+i]==RGB15(r+(31-r)*t/16,g+(31-g)*t/16,b+(31-b)*t/16));
+                assert(SPRITE_PALETTE[112+i]==c); // no per-OBJ white ramp before master brightness
             }
+            const int amount=age<=16 ? int(age) : 32-int(age);
+            assert(REG_MASTER_BRIGHT==(age>0 && age<32 ? 0x4000|amount : master_before_bomb));
+            if(age<32) assert(!REG_BLDCNT && !REG_BLDY.written);
             assert(std::equal(objpal.begin(),objpal.begin()+112,SPRITE_PALETTE));
         }
         assert(!video_bomb_effect_active());

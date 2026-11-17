@@ -12,7 +12,6 @@ static u16 bomb_saved_control,bomb_saved_alpha,bomb_saved_y,bomb_saved_window,bo
 static u16 bomb_normal[208],bomb_indigo[208]; // BG3 only; BG0/BG1 use208..255
 static u16 bomb_obj_normal[144],bomb_obj_indigo[144];
 static bool bomb_obj_owned,bomb_obj_dirty,bomb_obj_inverted;
-static int bomb_obj_brightness;
 static unsigned bomb_recovery_start;
 static int bomb_phase,bomb_brightness,bomb_shake_y,bomb_master;
 static bool bomb_inverted;
@@ -208,14 +207,16 @@ void video_bomb_reset()
 void video_canvas_effect_commit()
 {
     if(!bomb_effect_owned || modal_effect_owned) return;
-    // BG3's transparent index0 reveals the backdrop, so fade that too. No
-    // foreground layer is a brightness target; HUD windows keep effects off.
-    REG_BLDCNT=(!bomb_paused && !canvas_foreground_depth && bomb_brightness) ?
-        BLEND_FADE_WHITE|BLEND_SRC_BG3|BLEND_SRC_BACKDROP : 0;
-    video_set_fade(bomb_brightness);
-    // Master brightness is a final-output effect: intentionally includes HUD
-    // and foreground ink. No pulse in the approved intro or cosmetic recovery.
-    REG_MASTER_BRIGHT=(!bomb_paused && !canvas_foreground_depth && bomb_phase==1) ? bomb_master : bomb_saved_master;
+    // One final-output fade treats HUD/window halves, scenery, OBJ and BG2
+    // identically. Layer-specific BLDY here would leave the upper HUD unchanged
+    // (or double-brighten some layers alongside the master register).
+    REG_BLDCNT=0;video_set_fade(0);
+    u16 master=bomb_saved_master;
+    if(!bomb_paused && !canvas_foreground_depth) {
+        if(bomb_phase==1) master=bomb_master; // approved flash/pulse unchanged
+        else if(bomb_phase==2 && bomb_brightness) master=(1<<14)|bomb_brightness;
+    }
+    REG_MASTER_BRIGHT=master; // sub-engine brightness is never owned by bombs
 }
 
 void video_bomb_commit(bool konngara)
@@ -235,16 +236,12 @@ void video_bomb_commit(bool konngara)
         for(unsigned i=0;i<208;++i) BG_PALETTE[i]=palette[i];
         bomb_palette_dirty=false;bomb_palette_inverted=bomb_inverted;
     }
-    if(bomb_obj_owned && (bomb_obj_dirty || bomb_obj_inverted!=bomb_inverted || bomb_obj_brightness!=bomb_brightness)) {
+    if(bomb_obj_owned && (bomb_obj_dirty || bomb_obj_inverted!=bomb_inverted)) {
         const u16 *palette=bomb_inverted ? bomb_obj_indigo : bomb_obj_normal;
-        // Fade only the boss's private OBJ palette through white alongside BG3.
-        // Selecting OBJ in BLDY would also whiten Reimu, items and the HUD.
-        for(unsigned i=0;i<144;++i) {
-            const u16 c=palette[i];
-            const int r=c&31,g=(c>>5)&31,b=(c>>10)&31,t=bomb_brightness;
-            SPRITE_PALETTE[112+i]=RGB15(r+((31-r)*t)/16,g+((31-g)*t)/16,b+((31-b)*t)/16);
-        }
-        bomb_obj_dirty=false;bomb_obj_inverted=bomb_inverted;bomb_obj_brightness=bomb_brightness;
+        // Keep Konngara's approved inversion, but let the single master fade
+        // whiten her with everything else. A per-OBJ white ramp would apply twice.
+        for(unsigned i=0;i<144;++i) SPRITE_PALETTE[112+i]=palette[i];
+        bomb_obj_dirty=false;bomb_obj_inverted=bomb_inverted;
     }
     REG_WINOUT=bomb_saved_window|0x20;
     video_canvas_effect_commit();
