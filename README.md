@@ -121,13 +121,61 @@ layers).
 
 ## Special thanks
 
-* **Nmlgc** and the ReC98 contributors — for the complete decompilation of HRtP
-* **All the BlocksDS contributors** — for the SDK that makes this port possible
-* **ZUN** — for Touhou Project itself
+### Original game and restoration
+
+* **ZUN / ZUN Soft** — for *The Highly Responsive to Prayers*, its game design,
+  artwork and music, and Touhou Project itself.
+* **Nmlgc and the [ReC98](https://github.com/nmlgc/ReC98) contributors** — for
+  the complete HRtP decompilation, documentation and `anniversary` fixes on
+  which this port is based.
+* **A. Koizuka and the master.lib contributors** — for the original PC-98
+  support library, including the integer trigonometry ported through ReC98.
+* **Regulus** — for the original [MDRV2 music system](https://www.vector.co.jp/soft/dos/art/se018677.html)
+  and the audio format used by HRtP.
+
+### Nintendo DS development
+
+* **Antonio Niño Díaz and all the [BlocksDS](https://blocksds.skylyrac.net/)
+  contributors** — for the SDK, project templates and NitroFS tutorial.
+* **Michael Noland (joat), Jason Rogers (dovoto), Dave Murphy (WinterMute),
+  Michael Chisholm (Chishm), and the libnds contributors** — for the DS
+  hardware, filesystem and system libraries underlying the port.
+* **ChaN** — for FatFs, used by the SDK's filesystem support.
+* **Stephen Stair (sgstair), Dave Murphy, Max Thomas (ShinyQuagsire), Antonio
+  Niño Díaz, and the DSWiFi contributors** — for the library used by the ARM7 core.
+* **Adrian “asie” Siekierka and the [Wonderful Toolchain](https://wonderful.asie.pl/)
+  contributors** — for the toolchain and development environment.
+* **Martin Korth** — for [GBATEK](https://problemkaputt.de/gbatek.htm), the hardware
+  reference used during development.
+
+### Audio and asset tools
+
+* **Aaron Giles and the [ymfm](https://github.com/aaronsgiles/ymfm) contributors** —
+  for the Yamaha sound cores used on the host to render instrument and SFX PCM.
+* **Lmocinemod** — for [MDT Parsing Tools](https://github.com/Lmocinemod/MDTParsingTools),
+  whose retained decoder and portamento maps are used by the native audio build.
+* **HertzDevil** — for the original [MDRV2 MDT-to-MML unconverter](https://gist.github.com/HertzDevil/036304c692b0f26b7a9d7cfe1126a0ac)
+  on which that decoder is based.
+* **Kirinn Bunnylin / Mooncore** — for [SuperSakura](https://gitlab.com/bunnylin/supersakura)
+  and the Pi decoder from which the GRP conversion tools were ported.
+* **Yanagisawa** — for the original Pi image format and its documentation.
+* **The GCC, GNU binutils, GNU Make, Python, NumPy and Pillow contributors** —
+  for compilation, host-side asset tools and validation;
+  **the FreeType and HarfBuzz contributors** — for font
+  rasterization and shaping used to prepare the fixed bitmap artwork.
+
+### Fonts
+
 * **Yuji Kataoka, Kinuta Font Factory and the Yuji Project authors** — for
   [Yuji Syuku](https://github.com/Kinutafontfactory/Yuji), used for the icon
-  ([SIL Open Font License 1.1](assets/licenses/Yuji-OFL.txt))
+  ([SIL Open Font License 1.1](assets/licenses/Yuji-OFL.txt)).
 * **Pablo Impallari, Rodrigo Fuenzalida and the Libre Bodoni Project Authors** —
   for [Libre Bodoni](https://github.com/googlefonts/Libre-Bodoni), adapted as the
   round-results bitmap serif
-  ([SIL Open Font License 1.1](assets/licenses/LibreBodoni-OFL.txt))
+  ([SIL Open Font License 1.1](assets/licenses/LibreBodoni-OFL.txt)).
+* **Brian Swetland and Robey Pointer** — for the tiny 4×6 / Tom Thumb font
+  underlying the 3×5 playfield text.
+* **pk / PK** — for the [packed tiny font and retrieval routine](https://hackaday.io/project/6309-vga-graphics-over-spi-and-serial-vgatonic/log/20759-a-tiny-4x6-pixel-font-that-will-fit-on-almost-any-microcontroller-license-mit)
+  from VGATonic; **Leonhard Seidel (CamelCaseName)** — for the
+  [HUB75nano font adaptation](https://github.com/CamelCaseName/HUB75nano/blob/master/src/fonts/3x5font.h)
+  used as this port's immediate reference.
