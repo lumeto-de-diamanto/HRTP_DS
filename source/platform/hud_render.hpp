@@ -7,7 +7,9 @@
 void hud_render(int lives, int stage);
 void hud_invalidate(); // only when the sub-screen bitmap has been replaced
 constexpr int HUD_RADAR_LEFT=88, HUD_RADAR_TOP=19, HUD_RADAR_W=160, HUD_RADAR_H=84;
-struct HudRadarBoss { int x=0,y=0;bool visible=false; };
+struct HudRadarBoss { int x=0,y=0;bool visible=false; }; // hitbox center in world units; fixed-size icon
+struct BossEntity;
+HudRadarBoss hud_radar_boss(const BossEntity &entity,bool visible=true);
 // Read-only world overview: no projectiles, camera outline or cosmetic RNG.
 void hud_radar_render(const HudRadarBoss &boss = {});
 

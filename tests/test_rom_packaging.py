@@ -11,7 +11,7 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 from nds_files import nitro_files
 from hud_pattern_to_h import pattern, results_crop
-from test_viewport_assets import layout_bytes, results_font_bytes
+from test_viewport_assets import layout_bytes, results_font_bytes, radar_reference_icons
 
 
 def crc16(data):
@@ -95,7 +95,14 @@ class RomPackagingTests(unittest.TestCase):
                             'missing/stale linked font')
         self.assertIn(results_font_bytes(), self.arm9, 'missing/stale Libre Bodoni results font')
         self.assertEqual(nitro_files(self.rom)['licenses/LibreBodoni-OFL.txt'],
-                         Path('assets/licenses/LibreBodoni-OFL.txt').read_bytes())
+                          Path('assets/licenses/LibreBodoni-OFL.txt').read_bytes())
+
+    def test_radar_png_and_current_font_pixels_are_linked_not_runtime_files(self):
+        expected=bytearray(1)  # None icon
+        for _,_,_,pixels in radar_reference_icons():
+            expected.extend(pixels)
+        self.assertIn(bytes(expected),self.arm9,'missing/stale radar art')
+        self.assertFalse(any('radar' in name.lower() for name in nitro_files(self.rom)))
 
     def test_linked_stage_tables_and_results_patterns(self):
         clear = Path('assets/hdi_dump/CLEAR3.GRP').read_bytes()

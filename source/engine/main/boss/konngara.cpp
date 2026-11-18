@@ -16,6 +16,8 @@ int for_rank(int easy, int normal, int hard, int lunatic)
 const BossEntity hitbox = {288, 120, 112, 72, 8, 8, 88, 64, true};
 }
 
+const BossEntity &konngara_hitbox() { return hitbox; }
+
 void KonngaraCombat::reset(int start_set)
 {
     *this = KonngaraCombat{};

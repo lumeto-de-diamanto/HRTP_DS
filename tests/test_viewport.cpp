@@ -34,6 +34,7 @@
 #include "sound_effects.hpp"
 #include "backgrounds/RoundResults.h"
 #include "main/boss/singyoku.hpp"
+#include "main/boss/konngara.hpp"
 #include "main/player/player.hpp"
 #include "main/player/orb.hpp"
 #include "main/player/shot.hpp"
@@ -131,6 +132,15 @@ static void check_bottom_hud() {
     assert(test_bgs[6].priority==0 && test_bgs[7].priority==3 && test_bgs[7].wrap);
     assert(BG_PALETTE_SUB[SUB_COL_DIM]==RGB15(31,0,0) && BG_PALETTE_SUB[SUB_COL_FG]==RGB15(31,31,31));
     assert(BG_PALETTE_SUB[4]==RGB15(1,1,1) && BG_PALETTE_SUB[5]==RGB15(3,2,2));
+    constexpr int radar_stride=260; // dimensions/color + up to16x16 PNG pixels
+    const auto radar_art=read_bytes("radar-icons.bin");assert(radar_art.size()==10*radar_stride);
+    enum { RP,RO,RC,RD,RL,RI,RT,RH,RV,RB };
+    const u8 colors[]={SUB_COL_RADAR_PLAYER,SUB_COL_RADAR_ORB,SUB_COL_RADAR_CARD,SUB_COL_RADAR_OBSTACLE,
+        SUB_COL_RADAR_PORTAL,SUB_COL_RADAR_ITEM,SUB_COL_RADAR_TURRET,SUB_COL_RADAR_BAR_H,SUB_COL_RADAR_BAR_V,SUB_COL_RADAR_BOSS};
+    for(int i=0;i<10;++i) assert(BG_PALETTE_SUB[colors[i]]==(radar_art[i*radar_stride+2]|(radar_art[i*radar_stride+3]<<8)));
+    assert(radar_art[RP*radar_stride]==7 && radar_art[RP*radar_stride+1]==7);
+    assert(radar_art[RO*radar_stride]==7 && radar_art[RO*radar_stride+1]==7);
+    assert(radar_art[RB*radar_stride]==16 && radar_art[RB*radar_stride+1]==16);
     const auto *pattern=reinterpret_cast<const u8*>(BG_BMP_RAM_SUB(4));
     assert(std::equal(pattern,pattern+128*128,sub_backend::HudPattern_pixels));
     const auto *vram=reinterpret_cast<const u8*>(BG_BMP_RAM_SUB(0));
@@ -176,31 +186,38 @@ static void check_bottom_hud() {
     std::vector<u8> expected(w*h);
     auto center_x=[](int x) { return std::max(0,std::min(639,x))*159/639; };
     auto center_y=[](int y) { return (std::max(64,std::min(399,y))-64)*83/335; };
-    auto draw=[&](int wx,int wy,int mw,int mh,u8 color,auto ink) {
-        const int left=center_x(wx)-mw/2,top=center_y(wy)-mh/2;
+    auto draw_at=[&](int left,int top,int icon) {
+        const int mw=radar_art[icon*radar_stride],mh=radar_art[icon*radar_stride+1];
         for(int y=0;y<mh;++y) for(int x=0;x<mw;++x)
-            if(left+x>=0 && left+x<w && top+y>=0 && top+y<h && ink(x,y)) expected[(top+y)*w+left+x]=color;
+            if(left+x>=0 && left+x<w && top+y>=0 && top+y<h) {
+                if(radar_art[icon*radar_stride+4+y*mw+x]) expected[(top+y)*w+left+x]=colors[icon];
+            }
+    };
+    auto draw=[&](int wx,int wy,int icon) {
+        const int mw=radar_art[icon*radar_stride],mh=radar_art[icon*radar_stride+1];
+        draw_at(center_x(wx)-mw/2,center_y(wy)-mh/2,icon);
     };
     auto rebuild=[&] {
         std::fill(expected.begin(),expected.end(),SUB_COL_RADAR_BG);
         if(stage_card_total && stage_cards[0].flag!=CARD_REMOVED)
-            draw(stage_cards[0].left+16,stage_cards[0].top+16,5,3,SUB_COL_RADAR_CARD,[](int x,int y){return x==0||x==4||y==0||y==2;});
+            draw(stage_cards[0].left+16,stage_cards[0].top+16,RC);
         for(int i=0;i<stage_obstacle_total;++i) {
             const auto &o=stage_obstacles[i];
-            if(o.type>=OT_BAR_TOP && o.type<=OT_BAR_RIGHT)
-                draw(o.left+16,o.top+16,8,8,SUB_COL_RADAR_OBSTACLE,[&](int x,int y){
-                    return o.type==OT_BAR_TOP ? y<2 : o.type==OT_BAR_BOTTOM ? y>=6 : o.type==OT_BAR_LEFT ? x<2 : x>=6;
-                });
-            else if(o.type==OT_PORTAL) draw(o.left+16,o.top+16,5,5,SUB_COL_RADAR_PORTAL,[](int x,int y){return abs(x-2)+abs(y-2)==2;});
+            if(o.type>=OT_BAR_TOP && o.type<=OT_BAR_RIGHT) {
+                const bool horizontal=o.type==OT_BAR_TOP || o.type==OT_BAR_BOTTOM;
+                draw_at(center_x(o.left+16)-4+(o.type==OT_BAR_RIGHT ? 6 : 0),
+                    center_y(o.top+16)-4+(o.type==OT_BAR_BOTTOM ? 6 : 0),horizontal ? RH : RV);
+            } else if(o.type==OT_PORTAL) draw(o.left+16,o.top+16,RL);
+            else if(o.type>=OT_TURRET_FIRST && o.type<=OT_TURRET_LAST) draw(o.left+16,o.top+16,RT);
             else if(o.type==OT_NONE) continue;
-            else draw(o.left+16,o.top+16,3,3,SUB_COL_RADAR_OBSTACLE,[](int x,int y){return x==1||y==1;});
+            else draw(o.left+16,o.top+16,RD);
         }
-        if(CItems::is_visible(Items.bomb[0])) draw(Items.bomb[0].left+16,Items.bomb[0].top+16,3,3,SUB_COL_RADAR_ITEM,[](int,int){return true;});
-        if(CItems::is_visible(Items.point[0])) draw(Items.point[0].left+16,Items.point[0].top+16,3,3,SUB_COL_RADAR_ITEM,[](int x,int y){return abs(x-1)+abs(y-1)<=1;});
-        if(boss.visible) draw(boss.x,boss.y,5,3,SUB_COL_RADAR_BOSS,[](int x,int y){return x==0||x==4||y==0||y==2;});
-        draw(player.x_position+16,player.y_position+16,3,3,SUB_COL_RADAR_PLAYER,[](int x,int y){return abs(x-1)<=y/2;});
+        if(CItems::is_visible(Items.bomb[0])) draw(Items.bomb[0].left+16,Items.bomb[0].top+16,RI);
+        if(CItems::is_visible(Items.point[0])) draw(Items.point[0].left+16,Items.point[0].top+16,RI);
+        if(boss.visible) draw(boss.x,boss.y,RB);
+        draw(player.x_position+16,player.y_position+16,RP);
         const auto &orb=orb_get_state();
-        draw(orb.x_position+16,orb.y_position+16,3,3,SUB_COL_FG,[](int x,int y){return (x-1)*(x-1)+(y-1)*(y-1)<=1;});
+        draw(orb.x_position+16,orb.y_position+16,RO);
     };
     auto verify=[&] {
         rebuild();
@@ -231,6 +248,9 @@ static void check_bottom_hud() {
     for(int type:{OT_BAR_TOP,OT_BAR_BOTTOM,OT_BAR_LEFT,OT_BAR_RIGHT,OT_TURRET_SLOW_1_AIMED,OT_NONE,OT_BUMPER}) {
         stage_obstacles[0].type=type;hud_radar_render(boss);verify();
     }
+    for(int type=OT_TURRET_FIRST;type<=OT_TURRET_LAST;++type) {
+        stage_obstacles[0].type=type;hud_radar_render(boss);verify();
+    }
     boss={128,144,true};player.x_position=112;player.y_position=128;orb_set_position(112,128);
     hud_radar_render(boss);verify();
     orb_set_position(608,368);hud_radar_render(boss);verify(); // exposes player/boss/card beneath orb
@@ -243,6 +263,24 @@ static void check_bottom_hud() {
     for(int x:{-100,0,639,800}) for(int y:{0,64,399,500}) {
         orb_set_position(x-16,y-16);player.x_position=623-x;player.y_position=447-y;
         boss={x,y,true};hud_radar_render(boss);verify();
+        boss.visible=false;hud_radar_render(boss);verify();
+    }
+    // All bosses use the same native16x16 font glyph, centered on the collision
+    // box. Konngara's actual orb box is inset/asymmetric.
+    const BossEntity boxes[]={BossEntity{272,96,96,96,8,8,88,88,true},
+        BossEntity{256,120,128,160,16,16,112,144,true},konngara_hitbox()};
+    const int centers[]={320,320,336},center_tops[]={144,200,156};
+    for(int i=0;i<3;++i) {
+        const auto old_box=boxes[i];boss=hud_radar_boss(boxes[i]);
+        assert(boss.visible && boss.x==centers[i] && boss.y==center_tops[i]);
+        hud_radar_render(boss);verify();
+        assert(!std::memcmp(&old_box,&boxes[i],sizeof(old_box)));
+        assert(!hud_radar_boss(boxes[i],false).visible);
+        // A different collider height must not rescale the glyph or dirty tiles
+        // when its center/visibility remain the same.
+        auto changed_box=boxes[i];changed_box.hit_top-=32;changed_box.hit_bottom+=32;
+        sub_calls.clear();hud_radar_render(hud_radar_boss(changed_box));verify();
+        assert(sub_calls.empty());
     }
     sub_calls.clear();Pellets.add_single(300,200,0,TO_SP(2));hud_radar_render(boss);
     assert(sub_calls.empty()); // projectiles never enter the snapshot
@@ -254,7 +292,7 @@ static void check_bottom_hud() {
     stage_card_total=old_card_total;stage_obstacle_total=old_obstacle_total;
     stage_score=old_score;hiscore=old_hi;stage_cardcombo_cur=old_combo;stage_cardcombo_max=old_max;rank=old_rank;
     camera.snap_center();hud_invalidate();
-    std::puts("Bottom HUD: source pattern/layer bounds, red labels/white values, exact world radar shapes/priority, removal/overlap/edge restoration, camera-independent idle writes and read-only/RNG/heap checks passed");
+    std::puts("Bottom HUD: editable PNG marker/color pixels,7x7 Reimu/orb, shared native16x16 boss glyph independent of hitbox height, all turret types, edge/removal/overlap restoration, unchanged HUD/pattern, camera-independent zero-write idle and read-only/RNG/heap checks passed");
 }
 
 static int ink_count() {

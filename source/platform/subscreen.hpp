@@ -20,6 +20,10 @@ static const u8 SUB_COL_RADAR_PORTAL = 9;
 static const u8 SUB_COL_RADAR_ITEM = 10;
 static const u8 SUB_COL_RADAR_PLAYER = 11;
 static const u8 SUB_COL_RADAR_BOSS = 12;
+static const u8 SUB_COL_RADAR_TURRET = 13;
+static const u8 SUB_COL_RADAR_ORB = 14;
+static const u8 SUB_COL_RADAR_BAR_H = 15;
+static const u8 SUB_COL_RADAR_BAR_V = 16;
 
 void subscreen_init();
 void subscreen_clear(u8 color);

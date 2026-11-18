@@ -165,7 +165,7 @@ bool mima_phase1_review()
         pellet_render_colored(Mima_palette_fx[s.darkness/4][s.flash ? 1+s.flash_darkness/4 : 0][7]);
         orb_indicator_render();bomb_render_frame();canvas_playfield_clip(false);
         upper_hud_render(lives,rem_bombs,stage_timer,UpperHudMode::Boss);upper_hud_boss(s.health.hp,s.hp_displayed,2,6);
-        hud_render(lives,10);hud_radar_render({s.entity.left+64,s.entity.top+80,true});
+        hud_render(lives,10);hud_radar_render(hud_radar_boss(s.entity));
         canvas_buffer_prepare();do { swiWaitForVBlank(); } while(!view.present());
     }
     return true;

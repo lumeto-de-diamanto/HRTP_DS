@@ -7,6 +7,7 @@
 #include "fonts/font8x16.h"
 #include "font16x16.hpp"
 #include "backgrounds/HudPattern.h"
+#include "sprites/RadarIcons.h"
 
 #define SUB_BMP_BLOCK 0 // VRAM_C_SUB_BG at 0x06200000
 
@@ -54,12 +55,16 @@ void subscreen_init()
     BG_PALETTE_SUB[4] = RGB15(1,1,1);
     BG_PALETTE_SUB[5] = RGB15(3,2,2);
     BG_PALETTE_SUB[SUB_COL_RADAR_BG] = 0;
-    BG_PALETTE_SUB[SUB_COL_RADAR_CARD] = RGB15(10,10,10);
-    BG_PALETTE_SUB[SUB_COL_RADAR_OBSTACLE] = RGB15(16,5,5);
-    BG_PALETTE_SUB[SUB_COL_RADAR_PORTAL] = RGB15(18,10,31);
-    BG_PALETTE_SUB[SUB_COL_RADAR_ITEM] = RGB15(31,25,5);
-    BG_PALETTE_SUB[SUB_COL_RADAR_PLAYER] = RGB15(31,0,0);
-    BG_PALETTE_SUB[SUB_COL_RADAR_BOSS] = RGB15(31,10,22);
+    BG_PALETTE_SUB[SUB_COL_RADAR_CARD] = RadarIcons_colors[RadarIcon_Card];
+    BG_PALETTE_SUB[SUB_COL_RADAR_OBSTACLE] = RadarIcons_colors[RadarIcon_Obstacle];
+    BG_PALETTE_SUB[SUB_COL_RADAR_PORTAL] = RadarIcons_colors[RadarIcon_Portal];
+    BG_PALETTE_SUB[SUB_COL_RADAR_ITEM] = RadarIcons_colors[RadarIcon_Item];
+    BG_PALETTE_SUB[SUB_COL_RADAR_PLAYER] = RadarIcons_colors[RadarIcon_Player];
+    BG_PALETTE_SUB[SUB_COL_RADAR_BOSS] = RadarIcons_colors[RadarIcon_Boss];
+    BG_PALETTE_SUB[SUB_COL_RADAR_TURRET] = RadarIcons_colors[RadarIcon_Turret];
+    BG_PALETTE_SUB[SUB_COL_RADAR_ORB] = RadarIcons_colors[RadarIcon_Orb];
+    BG_PALETTE_SUB[SUB_COL_RADAR_BAR_H] = RadarIcons_colors[RadarIcon_BarH];
+    BG_PALETTE_SUB[SUB_COL_RADAR_BAR_V] = RadarIcons_colors[RadarIcon_BarV];
 
     subscreen_clear(SUB_COL_BG);
     bgUpdate();

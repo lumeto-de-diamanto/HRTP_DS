@@ -49,6 +49,7 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertIn('assets/processed/sprites/BombKuji.h', before)
                 self.assertIn('assets/processed/sprites/OrbArrow.h', before)
                 self.assertIn('assets/processed/sprites/BossArrow.h', before)
+                self.assertIn('assets/processed/sprites/RadarIcons.h', before)
                 self.assertIn('assets/processed/backgrounds/boss3.h', before)
                 self.assertIn('nitrofs/boss3.bin', before)
                 self.assertIn('nitrofs/mima_art.bin', before)
@@ -85,7 +86,8 @@ class AssetBuildTests(unittest.TestCase):
                                 'assets/processed/backgrounds/RoundResults.h',
                                 'assets/processed/fonts/ResultsSerif.h',
                                  'assets/processed/sprites/OrbArrow.h',
-                                 'assets/processed/sprites/BossArrow.h',
+                                  'assets/processed/sprites/BossArrow.h',
+                                  'assets/processed/sprites/RadarIcons.h',
                                  'assets/processed/backgrounds/boss3.h', 'nitrofs/boss3.bin',
                                  'nitrofs/mima_art.bin', 'assets/hdi_dump/BOSS3.GRP',
                                   'assets/packfile/BOSS3_1.BOS', 'assets/packfile/BOSS3_2.BOS',
@@ -110,6 +112,8 @@ class AssetBuildTests(unittest.TestCase):
                 offset = int.from_bytes(alternate[10:14], 'little')
                 x, y = (0x23 - 0x20) * 16 + 7, 0x41 * 16 + 7  # fullwidth A
                 alternate[offset + (2047-y)*256 + x//8] ^= 1 << (7-x%8)
+                x,y=(0x45-0x20)*16+7,0x28*16+7  # enemy glyph: 敵
+                alternate[offset + (2047-y)*256 + x//8] ^= 1 << (7-x%8)
                 (root / 'assets/font.bmp').unlink()
                 (root / 'assets/font.bmp').write_bytes(alternate)
                 self.make_assets(root, jobs)
@@ -117,7 +121,10 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertEqual(variant['assets/processed/fonts/ResultsSerif.h'],
                                  after['assets/processed/fonts/ResultsSerif.h'])
                 self.assertNotEqual(variant['assets/processed/fonts/font16x16.h'][1],
-                                    after['assets/processed/fonts/font16x16.h'][1])
+                                     after['assets/processed/fonts/font16x16.h'][1])
+                self.assertNotEqual(variant['assets/processed/sprites/RadarIcons.h'][1],
+                                    after['assets/processed/sprites/RadarIcons.h'][1])
+                self.assertFalse((root / 'assets/sprites/radar/boss.png').exists())
 
 
 if __name__ == '__main__':

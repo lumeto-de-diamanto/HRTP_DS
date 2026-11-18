@@ -1,6 +1,9 @@
 #pragma once
 #include "konngara_phase1.hpp"
 
+// Read-only presentation access to the same collision box used by combat.
+const BossEntity &konngara_hitbox();
+
 // Source combat phases1..7. Phase1 patterns are reused by the final mix;
 // complete marks combat's end; the platform handles defeat and future ending handoff.
 class KonngaraCombat {

@@ -17,6 +17,8 @@
 
 #include "fonts/font8x16.h"
 #include "font16x16.hpp"
+#include "sprites/RadarIcons.h"
+#include "main/boss/boss.hpp"
 
 // Mockup layout: compact statistics down the left, small upper-right radar,
 // native fullwidth stage/rank below. The source-art pattern stays unchanged.
@@ -78,7 +80,6 @@ void hud_render(int /*lives*/, int stage)
 }
 
 namespace {
-enum RadarShape { R_NONE,R_CARD,R_CROSS,R_BAR,R_PORTAL,R_POINT,R_BOMB,R_BOSS,R_PLAYER,R_ORB };
 struct RadarMark { int16_t x,y;u8 w,h,shape,color; };
 static_assert(sizeof(RadarMark)==8,"radar snapshots must stay compact");
 constexpr int item_first=STAGE_MAX_CELLS*2,boss_slot=item_first+ITEM_BOMB_COUNT+ITEM_POINT_COUNT;
@@ -89,8 +90,9 @@ u32 radar_dirty[(HUD_RADAR_H+7)/8];
 int radar_x(int x) { return (view_clamp(x,PLAYFIELD_LEFT,PLAYFIELD_RIGHT-1)-PLAYFIELD_LEFT)*(HUD_RADAR_W-1)/(PLAYFIELD_W-1); }
 int radar_y(int y) { return (view_clamp(y,PLAYFIELD_TOP,PLAYFIELD_BOTTOM-1)-PLAYFIELD_TOP)*(HUD_RADAR_H-1)/(PLAYFIELD_H-1); }
 
-RadarMark marker(int x,int y,int w,int h,RadarShape shape,u8 color)
+RadarMark marker(int x,int y,RadarIcon shape,u8 color)
 {
+    const int w=RadarIcons_width[shape],h=RadarIcons_height[shape];
     return {int16_t(radar_x(x)-w/2),int16_t(radar_y(y)-h/2),u8(w),u8(h),u8(shape),color};
 }
 
@@ -106,18 +108,14 @@ void dirty_mark(const RadarMark &m)
 
 bool mark_ink(const RadarMark &m,int x,int y)
 {
-    const int dx=x-int(m.w)/2,dy=y-int(m.h)/2;
-    const int distance=(dx<0?-dx:dx)+(dy<0?-dy:dy);
-    switch(m.shape) {
-    case R_CARD:case R_BOSS: return x==0 || y==0 || x==m.w-1 || y==m.h-1;
-    case R_CROSS: return dx==0 || dy==0;
-    case R_PORTAL: return distance==2;
-    case R_POINT: return distance<=1;
-    case R_PLAYER: return (dx<0?-dx:dx)<=y/2;
-    case R_ORB: return dx*dx+dy*dy<=1;
-    default: return true;
-    }
+    return RadarIcons_pixels[RadarIcons_offsets[m.shape]+y*m.w+x]!=0;
 }
+}
+
+HudRadarBoss hud_radar_boss(const BossEntity &entity,bool visible)
+{
+    return {entity.left+(entity.hit_left+entity.hit_right)/2,
+            entity.top+(entity.hit_top+entity.hit_bottom)/2,visible};
 }
 
 void hud_radar_render(const HudRadarBoss &boss)
@@ -125,29 +123,32 @@ void hud_radar_render(const HudRadarBoss &boss)
     std::memset(marks,0,sizeof(marks));
     for(int i=0;i<stage_card_total && i<STAGE_MAX_CELLS;++i) {
         const auto &c=stage_cards[i];
-        if(c.flag!=CARD_REMOVED) marks[i]=marker(c.left+16,c.top+16,5,3,R_CARD,SUB_COL_RADAR_CARD);
+        if(c.flag!=CARD_REMOVED) marks[i]=marker(c.left+16,c.top+16,RadarIcon_Card,SUB_COL_RADAR_CARD);
     }
     for(int i=0;i<stage_obstacle_total && i<STAGE_MAX_CELLS;++i) {
         const auto &o=stage_obstacles[i];
         auto &m=marks[STAGE_MAX_CELLS+i];
-        m=marker(o.left+16,o.top+16,3,3,R_CROSS,SUB_COL_RADAR_OBSTACLE);
-        if(o.type==OT_PORTAL) m=marker(o.left+16,o.top+16,5,5,R_PORTAL,SUB_COL_RADAR_PORTAL);
+        m=marker(o.left+16,o.top+16,RadarIcon_Obstacle,SUB_COL_RADAR_OBSTACLE);
+        if(o.type==OT_PORTAL) m=marker(o.left+16,o.top+16,RadarIcon_Portal,SUB_COL_RADAR_PORTAL);
+        else if(o.type>=OT_TURRET_FIRST && o.type<=OT_TURRET_LAST)
+            m=marker(o.left+16,o.top+16,RadarIcon_Turret,SUB_COL_RADAR_TURRET);
         else if(o.type>=OT_BAR_TOP && o.type<=OT_BAR_RIGHT) {
-            m=marker(o.left+16,o.top+16,8,8,R_BAR,SUB_COL_RADAR_OBSTACLE);
-            if(o.type==OT_BAR_TOP) m.h=2;
-            if(o.type==OT_BAR_BOTTOM) { m.y+=6;m.h=2; }
-            if(o.type==OT_BAR_LEFT) m.w=2;
-            if(o.type==OT_BAR_RIGHT) { m.x+=6;m.w=2; }
+            const bool horizontal=o.type==OT_BAR_TOP || o.type==OT_BAR_BOTTOM;
+            m=marker(o.left+16,o.top+16,horizontal ? RadarIcon_BarH : RadarIcon_BarV,
+                horizontal ? SUB_COL_RADAR_BAR_H : SUB_COL_RADAR_BAR_V);
+            // Keep barriers on their side of the mapped8x8 stage cell.
+            m.x=radar_x(o.left+16)-4+(o.type==OT_BAR_RIGHT ? 6 : 0);
+            m.y=radar_y(o.top+16)-4+(o.type==OT_BAR_BOTTOM ? 6 : 0);
         } else if(o.type==OT_NONE) m={};
     }
     for(int i=0;i<ITEM_BOMB_COUNT;++i) if(CItems::is_visible(Items.bomb[i]))
-        marks[item_first+i]=marker(Items.bomb[i].left+16,Items.bomb[i].top+16,3,3,R_BOMB,SUB_COL_RADAR_ITEM);
+        marks[item_first+i]=marker(Items.bomb[i].left+16,Items.bomb[i].top+16,RadarIcon_Item,SUB_COL_RADAR_ITEM);
     for(int i=0;i<ITEM_POINT_COUNT;++i) if(CItems::is_visible(Items.point[i]))
-        marks[item_first+ITEM_BOMB_COUNT+i]=marker(Items.point[i].left+16,Items.point[i].top+16,3,3,R_POINT,SUB_COL_RADAR_ITEM);
-    if(boss.visible) marks[boss_slot]=marker(boss.x,boss.y,5,3,R_BOSS,SUB_COL_RADAR_BOSS);
+        marks[item_first+ITEM_BOMB_COUNT+i]=marker(Items.point[i].left+16,Items.point[i].top+16,RadarIcon_Item,SUB_COL_RADAR_ITEM);
+    if(boss.visible) marks[boss_slot]=marker(boss.x,boss.y,RadarIcon_Boss,SUB_COL_RADAR_BOSS);
     const auto &player=player_get_state();const auto &orb=orb_get_state();
-    marks[player_slot]=marker(player.x_position+PLAYER_W/2,player.y_position+PLAYER_H/2,3,3,R_PLAYER,SUB_COL_RADAR_PLAYER);
-    marks[orb_slot]=marker(orb.x_position+ORB_W/2,orb.y_position+ORB_H/2,3,3,R_ORB,SUB_COL_FG);
+    marks[player_slot]=marker(player.x_position+PLAYER_W/2,player.y_position+PLAYER_H/2,RadarIcon_Player,SUB_COL_RADAR_PLAYER);
+    marks[orb_slot]=marker(orb.x_position+ORB_W/2,orb.y_position+ORB_H/2,RadarIcon_Orb,SUB_COL_RADAR_ORB);
     bool changed=!radar_valid;
     std::memset(radar_dirty,0,sizeof(radar_dirty));
     if(!radar_valid) for(auto &row:radar_dirty) row=(u32(1)<<(HUD_RADAR_W/8))-1;

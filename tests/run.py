@@ -93,10 +93,11 @@ def fixtures(module_name, runtime):
     module = importlib.import_module(module_name)
     # Independent pixel oracles consume original GRP/BOS/GRZ data and staged
     # graphics, not just renderer inputs. Hash content rather than timestamps.
-    inputs = [Path(__file__)]
+    inputs = [Path(__file__), Path('assets/font.bmp')]
     for directory, pattern in [('tests', '*.py'), ('tools', '*.py'),
                                 ('assets/hdi_dump', '*'), ('assets/packfile', '*'),
                                 ('assets/fonts', '*.bdf'),
+                                ('assets/sprites/radar', '*.png'),
                                ('nitrofs', '*.bin')]:
         inputs += [p for p in Path(directory).glob(pattern) if p.is_file()]
     signature = snapshot(inputs)
@@ -126,6 +127,7 @@ def host_tests(args):
         names = []
         if selected('graphics'):
             names += ['test_asset_build', 'test_font16x16', 'test_boss_assets',
+                      'test_radar_assets',
                       'test_viewport_assets', 'test_konngara_assets', 'test_konngara_art_assets']
         if selected('audio'):
             names += ['test_native_audio', 'test_native_sfx', 'test_opna_rhythm',

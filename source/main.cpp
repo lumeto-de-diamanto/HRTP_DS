@@ -141,15 +141,15 @@ static void render_hud()
     if (stage_has_singyoku(current_scene,current_stage)) {
         const auto &s = singyoku_state();
         upper_hud_boss(s.health.hp, s.hp_displayed);
-        radar_boss={s.entity.left+s.entity.width/2,s.entity.top+s.entity.height/2,s.phase!=SG_DEFEATED};
+        radar_boss=hud_radar_boss(s.entity,s.phase!=SG_DEFEATED);
     } else if(stage_has_konngara(current_scene,current_stage)) {
         const auto &s=konngara.state();
         upper_hud_boss(s.health.hp,s.hp_displayed,10,16);
-        radar_boss={344,156,!s.complete}; // centre of the source112x72 Konngara hitbox
+        radar_boss=hud_radar_boss(konngara_hitbox(),!s.complete);
     } else if(stage_has_mima(current_scene,current_stage)) {
         const auto &s=mima.state();
         upper_hud_boss(s.health.hp,s.hp_displayed,2,6);
-        radar_boss={s.entity.left+64,s.entity.top+80,!s.checkpoint};
+        radar_boss=hud_radar_boss(s.entity,!s.checkpoint);
     } else upper_hud_boss_hide();
     hud_render(lives, global_stage_num());
     hud_radar_render(radar_boss);
@@ -324,7 +324,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         konngara.reset(); // real18HP encounter; no practice HP/resource presets
         wait_for_shot=false;
         hud_invalidate();hud_render(lives,20);
-        hud_radar_render({344,156,true});
+        hud_radar_render(hud_radar_boss(konngara_hitbox()));
         // Source Konngara has its own entrance, not STAGE NN/title banners.
         // Keep the final opaque intro image over old scenery until the first
         // buffered combat frame commits its BG, actors and fixed HUD together.
@@ -339,7 +339,8 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         // The controller's direction draw belongs AFTER the spread-in. Do not
         // reset it early merely to populate the title's fixed HUD.
         upper_hud_render(lives,rem_bombs,stage_timer,UpperHudMode::Boss);
-        upper_hud_boss(12,0,2,6);hud_render(lives,10);hud_radar_render({320,200,true});
+        constexpr BossEntity initial_mima=MimaPhase1State{}.entity;
+        upper_hud_boss(12,0,2,6);hud_render(lives,10);hud_radar_render(hud_radar_boss(initial_mima));
     } else render_hud();
     // No fully rendered gameplay frame may expose the orb/cards before the
     // entrance. Later-stage card ripple precedes STAGE NN, as in ReC98.

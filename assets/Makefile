@@ -76,6 +76,11 @@ assets: $(BACKGROUND_DIR)/boss3.h $(NITROFS_DIR)/mima_art.bin
 assets: $(SPRITES_DIR)/Missile.h $(SPRITES_DIR)/PelletCloud.h $(BACKGROUND_DIR)/MimaPaletteFx.h
 assets: $(SPRITES_DIR)/Pillar.h
 assets: $(BACKGROUND_DIR)/MimaDefeatPalette.h
+assets: $(SPRITES_DIR)/RadarIcons.h
+
+RADAR_PNGS := $(addprefix $(ASSETS_DIR)/sprites/radar/,$(addsuffix .png,player orb card obstacle portal item turret barrier_horizontal barrier_vertical))
+$(SPRITES_DIR)/RadarIcons.h: $(RADAR_PNGS) $(ASSETS_DIR)/font.bmp $(TOOLS_DIR)/radar_icons_to_h.py $(TOOLS_DIR)/font16x16.py $(TOOLS_DIR)/font16x16_chars.py
+	$(PYTHON) $(TOOLS_DIR)/radar_icons_to_h.py $(ASSETS_DIR)/sprites/radar $@ --font $(ASSETS_DIR)/font.bmp
 
 $(BACKGROUND_DIR)/MimaDefeatPalette.h: $(HDI_DUMP_DIR)/BOSS3.GRP $(TOOLS_DIR)/mima_defeat_palette_to_h.py $(TOOLS_DIR)/grp_to_bin.py
 	$(PYTHON) $(TOOLS_DIR)/mima_defeat_palette_to_h.py $< $@
