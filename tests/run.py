@@ -127,7 +127,7 @@ def host_tests(args):
         names = []
         if selected('graphics'):
             names += ['test_asset_build', 'test_font16x16', 'test_boss_assets',
-                      'test_radar_assets',
+                      'test_radar_assets', 'test_vram_budget',
                       'test_viewport_assets', 'test_konngara_assets', 'test_konngara_art_assets']
         if selected('audio'):
             names += ['test_native_audio', 'test_native_sfx', 'test_opna_rhythm',

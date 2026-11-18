@@ -18,6 +18,8 @@
 //
 // (mapBase is a 2 KB offset for tile maps and a 16 KB offset for
 // bitmaps; tileBase is a 16 KB offset.)
+// Bank E provides 64KiB main OBJ physically; current 1D-32 OAM mapping only
+// addresses its lower 32KiB. F/G/H/I are not claimed by these renderers.
 
 // Background layer IDs, created by video_init().
 extern int g_bg_id_background; // BG3, Bmp8

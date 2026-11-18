@@ -142,7 +142,17 @@ bool KonngaraCombatView::begin()
     if(patch!=count) { end();return false; }
     background_backup_=static_cast<u16*>(std::malloc(256*1024));
     if(!background_backup_ || !boss_gfx_init()) { end();return false; }
-    extra_gfx_=oamAllocateGfx(&oamMain,SpriteSize_64x64,SpriteColorFormat_256Color);
+    // The second slash bank is sparse: shipped frames peak at 1664 bytes, not
+    // 4096. Lease the smallest of these two supported cache sizes, retaining
+    // the 4KiB fallback for any other valid KHS2 input. Allocation shape only
+    // reserves bytes; each slash object keeps its original shape/stride.
+    unsigned extra_bytes=0;
+    for(int frame=0;frame<28;++frame) {
+        const unsigned used=le16(entry(slash_data_,frame)+6);
+        if(used>extra_bytes) extra_bytes=used;
+    }
+    extra_gfx_=oamAllocateGfx(&oamMain,extra_bytes<=2048 ? SpriteSize_32x64 : SpriteSize_64x64,
+                            SpriteColorFormat_256Color);
     if(!extra_gfx_) { end();return false; }
     for(size_t i=0;i<65536;++i) background_backup_[i]=BG_BMP_RAM(4)[i];
     for(unsigned i=0;i<256;++i) bg_palette_[i]=BG_PALETTE[i];

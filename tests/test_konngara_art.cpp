@@ -318,7 +318,7 @@ int main()
         assert(std::rename("nitro:/konngara_slash.saved", "nitro:/konngara_slash.bin") == 0);
         assert(view.begin() && view.begin());
         assert(test_heap_count == 3 && test_heap_bytes == gpu_asset.size() + slash_asset.size() + 262144);
-        assert(test_obj_count == 2 && test_obj_used == 8192 && boss_gfx() == test_objs[BOSS_OAM_SLOT].gfx);
+        assert(test_obj_count == 2 && test_obj_used == 6144 && boss_gfx() == test_objs[BOSS_OAM_SLOT].gfx);
         // Preparing, unflushed presentation and late VBlank cannot touch live
         // VRAM or palettes. Only the early, flushed commit may publish them.
         const std::vector<u16> untouched(test_vram.pixels, test_vram.pixels + 384*1024/2);
@@ -671,10 +671,36 @@ int main()
         assert(std::equal(bgpal.begin(),bgpal.end(),BG_PALETTE));
         assert(std::equal(objpal.begin(),objpal.end(),SPRITE_PALETTE));
     }
+    {
+        // Preserve compatibility with larger valid caches: extend only the
+        // final frame's second bank using transparent padding. No art changes.
+        const auto original=read("nitro:/konngara_slash.bin");
+        auto larger=original;
+        const size_t last=32+27*24;
+        const unsigned used=word(larger.data()+last+6);
+        assert(used<=2048);
+        larger.resize(larger.size()+4096-used,0);
+        larger[last+6]=0;larger[last+7]=16;
+        for(int i=0;i<4;++i) larger[4+i]=(larger.size()>>(8*i))&255;
+        assert(konngara_slash_asset_valid(larger.data(),larger.size()));
+        assert(std::rename("nitro:/konngara_slash.bin","nitro:/konngara_slash.saved")==0);
+        { std::ofstream f("nitro:/konngara_slash.bin",std::ios::binary);
+          f.write(reinterpret_cast<const char *>(larger.data()),larger.size()); }
+        KonngaraCombatView view;assert(view.begin());
+        assert(test_obj_count==2 && test_obj_used==8192);
+        KonngaraCombatState s{};s.direction=KonngaraDirection::Center;
+        s.expression=KonngaraExpression::Aim;s.slash_cycles=2;s.slash_cel=6;
+        assert(view.frame(s));present(view);
+        view.end();view.end();
+        assert(test_heap_count==0 && test_obj_count==1 && test_obj_used==4096);
+        assert(std::rename("nitro:/konngara_slash.saved","nitro:/konngara_slash.bin")==0);
+        assert(view.begin() && test_obj_used==6144);view.end();
+        assert(test_heap_count==0 && test_obj_used==4096);
+    }
     std::puts("Konngara defeat: independent source kuji/flash/fade/scroll pixels,421-frame timeline,44 exact SFX7 events, bounded page prefetch with zero renderer allocations, missing/malformed/mid-stream failure and full cleanup passed");
     std::printf("Konngara artwork: all BOS directions/expressions and persistent GRZ patches match source pixels at five camera offsets; asset %zu bytes, peak owned heap %zu bytes\n",
         asset.size(), asset.size() + 128000 + 131072);
     std::puts("Konngara artwork: source slash keyframes/SFX8, 20 preview replays, three allocation failures, audio/file failures, HUD/camera restoration, zero OBJ requests and zero retained heap passed");
-    std::puts("Konngara combat GPU: exact chronological GRP/BOS heads + palettes at five camera crops; zero camera/flash bitmap uploads; shared head +4KiB lease; palette/background restoration and allocation/file failure rollback passed");
+    std::puts("Konngara combat GPU: exact chronological GRP/BOS heads + palettes at five camera crops; zero camera/flash bitmap uploads; shared head +2KiB lease with tested4KiB compatibility fallback; palette/background restoration and allocation/file failure rollback passed");
     std::puts("Konngara hybrid GPU: exact first/repeat closed/aim sprites and post-slash tracking; one1342-byte BG patch, seven OBJ keys per slash, zero camera/flash uploads, stable text/actor palettes and VBlank-only presentation passed");
 }

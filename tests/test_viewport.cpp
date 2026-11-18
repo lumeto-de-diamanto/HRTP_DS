@@ -1102,6 +1102,37 @@ static void check_sprite_initializers()
         assert(std::equal(resident.begin()+i*16,resident.begin()+i*16+test_obj_lengths[i]/2,test_obj_vram+i*16));
     oamFreeGfx(&oamMain,hybrid);
     assert(test_obj_used == 27840 && test_obj_count == 79);
+    // Audit feasibility with the REAL permanent owners and current1D-32
+    // allocator. The old4KiB lease cannot coexist with even nine unique kuji
+    // textures; the measured2KiB lease fits eighteen independent16x16 masks,
+    // including per-instance clipping, without touching any resident art.
+    hybrid=oamAllocateGfx(&oamMain,SpriteSize_64x64,SpriteColorFormat_256Color);
+    std::vector<u16 *> kuji;
+    for(int i=0;i<9;++i) {
+        auto *p=oamAllocateGfx(&oamMain,SpriteSize_16x16,SpriteColorFormat_16Color);
+        if(!p) break;
+        kuji.push_back(p);
+    }
+    assert(kuji.size()<9);
+    for(auto *p:kuji) oamFreeGfx(&oamMain,p);
+    oamFreeGfx(&oamMain,hybrid);kuji.clear();
+    hybrid=oamAllocateGfx(&oamMain,SpriteSize_32x64,SpriteColorFormat_256Color);
+    assert(hybrid && test_obj_used==29888);
+    for(int i=0;i<18;++i) {
+        auto *p=oamAllocateGfx(&oamMain,SpriteSize_16x16,SpriteColorFormat_16Color);
+        assert(p);kuji.push_back(p);
+    }
+    assert(test_obj_used==32192 && test_obj_capacity-test_obj_used==576);
+    constexpr int kuji_first=107,kuji_count=18;
+    static_assert(kuji_first+kuji_count<=128,"proposed kuji slots exceed OAM");
+    for(int slot=kuji_first;slot<kuji_first+kuji_count;++slot) assert(test_objs[slot].hidden);
+    for(auto *p:kuji) oamFreeGfx(&oamMain,p);
+    oamFreeGfx(&oamMain,hybrid);
+    assert(test_obj_used==27840 && test_obj_count==79 && test_oam_changes==changes);
+    assert(std::equal(palette.begin(),palette.end(),SPRITE_PALETTE));
+    for(size_t i=0;i<1024;++i) if(test_obj_lengths[i])
+        assert(std::equal(resident.begin()+i*16,resident.begin()+i*16+test_obj_lengths[i]/2,test_obj_vram+i*16));
+    std::puts("VRAM audit: measured Konngara2KiB lease + eighteen16x16 kuji textures fit current1D-32 beside all79 permanent owners,576 bytes remain; legacy4KiB lease cannot fit nine; OAM/palettes/resident graphics unchanged");
     std::printf("Sprites: 79 allocation-failure positions rolled back; 2000 reinitializations stable; %zu allocations/%zu bytes, aligned end %zu of 32768\n",
         test_obj_count, test_obj_used, end);
 }

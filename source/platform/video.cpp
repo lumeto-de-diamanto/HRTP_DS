@@ -79,8 +79,9 @@ void video_init()
     bomb_obj_owned=false;bomb_master=0;
     REG_BLDCNT=0;REG_BLDALPHA=0;video_set_fade(0);REG_MASTER_BRIGHT=0;
     videoSetMode(MODE_5_2D);
-    // Main sprite VRAM is only available on banks A, B and E; A+B hold the
-    // main BGs; D adds a separate effects canvas, E supplies 64KB OBJ VRAM.
+    // A+B hold the main BGs; D adds the effects canvas. E supplies 64KiB
+    // physical OBJ storage, of which current 1D-32 mapping addresses 32KiB.
+    // F/G can also supply main OBJ, but are deliberately not claimed here.
     vramSetPrimaryBanks(VRAM_A_MAIN_BG_0x06000000, VRAM_B_MAIN_BG_0x06020000,
                         VRAM_C_LCD, VRAM_D_LCD);
     vramSetBankE(VRAM_E_MAIN_SPRITE);

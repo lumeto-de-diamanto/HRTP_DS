@@ -90,7 +90,7 @@ void observe()
     assert(test_objs[BOSS_OAM_SLOT].format == SpriteColorFormat_256Color);
     assert(test_heap_count == baseline_blocks + 3 && test_heap_bytes == baseline_heap + owned_bytes);
     assert(test_heap_attempts == heap_attempts && test_obj_attempts == obj_attempts);
-    assert(test_obj_count==80 && test_obj_used==31936 && g_canvas_target);
+    assert(test_obj_count==80 && test_obj_used==29888 && g_canvas_target);
     if(ticks==1) assert(canvas_buffer_ready()); // hook runs immediately BEFORE commit
     if (checkpoint) {
         if (ticks % 100 == 1) player_miss(); // test-only invincibility, not an AI shortcut
@@ -572,7 +572,7 @@ void test_konngara_stage20()
     assert(stage20_entry_waits==712 && starts==plays+1 && !wait_for_shot && g_canvas_target);
     assert(stage20_fade_waits==16 && stage20_black_waits==1);
     assert(!REG_MASTER_BRIGHT && !REG_MASTER_BRIGHT_SUB);
-    assert(test_obj_count==80 && test_obj_used==31936 && REG_WININ==0x1919);
+    assert(test_obj_count==80 && test_obj_used==29888 && REG_WININ==0x1919);
     // A normal-game boss miss keeps both the orb and the real run's lives.
     orb_set_position(123,147);player_is_hit=true;gameplay_tick(0,0);
     assert(lives==5 && rem_bombs==5 && konngara.state().health.hp==18);
