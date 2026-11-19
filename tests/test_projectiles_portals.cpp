@@ -349,8 +349,11 @@ static void delay_clouds()
     std::puts("Delay clouds: source2..8 cel timing, release after movement/collision, reserved100-slot capacity, unchanged bomb behavior and ordinary-pellet default passed");
 }
 
+#include "test_score_extends.cpp"
+
 int main(int argc, char **argv)
 {
+    if (argc == 1) score_extends_rules();
     if (argc == 1) card_presence_and_hp();
     if (argc == 1 || std::strcmp(argv[1], "orb") == 0) orb_ceiling_bounces();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();

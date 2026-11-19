@@ -421,6 +421,7 @@ int stage20_entry_waits,stage20_defeat_waits,stage20_entry_frame;
 int stage20_fade_waits,stage20_black_waits,stage20_fade_timer;
 int stage20_carry_score;
 int stage20_frozen_score,stage20_frozen_timer,stage20_frozen_frame;
+int stage20_lethal_lives;
 
 void observe_stage20()
 {
@@ -462,7 +463,8 @@ void observe_stage20()
         }
         assert(++stage20_defeat_waits<=541);
         assert(stage_score==stage20_frozen_score && stage_timer==unsigned(stage20_frozen_timer) && frame==unsigned(stage20_frozen_frame));
-        assert(lives==5 && rem_bombs==5 && !player_is_hit);
+        const int expected_lives=stage20_defeat_waits<=421 ? stage20_lethal_lives : 5+(stage20_frozen_score>=400000);
+        assert(lives==expected_lives && rem_bombs==5 && !player_is_hit);
     }
 }
 }
@@ -618,6 +620,7 @@ void test_konngara_stage20()
         orb_set_position(hit?300:600,hit?130:80);
         if(s.phase==7 && s.health.hp==1 && !s.health.invincible) {
             player_is_hit=true;
+            stage20_lethal_lives=lives;
             defeat_attempts=test_heap_attempts;test_heap_fail_after=0;
         }
         gameplay_tick(0,0);
@@ -625,7 +628,7 @@ void test_konngara_stage20()
     test_heap_fail_after=-1;
     assert(jigoku_cleared && stage20_defeat_waits==541 && current_scene==6 && current_stage==4);
     assert(defeat_attempts && test_heap_attempts==defeat_attempts);
-    assert(stage_score==stage20_frozen_score && lives==5 && rem_bombs==5);
+    assert(stage_score==stage20_frozen_score && lives==5+(stage_score>=400000) && rem_bombs==5);
     const u16 j=(1+('J'-0x20)*2)|(14<<12);
     assert(BG_MAP_RAM(30)[8*32+7]==j && test_obj_count==79);
     gameplay_tick(0,0); // terminal state cannot re-run defeat/bonus or loop to16
@@ -1128,11 +1131,18 @@ void test_bombs()
     white_frames=0;
     for(int f=0;f<=172;++f) {
         const size_t bytes=test_dma_copy_bytes;
+        const int previous_score=stage_score;
         bomb_expected_master=bomb_master_reference(f,original_master);
         test_bg_update_hook=observe_bomb_flash_commit;
         orb_set_position(10000,200);gameplay_tick(0,0);
         test_bg_update_hook=nullptr;
-        assert(player_bomb().frame()==(f<140?f:140) && rem_bombs==1 && lives==3 && current_stage==0);
+        // This real bomb's card combo can exceed400k. Keep exact resource
+        // assertions, but include the newly restored extends rather than
+        // incorrectly requiring the old, permanently fixed three lives.
+        assert(stage_score-previous_score<SCORE_PER_EXTEND);
+        assert(player_bomb().frame()==(f<140?f:140) && rem_bombs==1 &&
+            lives==std::min(6,3+stage_score/400000) && current_stage==0);
+        assert(score_extends.next_score()==int64_t(stage_score/400000+1)*400000);
         assert(player_bomb().active()==(f<140) && player_bomb().damaging()==(f>=50 && f<140));
         assert(bool(g_canvas_target)==(f<172) && regular_bomb_canvas_owned==(f<172));
         assert(REG_MASTER_BRIGHT==bomb_master_reference(f,original_master));
@@ -1396,3 +1406,4 @@ void test_mima_stage10()
 }
 
 #include "test_kikuri_stage15.cpp"
+#include "test_score_extends_flow.cpp"

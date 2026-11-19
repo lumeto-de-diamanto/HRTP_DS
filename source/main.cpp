@@ -31,6 +31,7 @@
 #include <main/stage/item.hpp>
 #include <main/stage/timer.hpp>
 #include <main/bonus.hpp>
+#include <main/extend.hpp>
 
 #include "player_render.hpp"
 #include "shot_render.hpp"
@@ -72,6 +73,7 @@ static const int START_LIVES = 3;
 static int current_scene;
 static int current_stage;
 static int lives;
+static ScoreExtends score_extends;
 static unsigned int frame;
 static bool wait_for_shot; // ReC98 stage_wait_for_shot_to_begin
 static KonngaraCombat konngara;
@@ -84,6 +86,16 @@ static bool jigoku_cleared;
 static const PlayerDeathFrame *player_death_frame;
 alignas(4) static u16 regular_bomb_canvas[256*256];
 static bool regular_bomb_canvas_owned;
+
+static bool score_extend_update()
+{
+    if(!score_extends.update(stage_score,lives)) return false;
+    // Source pellet_speed_raise(1) selects the INTEGER/raw-unit overload.
+    // The DS float-only helper would add40 here instead of the required1.
+    pellet_speed=pellet_speed<20 ? pellet_speed+1 : 20;
+    mdrv2_se_play(SFX_PICKUP);
+    return true; // the next normal HUD commit presents the changed life count
+}
 
 static void check_konngara(bool okay,const char *part)
 {
@@ -331,6 +343,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         stage_init(layout->obstacle, layout->card);
     }
     stage_score=entering_score;
+    if(!preserve_score) score_extends.reset(); // new game, continue, quit or dev jump
     stage_reset();
     Pellets.init();
     Items.init();
@@ -469,6 +482,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 hud_render(lives,20); // includes the lethal-hit50000 immediately
                 hud_radar_render(); // clear the defeated boss and collected items
                 check_konngara(konngara_view.defeat(konngara.state().health.invincible),"defeat");
+                score_extend_update(); // include the lethal-hit 50000, after the frozen defeat
                 for(int f=0;f<120;++f) swiWaitForVBlank(); // source ending handoff delay
                 text_layer_clear();
                 text_layer_puts(7,4,"JIGOKU CLEARED",TEXT_PAL_WHITE);
@@ -487,12 +501,14 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 if(stage_score>hiscore) hiscore=stage_score;
                 render_hud();hud_radar_render();
                 check_mima(mima_view.defeat(mima.state()),"defeat");
+                score_extend_update(); // source gameplay check, before computing resource bonus
                 player_bomb_cancel();
                 // Defeat leaves an empty canvas and the default Reimu pose.
                 // Release buffering BEFORE the existing hardware results capture.
                 mima_view.end();
                 const StageBonus bonus=roundbonus_compute(10,lives);
                 stage_score+=bonus.total;
+                score_extend_update(); // approved fix: boss-result points also qualify
                 if(stage_score>hiscore) hiscore=stage_score;
                 round_results_run(bonus,10);
                 stage_load(4,0,false,true);
@@ -507,6 +523,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 if(stage_score>hiscore) hiscore=stage_score;
                 render_hud();hud_radar_render();
                 check_kikuri(kikuri_view.defeat(kikuri.state()),"defeat");
+                score_extend_update();
                 const u16 normal_master=kikuri_view.normal_brightness();
                 do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
                 kikuri_view.end(true); // release both leases before results borrow VRAM D
@@ -517,6 +534,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 dmaFillHalfWords(0,BG_BMP_RAM(4),128*1024);BG_PALETTE[0]=0;
                 const StageBonus bonus=roundbonus_compute(15,lives);
                 stage_score+=bonus.total;if(stage_score>hiscore) hiscore=stage_score;
+                score_extend_update(); // no HUD redraw over the genuinely black capture input
                 round_results_run(bonus,15,normal_master);
                 bgShow(0);bgShow(g_bg_id_tiles); // results exit still holds both screens black
                 stage_load(6,0,false,true);
@@ -533,8 +551,10 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 music_stop();
                 Pellets.init();shots_initialize();Items.init();render_frame();
                 const RouteChoice route=boss_defeat_and_select_route();
+                score_extend_update();
                 const StageBonus bonus=roundbonus_compute(global_stage_num(),lives);
                 stage_score+=bonus.total;
+                score_extend_update();
                 if(stage_score>hiscore) hiscore=stage_score;
                 round_results_run(bonus,global_stage_num());
                 stage_load(route_first_scene(route),0,true,true);
@@ -551,6 +571,9 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     if(!entrance && !player_is_hit && orb_hits_player(player_get_state().x_position,
         player_get_state().y_position,OR_NONE,player_is_invincible(),player_is_invincible_to_orb())) player_is_hit=true;
     if(!boss && stage_is_cleared()) player_is_hit=false; // source stage-clear wins simultaneous contact
+    // The source checks after gameplay scoring even on a hit frame. An extend
+    // can therefore turn a would-be Game Over into a normal surviving miss.
+    const bool extended=!serving && !entrance && score_extend_update();
     if(player_is_hit) {
         player_is_hit=false;
         const bool fatal=lives<=0;
@@ -585,6 +608,9 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         // renderer/input loop. The displayed tally and credited amount agree.
         const StageBonus bonus=stagebonus_compute(global_stage_num(),lives);
         stage_score+=bonus.total;
+        const bool bonus_extended=score_extend_update(); // always check, even after a gameplay award
+        if(extended || bonus_extended)
+            upper_hud_render(lives,rem_bombs,stage_timer,UpperHudMode::Regular);
         if(stage_score>hiscore) hiscore=stage_score;
         hud_render(lives,global_stage_num());
         hud_radar_render(); // remove the final card before the blocking tally

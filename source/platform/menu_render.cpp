@@ -117,7 +117,7 @@ bool gameover_menu_run()
 void stagebonus_run(const StageBonus &bonus, int stage_num)
 {
     palette_dim(100); // source restores the normal palette, not pause dimming
-    menu_vblank();text_layer_modal_begin();
+    menu_vblank();oamUpdate(&oamMain);text_layer_modal_begin(); // commit a bonus-earned life to the fixed HUD
     const u16 control=REG_BLDCNT,alpha=REG_BLDALPHA,window=REG_WINOUT;
     // BG0 remains in front of BG2/OBJ.16+8 dims the scene under black by50%
     // while saturating white lettering stays fully bright. The HUD windows
