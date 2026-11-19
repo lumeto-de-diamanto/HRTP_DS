@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from audio_mix import load_mix_profile
 from build_native_audio import build_track, sha
+from native_instruments import host_renderer
 
 
 def write_changed(path, data):
@@ -19,6 +20,9 @@ def write_changed(path, data):
 
 
 def build(args):
+    # Keep the independent patch/tuning executables available even when all
+    # tracks are reused. Normal-mode audio tests execute them on every run.
+    host_renderer(args.ymfm, args.cxx)
     specs = json.loads(Path("audio/tracks.json").read_text())["tracks"]
     reports = []
     for spec in specs:

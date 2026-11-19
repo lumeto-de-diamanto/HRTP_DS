@@ -2,6 +2,7 @@
 #include <nds.h>
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <cerrno>
 #include <fstream>
@@ -48,15 +49,19 @@ void present(KonngaraCombatView &view)
     assert(view.present() && !canvas_buffer_ready());
 }
 
-unsigned object_color(int slot, int x, int y, unsigned color)
+void compose_object(std::vector<u16> &pixels, int slot)
 {
     const auto &o = test_objs[slot];
+    if(o.hidden) return;
     const int widths[] = {8,16,32,32,64,8,32,64,8,16,16,32};
     const int heights[] = {8,16,16,32,64,16,8,32,32,8,32,64};
-    int sx=x-o.x,sy=y-o.y,w=widths[o.size],h=heights[o.size];
-    if(o.hidden || sx<0 || sy<0 || sx>=w || sy>=h) return color;
-    unsigned index=reinterpret_cast<const u8*>(o.gfx)[((sy/8)*(w/8)+sx/8)*64+(sy%8)*8+sx%8];
-    return index ? SPRITE_PALETTE[index] : color;
+    const int w=widths[o.size],h=heights[o.size];
+    for(int y=std::max(0,o.y);y<std::min(192,o.y+h);++y)
+        for(int x=std::max(0,o.x);x<std::min(256,o.x+w);++x) {
+            const int sx=x-o.x,sy=y-o.y;
+            const unsigned index=reinterpret_cast<const u8*>(o.gfx)[((sy/8)*(w/8)+sx/8)*64+(sy%8)*8+sx%8];
+            if(index) pixels[y*256+x]=SPRITE_PALETTE[index];
+        }
 }
 
 void check_frame(const u8 *reference, int left, bool full)
@@ -137,6 +142,15 @@ void mdrv2_se_play(int id) {
 
 int main()
 {
+    auto started = std::chrono::steady_clock::now();
+    const auto checkpoint = [&started](const char *name) {
+        const auto now = std::chrono::steady_clock::now();
+        std::printf("  artwork: %s passed in %.2fs\n", name,
+                    std::chrono::duration<double>(now-started).count());
+        std::fflush(stdout); started=now;
+    };
+    std::puts("  artwork: source pixels, preview lifecycles, combat, hybrid and defeat");
+    std::fflush(stdout);
     const auto asset = read("nitro:/konngara_art.bin");
     const auto commands = read("commands.bin");
     preview = read("preview.bin");
@@ -216,6 +230,7 @@ int main()
         assert(art.load()); // explicit release/reload and destructor ownership
     }
     assert(test_heap_count == 0 && test_heap_bytes == 0);
+    checkpoint("source artwork/validation");
     for (int frame = -1; frame <= 201; ++frame) {
         const int frames[] = {50, 60, 100, 120, 140, 160, 170};
         int expected_cel = -1;
@@ -267,6 +282,7 @@ int main()
         if (i < 0x40000 / 2 || i >= 0x40000 / 2 + 256 * 192) assert(resident[i] == test_vram.pixels[i]);
     assert(REG_WININ == 0x1919 && test_bgs[0].priority == 0 && test_obj_attempts == obj_attempts);
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
+    checkpoint("20 preview replays and failure cleanup");
     {
         const auto gpu_asset = read("nitro:/konngara_combat.bin");
         const auto slash_asset = read("nitro:/konngara_slash.bin");
@@ -491,6 +507,7 @@ int main()
     assert(std::equal(objpal.begin(), objpal.end(), SPRITE_PALETTE));
     {
         const auto asset = read("nitro:/konngara_slash.bin"), commands = read("slash.bin");
+        checkpoint("combat poses, lasers and palettes");
         assert(konngara_slash_asset_valid(asset.data(),asset.size()));
         assert(!konngara_slash_asset_valid(nullptr,asset.size()));
         for (size_t size : {size_t(0),size_t(16),asset.size()-1,asset.size()+1})
@@ -526,10 +543,13 @@ int main()
                 const auto &head=test_objs[BOSS_OAM_SLOT];
                 assert(head.hidden==(state.slash_cel>=0));
                 const auto *bg=reinterpret_cast<const u8*>(BG_BMP_RAM(4));
+                std::vector<u16> pixels(256*192);
+                for(int y=0;y<192;++y) for(int x=0;x<256;++x)
+                    pixels[y*256+x]=BG_PALETTE[bg[y*512+x+left]];
+                compose_object(pixels,BOSS_OAM_SLOT);
+                for(int slot=75;slot<107;++slot) compose_object(pixels,slot);
                 for(int y=0;y<192;++y) for(int x=0;x<256;++x) {
-                    unsigned color=BG_PALETTE[bg[y*512+x+left]];
-                    color=object_color(BOSS_OAM_SLOT,x,y,color);
-                    for(int slot=75;slot<107;++slot) color=object_color(slot,x,y,color);
+                    const unsigned color=pixels[y*256+x];
                     if((color|0x8000)!=expected(command+8,x+left,y)) {
                         std::fprintf(stderr,"Hybrid mismatch command%u op%u arg%u cycles%d cel%d crop%d at%d,%d actual%04x expected%04x\n",
                             i,op,arg,state.slash_cycles,state.slash_cel,left,x+left,y,color|0x8000,expected(command+8,x+left,y));
@@ -566,6 +586,7 @@ int main()
         assert(std::equal(bgpal.begin(),bgpal.end(),BG_PALETTE));
         assert(std::equal(objpal.begin(),objpal.end(),SPRITE_PALETTE));
     }
+    checkpoint("hybrid sprites/all source pixels and camera crops");
     {
         const auto data=read("nitro:/konngara_defeat.bin");
         assert(konngara_defeat_asset_valid(data.data(),data.size()));
@@ -697,6 +718,7 @@ int main()
         assert(view.begin() && test_obj_used==6144);view.end();
         assert(test_heap_count==0 && test_obj_used==4096);
     }
+    checkpoint("defeat/failure cleanup and larger-cache compatibility");
     std::puts("Konngara defeat: independent source kuji/flash/fade/scroll pixels,421-frame timeline,44 exact SFX7 events, bounded page prefetch with zero renderer allocations, missing/malformed/mid-stream failure and full cleanup passed");
     std::printf("Konngara artwork: all BOS directions/expressions and persistent GRZ patches match source pixels at five camera offsets; asset %zu bytes, peak owned heap %zu bytes\n",
         asset.size(), asset.size() + 128000 + 131072);

@@ -7,6 +7,8 @@ import subprocess
 import sys
 import unittest
 
+import numpy as np
+
 from grp_to_bin import decode_grp
 from grz_decode import decode_grz, decode_stream
 from konngara_art_to_bin import build, bos_patches
@@ -102,21 +104,17 @@ class SourcePage:
             assert offset == 32000
 
     def frame(self, palette=None, line=0):
-        out = bytearray()
         colors = [color[:] for color in (self.palette if palette is None else palette)]
         if palette is None:
             t = self.siddham_white
             colors[9] = [t, max(t, 9), max(t, 10)]
-        components = [[(15 if palette is None and self.flashing and i in (3, 4, 5) else v) * 17 // 4
-                       for v in color] for i, color in enumerate(colors)]
-        for y in range(16, 400, 2):
-            top,below=(y+line)%400,(y+line+1)%400
-            for x in range(0, 640, 2):
-                pixels = [self.page[top * 640 + x], self.page[top * 640 + x + 1],
-                          self.page[below * 640 + x], self.page[below * 640 + x + 1]]
-                rgb = [sum(components[p][c] for p in pixels) >> 3 for c in range(3)]
-                out += struct.pack('<H', 0x8000 | rgb[0] | rgb[1] << 5 | rgb[2] << 10)
-        return out
+        components = np.array([[(15 if palette is None and self.flashing and i in (3, 4, 5) else v) * 17 // 4
+                                for v in color] for i, color in enumerate(colors)], dtype=np.uint16)
+        page = np.frombuffer(self.page, dtype=np.uint8).reshape(400, 640)
+        rows = (np.arange(16, 400, 2) + line) % 400
+        rgb = sum(components[page[(rows + dy) % 400, dx::2]]
+                  for dy in (0, 1) for dx in (0, 1)) >> 3
+        return (0x8000 | rgb[:, :, 0] | rgb[:, :, 1] << 5 | rgb[:, :, 2] << 10).astype('<u2').tobytes()
 
 
 def skip(count):

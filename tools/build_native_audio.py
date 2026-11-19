@@ -16,6 +16,8 @@ import re
 import struct
 import subprocess
 import sys
+import tempfile
+import time
 
 from audio_mix import load_mix_profile
 
@@ -373,10 +375,74 @@ def pack_song(song, samples, zones, rhythm, *, tempo=76, intro=960, period=4704,
     return blob, tracks, counts
 
 
+def build_inputs(args):
+    from native_instruments import renderer_inputs
+    return [Path(__file__), Path('tools/audio_mix.py'), Path('tools/import_opna_rhythm.py'),
+            Path('audio/opna_mix.json'), *renderer_inputs(args.ymfm),
+            *sorted(args.tools_dir.glob('*.py'))]
+
+
+def track_identity(args, source):
+    from native_instruments import compiler_identity
+    inputs = [source, *build_inputs(args)]
+    if args.rhythm_dir:
+        # Include the actual case-insensitive WAV inventory: missing, renamed,
+        # duplicate or newly added matches must not hide behind a cache hit.
+        inputs += sorted(p for p in args.rhythm_dir.iterdir() if p.is_file() and
+                         p.name.casefold().startswith('2608_') and p.suffix.casefold() == '.wav')
+        provenance = args.rhythm_dir / 'provenance.json'
+        if provenance.is_file():
+            inputs.append(provenance)
+    return dict(inputs={str(p): sha(p.read_bytes()) for p in inputs},
+                track=args.track, out=str(args.out), rhythm_dir=str(args.rhythm_dir),
+                approximate_portamento=args.approximate_portamento,
+                compiler=compiler_identity(args.cxx), python=sys.version)
+
+
+def track_outputs(track):
+    return ['manifest.json', 'native_track.h', f'nitrofs/{track}/song.nsq',
+            *('instruments/' + name for name in
+              ('patches.opm', 'fm_usage.txt', 'ssg_usage.txt', 'instruments.bank'))]
+
+
+def cached_track(out, identity, outputs):
+    try:
+        previous = json.loads((out / 'build-cache.json').read_text())
+        if (isinstance(previous, dict) and previous.get('identity') == identity and
+                previous.get('outputs') == {p: sha((out / p).read_bytes()) for p in outputs}):
+            return json.loads((out / 'manifest.json').read_text())
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def cache_track(out, identity, outputs):
+    stamp = dict(identity=identity, outputs={p: sha((out / p).read_bytes()) for p in outputs})
+    # Publish only a complete, verified output set; a failed rebuild leaves no
+    # usable stamp. Never cache test outcomes, only generated build artifacts.
+    with tempfile.NamedTemporaryFile(mode='w', dir=out, delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            json.dump(stamp, stream, sort_keys=True)
+            stream.close()
+            temporary.replace(out / 'build-cache.json')
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
 def build_track(args):
     from native_instruments import host_renderer, instrument_assets
     source = Path(f"assets/hdi_dump/{args.track.upper()}.MDT")
     args.out.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    identity = track_identity(args, source)
+    outputs = track_outputs(args.track)
+    previous = cached_track(args.out, identity, outputs)
+    if previous is not None:
+        print(f'Native track {args.track}: unchanged inputs/outputs reused', flush=True)
+        return previous
+    (args.out / 'build-cache.json').unlink(missing_ok=True)
+    print(f'Native track {args.track}: build sequence/PCM', flush=True)
     nitro = args.out / "nitrofs" / args.track
     nitro.mkdir(parents=True, exist_ok=True)
     mix = load_mix_profile()
@@ -413,9 +479,7 @@ def build_track(args):
         f'#define NS_TRACK_SLIDES {len(diagnostics)}\n#define NS_ORIGINAL_RHYTHM {int(bool(args.rhythm_dir))}\n')
     for item in diagnostics:
         print(f"WARNING {args.track.upper()} {item['source']:#x} tick {item['tick']}: {item['limitation']} {item['command']}")
-    inputs = [Path(__file__), Path('tools/native_instruments.py'), Path('tools/render_opna_fm.cpp'),
-        Path('tools/import_opna_rhythm.py'), Path('audio/opna_mix.json'),
-        *sorted(args.tools_dir.glob('*.py')), *sorted((args.ymfm / 'src').glob('ymfm*.*'))]
+    inputs = build_inputs(args)
     report = dict(version=1, track=args.track, source=str(source),
         sequence_path=str(nitro / "song.nsq"), rhythm=rhythm_report, mix=mix,
         source_sha256=sha(source.read_bytes()),
@@ -432,6 +496,8 @@ def build_track(args):
             "Integer gate counters truncate fractional Q durations; original rounding not runtime-verified",
             "No hardware LFO or nonzero SSG pitch LFO"])
     (args.out / "manifest.json").write_text(json.dumps(report, indent=2) + "\n")
+    cache_track(args.out, identity, outputs)
+    print(f'Native track {args.track}: built in {time.monotonic()-started:.2f}s', flush=True)
     return report
 
 

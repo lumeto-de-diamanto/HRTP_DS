@@ -1,7 +1,10 @@
 """Render native instrument PCM directly from decoded MDT usage and local WAVs."""
 from collections import defaultdict
+from functools import lru_cache
 import hashlib
+import json
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 
@@ -9,16 +12,39 @@ from audio_mix import load_mix_profile
 from import_opna_rhythm import DRUMS, load_rhythm
 
 
+@lru_cache(maxsize=None)
+def compiler_identity(cxx):
+    executable = Path(shutil.which(cxx) or cxx).resolve()
+    return dict(command=cxx, executable=str(executable),
+                sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
+                version=subprocess.check_output([cxx, '--version'], text=True))
+
+
+def renderer_inputs(ymfm):
+    return [Path('tools/native_instruments.py'), Path('tools/render_opna_fm.cpp'),
+            Path('tests/test_opna_patch.cpp'), Path('tests/test_opna_tuning.cpp'),
+            *sorted((ymfm / 'src').glob('ymfm*.*'))]
+
+
 def host_renderer(ymfm, cxx='g++'):
     out = Path('build/native_tools')
     out.mkdir(parents=True, exist_ok=True)
     sources = [Path('tools/render_opna_fm.cpp'),
                *(ymfm / 'src' / name for name in ('ymfm_opn.cpp', 'ymfm_adpcm.cpp', 'ymfm_ssg.cpp'))]
-    inputs = [Path('tools/native_instruments.py'), Path('tests/test_opna_patch.cpp'),
-              Path('tests/test_opna_tuning.cpp'), *sources, *sorted((ymfm / 'src').glob('ymfm*.*'))]
-    identity = hashlib.sha256((cxx + ''.join(hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs)).encode()).hexdigest()
+    identity = dict(compiler=compiler_identity(cxx),
+                    inputs={str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in renderer_inputs(ymfm)})
     exe, stamp = out / 'render_opna_fm', out / 'renderer.sha256'
-    if not exe.exists() or not stamp.exists() or stamp.read_text() != identity:
+    outputs = [exe, out / 'test_opna_patch', out / 'test_opna_tuning']
+    try:
+        previous = json.loads(stamp.read_text())
+    except (OSError, ValueError):
+        previous = {}
+    if not isinstance(previous, dict):
+        previous = {}
+    hashes = lambda: {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in outputs}
+    if (previous.get('inputs') != identity or not all(p.is_file() for p in outputs)
+            or previous.get('outputs') != hashes()):
+        stamp.unlink(missing_ok=True)
         flags = [cxx, '-O2', '-std=c++17', '-Wno-unused-parameter', f'-I{ymfm / "src"}']
         subprocess.run([*flags, *map(str, sources), '-o', str(exe)], check=True)
         for name in ('test_opna_patch', 'test_opna_tuning'):
@@ -26,7 +52,7 @@ def host_renderer(ymfm, cxx='g++'):
             subprocess.run([*flags, f'tests/{name}.cpp', *map(str, sources[1:]), "-Itools", '-o', str(test)], check=True)
             if name == 'test_opna_tuning':
                 subprocess.run([str(test)], check=True)
-        stamp.write_text(identity)
+        stamp.write_text(json.dumps(dict(inputs=identity, outputs=hashes()), sort_keys=True))
     return exe
 
 

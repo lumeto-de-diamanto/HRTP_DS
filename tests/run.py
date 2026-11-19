@@ -82,11 +82,13 @@ class HostBuilder:
             print(f'  cached host: {name}', flush=True)
             return binary
         print(f'  build host: {name}', flush=True)
+        started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix=name + '-', dir=self.directory) as directory:
             temporary = Path(directory) / name
-            subprocess.run([*self.cxx, *flags, *sources, *link, '-o', str(temporary)], check=True)
+            subprocess.run([*self.cxx, *flags, *sources, *link, '-o', str(temporary)], check=True, timeout=120)
             temporary.replace(binary)
         save_stamp(stamp, dict(signature=signature, output=digest(binary)))
+        print(f'  built: {name} in {time.monotonic()-started:.2f}s', flush=True)
         return binary
 
 
@@ -110,16 +112,22 @@ def fixtures(module_name, runtime):
         print(f'  cached fixtures: {module_name}', flush=True)
         return
     print(f'  prepare fixtures: {module_name}', flush=True)
+    started = time.monotonic()
     stamp.unlink(missing_ok=True)
     module.run_renderer(None)
     save_stamp(stamp, dict(inputs=signature,
                           outputs=snapshot(p for p in runtime.rglob('*') if p.is_file())))
+    print(f'  prepared: {module_name} in {time.monotonic()-started:.2f}s', flush=True)
 
 
 def python_tests(names):
-    suite = unittest.TestSuite(unittest.defaultTestLoader.loadTestsFromName(name) for name in names)
-    if not unittest.TextTestRunner(verbosity=1).run(suite).wasSuccessful():
-        raise SystemExit(1)
+    for name in names:
+        started = time.monotonic()
+        print(f'  run python: {name}', flush=True)
+        suite = unittest.defaultTestLoader.loadTestsFromName(name)
+        if not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful():
+            raise SystemExit(1)
+        print(f'  completed: {name} in {time.monotonic()-started:.2f}s', flush=True)
 
 
 def run_binary(binary, *, cwd=None, arguments=(), sanitize=False):
@@ -143,7 +151,7 @@ def host_tests(args):
                       'test_viewport_assets', 'test_konngara_assets', 'test_konngara_art_assets',
                       'test_kikuri_assets']
         if selected('audio'):
-            names += ['test_native_audio', 'test_native_sfx', 'test_opna_rhythm',
+            names += ['test_native_build_cache', 'test_native_audio', 'test_native_sfx', 'test_opna_rhythm',
                       'test_recording_comparison']
         if names:
             python_tests(names)
@@ -236,12 +244,16 @@ def host_tests(args):
                 binaries[name] = build(name, [f'tests/test_native_{name}.cpp'],
                                        ['native_audio/service_stubs', 'native_audio', 'tools'])
             binaries['music'] = build('music', ['tests/test_native_music.cpp', platform + 'music.cpp'],
-                                      ['native_audio/test_stubs', 'native_audio',
-                                       'build/native_soundtrack', 'source/platform'])
-        importlib.import_module('test_native_soundtrack').check(binaries)
+                                       ['native_audio/test_stubs', 'native_audio',
+                                        'build/native_soundtrack', 'source/platform'])
+            binaries['patch'] = Path('build/native_tools/test_opna_patch')
+            binaries['tuning'] = Path('build/native_tools/test_opna_tuning')
+        importlib.import_module('test_native_soundtrack').check(
+            binaries, lambda binary, **kwargs: run_binary(binary, sanitize=args.mode=='sanitize', **kwargs))
 
 
 def main():
+    started = time.monotonic()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=('test', 'sanitize', 'release'))
     parser.add_argument('--suite', choices=('all', 'gameplay', 'graphics', 'audio'), default='all')
@@ -264,7 +276,7 @@ def main():
             importlib.import_module('check_audio_release').check_release()
         else:
             host_tests(args)
-    print(f'{args.mode} ({args.suite}): passed', flush=True)
+    print(f'{args.mode} ({args.suite}): passed in {time.monotonic()-started:.2f}s', flush=True)
 
 
 if __name__ == '__main__':
