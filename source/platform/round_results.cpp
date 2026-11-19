@@ -281,6 +281,11 @@ void roll_number(int right,int y,int value,int digits,int &clock)
 
 void round_results_run(const StageBonus &bonus,int stage)
 {
+    round_results_run(bonus,stage,REG_MASTER_BRIGHT);
+}
+
+void round_results_run(const StageBonus &bonus,int stage,uint16_t restore_master)
+{
     // Scratch lives in already-resident BG3 memory, not a new framebuffer or
     // OAM allocation. Its original pixels and the unused map are restored.
     alignas(4) u16 old_font[font_words],old_map[1024];
@@ -288,7 +293,7 @@ void round_results_run(const StageBonus &bonus,int stage)
     const u32 display=REG_DISPCNT;
     const u32 capture=REG_DISPCAPCNT;
     const u16 blend=REG_BLDCNT,alpha=REG_BLDALPHA,fade=video_fade();
-    const u16 master=REG_MASTER_BRIGHT,sub_master=REG_MASTER_BRIGHT_SUB;
+    const u16 master=restore_master,sub_master=REG_MASTER_BRIGHT_SUB;
     for(int i=0;i<font_words;++i) old_font[i]=BG_TILE_RAM(results_tiles)[i];
     for(int i=0;i<1024;++i) old_map[i]=BG_MAP_RAM(results_map)[i];
     for(int i=0;i<256;++i) {main_palette[i]=BG_PALETTE[i];sub_palette[i]=BG_PALETTE_SUB[i];}

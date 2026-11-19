@@ -84,6 +84,7 @@ struct Pellet {
     int decay_frame;
     int angle;
     int sling_direction; // retained when a slot is reused, as in the original
+    SPPoint spin_center,spin_velocity; // PM_SPIN only; fixed Q4 center drift
 };
 
 struct CPellets {
@@ -98,6 +99,10 @@ struct CPellets {
     void add_single(int left, int top, int angle, subpixel_t speed,
                     pellet_motion_t motion = PM_REGULAR,
                     subpixel_t fixed_motion_speed = 0);
+    // Source PM_SPIN overload; keep the existing entry point/modes unchanged.
+    void add_single(int left,int top,int angle,subpixel_t speed,
+                    pellet_motion_t motion,subpixel_t fixed_motion_speed,
+                    int spin_center_x,int spin_center_y);
 
     // Per-frame: motion, clipping, and hit tests (orb, player, shots).
     // Returns true if the player was hit.

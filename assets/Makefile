@@ -27,10 +27,11 @@ HDI_DUMP_STAMP   := $(HDI_DUMP_DIR)/.stamp
 # Extraction creates multiple files at once. Explicit grouped targets let Make
 # find these inputs on the FIRST build and recover a deleted member safely
 # under -j. A stamp alone cannot describe an implicit rule's missing input.
-HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 BOSS3 CLEAR3 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
+HDI_GRP_NAMES := $(addprefix ST,0 1 2 3 4 5 6) BOSS1 BOSS3 BOSS4 CLEAR3 BOSS7_D1 BOSS8_A1 $(addprefix BOSS8_D,1 2 3 4)
 HDI_FILES := $(PACKFILE) $(addprefix $(HDI_DUMP_DIR)/,$(addsuffix .GRP,$(HDI_GRP_NAMES))) $(HDI_DUMP_DIR)/BOSS8.GRZ
 PACKFILE_NAMES := MIKO.PTN MIKO_AC2.BOS MIKO_AC.BOS STG.PTN KUZI1.GRC KUZI2.GRC BOSS1.BOS BOSS1_2.BOS BOSS1_3.BOS BOSS3_1.BOS BOSS3_2.BOS BOSS8_1.BOS BOSS8_E1.BOS BOSS8_E2.BOS $(addprefix STAGE,$(addsuffix .DAT,$(SCENES)))
 PACKFILE_NAMES += BOSS3_M.PTN
+PACKFILE_NAMES += TAMASII.BOS TAMASII2.BOS TAMAYEN.PTN
 PACKFILE_FILES := $(addprefix $(PACKFILE_DIR)/,$(PACKFILE_NAMES))
 BACKGROUND_BINS := $(addprefix $(NITROFS_DIR)/,$(addsuffix .bin,st0 st1 st2 st3 st4 st5 st6 boss1 boss3))
 
@@ -77,6 +78,10 @@ assets: $(SPRITES_DIR)/Missile.h $(SPRITES_DIR)/PelletCloud.h $(BACKGROUND_DIR)/
 assets: $(SPRITES_DIR)/Pillar.h
 assets: $(BACKGROUND_DIR)/MimaDefeatPalette.h
 assets: $(SPRITES_DIR)/RadarIcons.h
+assets: $(NITROFS_DIR)/kikuri_art.bin
+
+$(NITROFS_DIR)/kikuri_art.bin: $(HDI_DUMP_DIR)/BOSS4.GRP $(addprefix $(PACKFILE_DIR)/,TAMASII.BOS TAMASII2.BOS TAMAYEN.PTN) $(TOOLS_DIR)/kikuri_to_bin.py $(TOOLS_DIR)/grp_to_bin.py $(TOOLS_DIR)/bos_to_h.py $(TOOLS_DIR)/ptn_to_h.py $(TOOLS_DIR)/halve_image.py
+	$(PYTHON) $(TOOLS_DIR)/kikuri_to_bin.py $(PACKFILE_DIR) $(HDI_DUMP_DIR)/BOSS4.GRP $@
 
 RADAR_PNGS := $(addprefix $(ASSETS_DIR)/sprites/radar/,$(addsuffix .png,player orb card obstacle portal item turret barrier_horizontal barrier_vertical))
 $(SPRITES_DIR)/RadarIcons.h: $(RADAR_PNGS) $(ASSETS_DIR)/font.bmp $(TOOLS_DIR)/radar_icons_to_h.py $(TOOLS_DIR)/font16x16.py $(TOOLS_DIR)/font16x16_chars.py

@@ -49,7 +49,7 @@ class ViewportAssets(unittest.TestCase):
         self.assertLess(load.index('stage_entrance_prepare()'), load.index('load_boss_background()'))
         self.assertLess(load.index('player_initialize()'), load.index('stage_entrance_animate('))
         presentations = list(re.finditer(r'(?<!\w)render_frame\(\);', load))
-        self.assertEqual(len(presentations), 3)  # Konngara, Mima, ordinary entrances
+        self.assertEqual(len(presentations), 4)  # Konngara, Mima, Kikuri, ordinary entrances
         self.assertLess(load.index('konngara_intro_play()'), load.index('konngara_view.begin()'))
         self.assertLess(load.index('konngara_view.begin()'), presentations[0].start())
         self.assertLess(load.index('stage_entrance_animate('), presentations[1].start())
@@ -59,7 +59,11 @@ class ViewportAssets(unittest.TestCase):
         self.assertLess(load.index('music_play_track(NATIVE_LEGEND)'), load.index('mima_entrance_play('))
         self.assertLess(load.index('mima_entrance_play('), load.index('mima.reset(true)'))
         self.assertLess(load.index('mima.reset(true)'), presentations[1].start())
-        self.assertLess(presentations[2].start(), load.index('music_play_track(NATIVE_POSITIVE)'))
+        self.assertLess(load.index('stage_entrance_animate('),load.index('kikuri_view.begin()'))
+        self.assertLess(load.index('kikuri_view.begin()'),load.index('music_play_track(NATIVE_KAMI)'))
+        self.assertLess(load.index('music_play_track(NATIVE_KAMI)'),load.index('kikuri_entrance_play('))
+        self.assertLess(load.index('kikuri_entrance_play('),presentations[2].start())
+        self.assertLess(presentations[3].start(), load.index('music_play_track(NATIVE_POSITIVE)'))
         for path in Path('source/engine').rglob('*'):
             if path.suffix in ('.cpp', '.hpp', '.h'):
                 self.assertNotRegex(path.read_text(), r'#include\s*[<\"][^>\"]*camera\.')
@@ -200,6 +204,8 @@ def run_renderer(binary):
     shutil.copyfile('nitrofs/konngara_slash.bin', destination / 'konngara_slash.bin')
     shutil.copyfile('nitrofs/konngara_defeat.bin', destination / 'konngara_defeat.bin')
     shutil.copyfile('nitrofs/konngara_intro.bin', destination / 'konngara_intro.bin')
+    from test_kikuri_assets import make_fixtures
+    make_fixtures(runtime)
     if binary is not None:
         subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
 

@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,14 +122,26 @@ def python_tests(names):
         raise SystemExit(1)
 
 
+def run_binary(binary, *, cwd=None, arguments=(), sanitize=False):
+    budget = 120 if sanitize else 60
+    started = time.monotonic()
+    print(f'  run host: {Path(binary).name} (limit {budget}s)', flush=True)
+    try:
+        subprocess.run([str(binary), *arguments], cwd=cwd, check=True, timeout=budget)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f'{Path(binary).name}: exceeded {budget}s; last running case identifies the stall')
+    print(f'  completed: {Path(binary).name} in {time.monotonic()-started:.2f}s', flush=True)
+
+
 def host_tests(args):
     selected = lambda suite: args.suite in ('all', suite)
     if args.mode == 'test':
         names = []
         if selected('graphics'):
-            names += ['test_asset_build', 'test_font16x16', 'test_boss_assets',
+            names += ['test_font16x16', 'test_boss_assets',
                       'test_radar_assets', 'test_vram_budget',
-                      'test_viewport_assets', 'test_konngara_assets', 'test_konngara_art_assets']
+                      'test_viewport_assets', 'test_konngara_assets', 'test_konngara_art_assets',
+                      'test_kikuri_assets']
         if selected('audio'):
             names += ['test_native_audio', 'test_native_sfx', 'test_opna_rhythm',
                       'test_recording_comparison']
@@ -146,7 +159,7 @@ def host_tests(args):
         return builder.build(name, sources, includes, link)
 
     def run(name, sources, includes=base, arguments=()):
-        subprocess.run([str(build(name, sources, includes)), *arguments], check=True)
+        run_binary(build(name, sources, includes), arguments=arguments, sanitize=args.mode=='sanitize')
 
     def eng(*paths):
         return [engine + p + '.cpp' for p in paths]
@@ -164,7 +177,13 @@ def host_tests(args):
         run('phase1', ['tests/test_konngara_phase1.cpp', *combat])
         run('mima_phase1', ['tests/test_mima_phase1.cpp',
                             *eng('main/boss/mima_phase1','main/bullet/missile','main/bullet/shootout_laser','main/boss/boss',
-                                 'main/player/shot','main/math/vector','main/math/trig')])
+                                  'main/player/shot','main/math/vector','main/math/trig')])
+        run('kikuri_phase1', ['tests/test_kikuri_phase1.cpp',
+                              *eng('main/boss/kikuri_phase1','main/boss/boss','main/player/shot','main/math/trig','main/bullet/shootout_laser')])
+        run('kikuri_phase5', ['tests/test_kikuri_phase5.cpp',
+                              *eng('main/boss/kikuri_phase1','main/boss/boss','main/player/shot','main/math/trig','main/bullet/shootout_laser')])
+        run('kikuri_phase6', ['tests/test_kikuri_phase6.cpp',
+                              *eng('main/boss/kikuri_phase1','main/boss/boss','main/player/shot','main/math/trig','main/bullet/shootout_laser')])
         for phase in (3, 5):
             run(f'phase{phase}', [f'tests/test_konngara_phase{phase}.cpp', *combat,
                                   *eng('main/boss/konngara', 'main/bullet/shootout_laser')])
@@ -172,7 +191,8 @@ def host_tests(args):
     if selected('graphics'):
         viewport = ['tests/test_viewport.cpp', 'tests/heap_probe.cpp',
                     'tests/test_stage_entrance.cpp', 'tests/test_konngara_review.cpp',
-                    'tests/test_mima_review.cpp','tests/test_mima_phase1_review.cpp']
+                    'tests/test_mima_review.cpp','tests/test_mima_phase1_review.cpp',
+                    'tests/test_kikuri_art.cpp','tests/test_kikuri_render.cpp','tests/test_kikuri_defeat.cpp']
         for pattern in ('main/player/*.cpp', 'main/boss/*.cpp', 'main/bullet/*.cpp',
                         'main/math/*.cpp'):
             viewport += sorted(str(p) for p in Path('source/engine').glob(pattern))
@@ -184,7 +204,7 @@ def host_tests(args):
             'palette_fx text_layer stage_entrance boss_gfx konngara_art_render '
             'konngara_combat_render konngara_combat_review konngara_defeat_render '
             'konngara_intro_render menu_render bomb_render round_results mima_render mima_review '
-            'mima_combat_render mima_phase1_review mima_defeat_render').split()]
+            'mima_combat_render mima_phase1_review mima_defeat_render kikuri_render kikuri_entrance kikuri_defeat_render').split()]
         intro = ['tests/test_konngara.cpp', 'tests/heap_probe.cpp',
                  *eng('main/boss/konngara_intro', 'main/math/trig')]
         intro += [platform + p + '.cpp' for p in
@@ -200,7 +220,7 @@ def host_tests(args):
                 ('art', art, 'test_konngara_art_assets', 'build/konngara/art-tests/runtime')):
             binary = build(name, sources, graphics, heap)
             fixtures(module, Path(runtime))
-            subprocess.run([str(binary)], cwd=runtime, check=True)
+            run_binary(binary,cwd=runtime,sanitize=args.mode=='sanitize')
 
     if selected('audio'):
         run('lfo', ['tests/test_audio_lfo.cpp'], ['tools'])
@@ -238,7 +258,9 @@ def main():
     with (CACHE / 'runner.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if args.mode == 'release':
-            python_tests(['test_rom_packaging'])
+            # Disposable clean-build/recovery is a release audit, not something
+            # to rebuild from scratch on every C++ edit/test cycle.
+            python_tests(['test_asset_build', 'test_rom_packaging'])
             importlib.import_module('check_audio_release').check_release()
         else:
             host_tests(args)

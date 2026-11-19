@@ -8,6 +8,8 @@
 int main() {
     using namespace native_audio;
     assert(music_init());
+    unsigned tick=123;
+    assert(!music_playback_tick(tick) && tick==123);
     assert(sfx_init());
     assert(calls.back() == "nitro:/audio/sfx.bin");
     calls.clear();
@@ -20,9 +22,16 @@ int main() {
     music_play_scene(0);
     assert(calls.size() == 2 && calls[0] == "nitro:/audio/native/st0.nsq" && calls[1] == "play");
     calls.clear();
+    status.native=1;status.tick=909;
+    assert(music_playback_tick(tick) && tick==909 && calls.empty());
+    statusOK=false;tick=123;
+    assert(!music_playback_tick(tick) && tick==123 && calls.empty());statusOK=true;
+    status.native=0;assert(!music_playback_tick(tick) && tick==123);status.native=1;
+    status.paused=1;assert(!music_playback_tick(tick) && tick==123);status.paused=0;
     music_play_scene(0); // adjacent regular stages retain the running song
     assert(calls.empty());
     music_pause(); music_pause();
+    assert(!music_playback_tick(tick) && tick==123);
     assert(calls.size() == 1 && calls[0] == std::to_string(NS_PAUSE));
     music_play_scene(0); // an idempotent play also resumes a paused scene
     assert(calls.size() == 2 && calls[1] == std::to_string(NS_RESUME));

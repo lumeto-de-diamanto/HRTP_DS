@@ -6,6 +6,9 @@
 // forthcoming title/boss/ending flows; current regular stages select by scene.
 bool music_init();
 bool music_play_track(NativeTrackId track);
+// Read-only ARM7 playback position (48 ticks/beat), with no FIFO wait or I/O.
+// False if stopped/paused or a consistent status snapshot is unavailable.
+bool music_playback_tick(unsigned &tick);
 void music_play_scene(int scene);
 void music_pause();
 void music_resume();

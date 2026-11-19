@@ -4,6 +4,8 @@
 #include <cstring>
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 using u8 = uint8_t;
 using u16 = uint16_t;
 using u32 = uint32_t;
@@ -174,9 +176,20 @@ inline void oamUpdate(OamState *) {}
 inline void oamEnable(OamState *) {}
 inline void oamDisable(OamState *) {}
 inline void (*test_vblank_hook)() = nullptr;
+inline const char *test_case_name="viewport setup";
+inline size_t test_vblank_count=0,test_vblank_limit=200000;
+inline void test_begin_case(const char *name,size_t limit=30000) {
+    test_case_name=name;test_vblank_count=0;test_vblank_limit=limit;
+    std::printf("  running: %s\n",name);std::fflush(stdout);
+}
 inline size_t test_capture_count;
 inline u16 (*test_capture_source)(int,int)=nullptr;
 inline void swiWaitForVBlank() {
+    if(++test_vblank_count>test_vblank_limit) {
+        std::fprintf(stderr,"%s exceeded its %zu-frame test budget (possible input/presentation loop)\n",
+                     test_case_name,test_vblank_limit);
+        std::abort();
+    }
     REG_VCOUNT=192;
     if(REG_DISPCAPCNT&DCAP_ENABLE) {
         assert(test_vram_d_mode==VRAM_D_LCD && !(REG_DISPCNT&(1<<10)));

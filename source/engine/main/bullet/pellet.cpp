@@ -203,7 +203,14 @@ void CPellets::add_group(int left, int top, pellet_group_t group,
 }
 
 void CPellets::add_single(int left, int top, int angle, subpixel_t speed,
-                          pellet_motion_t motion, subpixel_t fixed_motion_speed)
+                           pellet_motion_t motion, subpixel_t fixed_motion_speed)
+{
+    add_single(left,top,angle,speed,motion,fixed_motion_speed,0,0);
+}
+
+void CPellets::add_single(int left,int top,int angle,subpixel_t speed,
+                          pellet_motion_t motion,subpixel_t fixed_motion_speed,
+                          int spin_center_x,int spin_center_y)
 {
     for (int slot = 0; slot < PELLET_COUNT; slot++) {
         if (p[slot].moving || p[slot].cloud_frame)
@@ -222,6 +229,11 @@ void CPellets::add_single(int left, int top, int angle, subpixel_t speed,
         pel.decay_frame = 0;
         pel.angle = angle;
         vector2(pel.velocity.x.v, pel.velocity.y.v, initial_speed, angle);
+        if(motion==PM_SPIN) {
+            pel.spin_center.x.set(spin_center_x);pel.spin_center.y.set(spin_center_y);
+            vector2(pel.spin_velocity.x.v,pel.spin_velocity.y.v,fixed_motion_speed,angle);
+            pel.angle=iatan2(pel.cur_top.v-pel.spin_center.y.v,pel.cur_left.v-pel.spin_center.x.v);
+        }
         return;
     }
 }
@@ -282,6 +294,16 @@ bool CPellets::update()
                     if (pel.cur_top.to_pixel() <= PLAYFIELD_TOP)
                         pel.cur_top.set(PLAYFIELD_TOP + 1);
                 }
+            } else if (pel.motion_type == PM_SPIN) {
+                // Source uses a16px Q4 radius, then advances the center for the
+                // NEXT frame. Neither rank nor global speed tunes this drift.
+                // Automation continues during decay, just like the original.
+                pel.cur_left.v=polar_x_fast(pel.spin_center.x.v,256,pel.angle);
+                pel.cur_top.v=polar_y_fast(pel.spin_center.y.v,256,pel.angle);
+                pel.spin_center.x.v+=pel.spin_velocity.x.v;
+                pel.spin_center.y.v+=pel.spin_velocity.y.v;
+                pel.velocity.x.v=pel.velocity.y.v=0;
+                pel.angle+=4;
             } else if (pel.motion_type == PM_CHASE) {
                 int vx, vy;
                 vector2_between(TO_PIXEL(pel.cur_left.v), TO_PIXEL(pel.cur_top.v),

@@ -39,7 +39,9 @@ The rom file `hrtp_ds.nds` will then appear.
   repeating Python checks. Fixed-address audio service/diagnostic/music models
   remain normal-mode tests because their RAM mappings conflict with sanitizers.
 * `make check-release` — build both ROMs and verify headers, icon, linked assets,
-  exact NitroFS payloads and approved native-only audio; no host suite rerun.
+  exact NitroFS payloads and approved native-only audio. One disposable parallel
+  clean-asset build checks serial/incremental recovery here, not on every test
+  run; no host suite rerun.
 
 For focused host runs, append `TEST_SUITE=gameplay`, `graphics` or `audio` to
 `make test` or `make sanitize` (the default is `all`). `HOST_CXX` selects the host
@@ -75,7 +77,7 @@ Feature cases stay in small modules, with packaging assertions in one place.
   * [ ] YuugenMagan
   * [x] Mima
   * [ ] Elis
-  * [ ] Kikuri
+  * [x] Kikuri
   * [ ] Sariel
   * [x] Konngara
 * [ ] Other screens
@@ -112,7 +114,7 @@ Current controls:
 * **X**, or **A + B twice** — bomb.
 * **START** — pause/resume.
 * **SELECT + d-pad** — dev stage navigator (←/→: stage, ↑/↓: scene;
-  Shrine and Jigoku scenes 6–10/16–20 have five stages, other scenes four)
+  Shrine and all Jigoku scenes have five stages, Makai scenes four)
 
 ## AI disclaimer
 

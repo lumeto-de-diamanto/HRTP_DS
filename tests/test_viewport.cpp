@@ -58,6 +58,10 @@ void test_stage_bonus_awards();
 void test_player_death();
 void test_bombs();
 void test_mima_review();
+void test_kikuri_art();
+void test_kikuri_render();
+void test_kikuri_stage15();
+void test_kikuri_defeat();
 void test_mima_phase1_review();
 extern PlayerState player;
 
@@ -1642,18 +1646,20 @@ int main()
     check_portal_rendering();
     assert(test_obj_used == obj_used);
     assert(test_obj_attempts == sprite_attempts && test_obj_count == 79 && test_obj_used == 27840);
-    check_native_dimming();
-    check_sprite_lifecycles();
-    check_source_menus();
-    test_stage_entrances();
-    test_konngara_review();
-    test_stage_bonus_awards();
-    test_konngara_stage20();
-    test_mima_stage10();
-    test_player_death();
-    test_bombs();
-    test_mima_review();
-    test_mima_phase1_review();
+    const struct {const char *name;void (*run)();} cases[]={
+        {"native dimming",check_native_dimming},{"sprite lifecycles",check_sprite_lifecycles},
+        {"menus",check_source_menus},{"stage entrances",test_stage_entrances},
+        {"Konngara review",test_konngara_review},{"stage bonuses",test_stage_bonus_awards},
+        {"Stage20",test_konngara_stage20},{"Stage10",test_mima_stage10},
+        {"player death",test_player_death},{"bombs",test_bombs},
+        {"Mima art",test_mima_review},{"Mima combat",test_mima_phase1_review},
+        {"Kikuri art",test_kikuri_art},{"Kikuri defeat",test_kikuri_defeat},
+        {"Kikuri renderer",test_kikuri_render},{"Stage15",test_kikuri_stage15},
+    };
+    for(const auto &test:cases) {
+        test_begin_case(test.name,test.run==test_kikuri_stage15 ? 10000 : 100000);
+        test.run();
+    }
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);
     assert(test_sub_vram.before==0xC0FFEE11 && test_sub_vram.after==0xC0FFEE11);
     std::puts("Viewport: center-anchored parallax/boss 1:1, native halfwidth timer, six-life/five-bomb and18HP ink separation, cached HUD handoffs, fullscreen transitions, HURRY UP and unchanged gameplay passed");

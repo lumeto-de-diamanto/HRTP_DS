@@ -83,6 +83,14 @@ class RomPackagingTests(unittest.TestCase):
         signatures=[int(v,16) for v in re.findall(r'0x[0-9A-F]+',text)]
         self.assertIn(struct.pack('<'+'I'*len(signatures),*signatures),self.arm9)
 
+    def test_kikuri_asset_is_packaged(self):
+        art=nitro_files(self.rom)['kikuri_art.bin']
+        self.assertEqual(art,Path('nitrofs/kikuri_art.bin').read_bytes())
+        self.assertEqual(struct.unpack_from('<4s5H',art),(b'KIK1',640,400,3,3,4))
+        count=struct.unpack_from('<H',art,14)[0]
+        self.assertLessEqual(count,192)
+        self.assertEqual(len(art),190736+count*2)
+
     def test_complete_font_is_linked_into_arm9(self):
         text = Path('assets/processed/fonts/font16x16.h').read_text()
         self.assertIn('FONT16X16_GLYPH_COUNT 272', text)

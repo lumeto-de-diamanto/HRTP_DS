@@ -118,10 +118,28 @@ void observe()
 
 int test_mima_music_starts=0,test_mima_pauses=0,test_mima_resumes=0,test_mima_stops=0,test_mima_fades=0;
 bool test_mima_music_allowed=true;
+bool test_kikuri_music_allowed=true;
+int test_kikuri_music_starts=0;
+bool test_kikuri_native_running=false;
+unsigned test_kikuri_music_tick=0;
+bool test_kikuri_tick_available=true;
+bool test_kikuri_manual_ticks=false;
+bool music_playback_tick(unsigned &tick) {
+    if(!test_kikuri_tick_available) return false;
+    tick=test_kikuri_music_tick;
+    if(!test_kikuri_manual_ticks) ++test_kikuri_music_tick;
+    return true;
+}
 void music_pause() { ++test_mima_pauses; }
 void music_resume() { ++test_mima_resumes; }
 bool music_play_track(NativeTrackId id)
 {
+    if(id==NATIVE_KAMI) {
+        if(test_kikuri_native_running) return true; // production music_play_track is idempotent
+        ++test_kikuri_music_starts;test_kikuri_music_tick=0;
+        test_kikuri_native_running=test_kikuri_music_allowed;return test_kikuri_music_allowed;
+    }
+    test_kikuri_native_running=false;
     if(id==NATIVE_LEGEND) { ++test_mima_music_starts;return test_mima_music_allowed; }
     if(id==NATIVE_POSITIVE) { ++starts;return allow_music; }
     assert(id == NATIVE_ALICE);
@@ -133,11 +151,11 @@ bool music_play_track(NativeTrackId id)
     obj_attempts = test_obj_attempts;
     return allow_music;
 }
-void music_stop() { ++stops;++test_mima_stops; }
+void music_stop() { ++stops;++test_mima_stops;test_kikuri_native_running=false; }
 void music_fade_out_nonblock() { ++test_mima_fades; }
 void sfx_stop() { ++sfx_stops; }
 const char *music_error() { return ""; }
-void music_play_scene(int scene) { assert(scene>=0 && scene<7);++scene_plays[scene]; }
+void music_play_scene(int scene) { assert(scene>=0 && scene<7);++scene_plays[scene];test_kikuri_native_running=false; }
 
 void test_konngara_review()
 {
@@ -643,6 +661,8 @@ struct DeathProbe {
     size_t allocations=0, objects=0;
     bool mima_active=false;
     MimaPhase1 frozen_mima;
+    bool kikuri_active=false;
+    KikuriPhase1 frozen_kikuri;
 } death_probe;
 
 void observe_player_death()
@@ -657,6 +677,8 @@ void observe_player_death()
                 stage_has_mima(current_scene,current_stage) ? mima.state().frame : singyoku_state().frame;
             p.mima_active=stage_has_mima(current_scene,current_stage);
             if(p.mima_active) p.frozen_mima=mima;
+            p.kikuri_active=stage_has_kikuri(current_scene,current_stage);
+            if(p.kikuri_active) p.frozen_kikuri=kikuri;
             p.pellet_x=Pellets.at(0).cur_left.v;p.pellet_y=Pellets.at(0).cur_top.v;
             p.pellet_vx=Pellets.at(0).velocity.x.v;p.pellet_vy=Pellets.at(0).velocity.y.v;
         }
@@ -665,6 +687,7 @@ void observe_player_death()
         assert(orb_get_state().x_position==p.orb_x && orb_get_state().y_position==p.orb_y);
         assert(player_get_state().x_position==p.player_x);
         if(p.mima_active) assert(!std::memcmp(&p.frozen_mima,&mima,sizeof(mima)));
+        if(p.kikuri_active) assert(!std::memcmp(&p.frozen_kikuri,&kikuri,sizeof(kikuri)));
         assert((stage_has_konngara(current_scene,current_stage) ? konngara.state().frame :
             stage_has_mima(current_scene,current_stage) ? mima.state().frame : singyoku_state().frame)==p.boss_frame);
         assert(Pellets.at(0).cur_left.v==p.pellet_x && Pellets.at(0).cur_top.v==p.pellet_y);
@@ -1371,3 +1394,5 @@ void test_mima_stage10()
     start_new_game();camera.snap_center();
     std::puts("Stage10: real9->10 title/101-frame spread-in, one LEGEND start, preserved run/RNG, both blocks, buffered pause/miss/fatal/new-run, lethal priority/native fade, default-pose unbuffered capture, one round tally, black-held10->11 and repeated boss-cache cleanup passed");
 }
+
+#include "test_kikuri_stage15.cpp"

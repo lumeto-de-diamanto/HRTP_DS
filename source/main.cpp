@@ -50,6 +50,7 @@
 #include "konngara_intro_render.hpp"
 #include "konngara_combat_render.hpp"
 #include "mima_combat_render.hpp"
+#include "kikuri_render.hpp"
 #include "backgrounds/MimaPaletteFx.h"
 
 #include "stagedat/stagedat0.h"
@@ -77,6 +78,8 @@ static KonngaraCombat konngara;
 static KonngaraCombatView konngara_view;
 static MimaPhase1 mima;
 static MimaCombatView mima_view;
+static KikuriPhase1 kikuri;
+static KikuriView kikuri_view;
 static bool jigoku_cleared;
 static const PlayerDeathFrame *player_death_frame;
 alignas(4) static u16 regular_bomb_canvas[256*256];
@@ -125,6 +128,14 @@ static void check_mima(bool okay,const char *part)
     while(true) swiWaitForVBlank();
 }
 
+static void check_kikuri(bool okay,const char *part)
+{
+    if(okay) return;
+    kikuri_view.end();music_stop();video_stage_reveal();consoleDemoInit();
+    printf("Kikuri %s asset/audio error\n%s",part,music_error());
+    while(true) swiWaitForVBlank();
+}
+
 // The game's own 1-based stage number (Shrine = 1-5, then route stages
 // 6-20). Makai and Jigoku are *parallel* routes: scenes 1/2 are both
 // stages 6-10, 3/4 are 11-15, 5/6 are 16-20.
@@ -150,6 +161,10 @@ static void render_hud()
         const auto &s=mima.state();
         upper_hud_boss(s.health.hp,s.hp_displayed,2,6);
         radar_boss=hud_radar_boss(s.entity,!s.checkpoint);
+    } else if(stage_has_kikuri(current_scene,current_stage)) {
+        const auto &s=kikuri.state();
+        upper_hud_boss(s.hp_displayed,s.hp_displayed,6,10); // preserve hidden phase6 timeout
+        radar_boss=hud_radar_boss(s.entity,!s.checkpoint);
     } else upper_hud_boss_hide();
     hud_render(lives, global_stage_num());
     hud_radar_render(radar_boss);
@@ -160,10 +175,12 @@ static void render_frame()
     const bool boss = stage_has_singyoku(current_scene, current_stage);
     const bool final_boss=stage_has_konngara(current_scene,current_stage);
     const bool mima_boss=stage_has_mima(current_scene,current_stage);
+    const bool kikuri_boss=stage_has_kikuri(current_scene,current_stage);
     video_bomb_prepare(!player_death_frame && player_bomb().active(),player_bomb().frame(),frame);
     if(!final_boss && (player_bomb().active() || video_bomb_effect_active()) && !g_canvas_target)
         regular_bomb_canvas_owned=canvas_buffer_begin(regular_bomb_canvas);
-    if(!final_boss && !mima_boss && !player_death_frame && !g_canvas_target) video_apply_camera();
+    if(!final_boss && !mima_boss && !kikuri_boss && !player_death_frame && !g_canvas_target) video_apply_camera();
+    if(kikuri_boss) kikuri_view.prepare_combat(kikuri.state());
     stage_render_frame();
     // Erase only previous effects; the background scrolls in hardware and
     // BG0/OAM HUD elements never go through the software canvas.
@@ -172,6 +189,7 @@ static void render_frame()
     if(!player_death_frame) player_invincibility_render_frame();
     if(final_boss) check_konngara(konngara_view.frame(konngara.state()),"frame");
     if(mima_boss) check_mima(mima_view.compose(mima.state(),mima.missiles()),"frame");
+    if(kikuri_boss) kikuri_view.draw_combat(kikuri.state());
     if(!player_death_frame) player_render_frame();
     shots_render_frame();
     orb_render_frame();
@@ -189,7 +207,7 @@ static void render_frame()
     canvas_playfield_clip(false);
     if(!player_death_frame) render_hud(); // source updates lost-life resources after recovery
     // Mima's early-VBlank presenter owns palette, camera and shake commits.
-    if(!mima_boss) {
+    if(!mima_boss && !kikuri_boss) {
         if(player_death_frame) video_apply_death_shake(player_death_frame->shake_y,final_boss);
         else {
             bgSetScroll(g_bg_id_canvas,0,0);
@@ -202,6 +220,9 @@ static void render_frame()
     if(mima_boss) {
         canvas_buffer_prepare();
         do { swiWaitForVBlank(); } while(!mima_view.present(player_death_frame ? player_death_frame->shake_y : -1));
+    } else if(kikuri_boss) {
+        canvas_buffer_prepare();
+        do { swiWaitForVBlank(); } while(!kikuri_view.present_combat(player_death_frame ? player_death_frame->shake_y : -1));
     } else if(final_boss) {
         canvas_buffer_prepare(); // after lasers, pellets and all other effects
         do { swiWaitForVBlank(); } while(!konngara_view.present());
@@ -251,6 +272,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     const bool boss = stage_has_boss(scene, stage);
     const bool final_boss=stage_has_konngara(scene,stage);
     const bool mima_boss=stage_has_mima(scene,stage);
+    const bool kikuri_boss=stage_has_kikuri(scene,stage);
     const bool previous_boss = stage_has_boss(current_scene, current_stage);
     const bool regular_handoff=preserve_score && !boss && !previous_boss &&
         scene==current_scene && stage==current_stage+1;
@@ -270,6 +292,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     bgSetScroll(g_bg_id_canvas,0,0);
     konngara_view.end(); // also releases the temporary OBJ lease on navigation/restart
     mima_view.end();
+    kikuri_view.end();
     video_bomb_reset();
     jigoku_cleared=false;
     upper_hud_invalidate();
@@ -278,7 +301,9 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     if (!preserve_sfx) sfx_stop();
     // A scene change eventually selects a different native song. Stop the previous
     // scene before its entrance rather than letting it bleed into missing BGM.
-    if (scene != current_scene || boss != previous_boss)
+    // A same-stage Kikuri retry/navigation must restart the music clock too;
+    // music_play_track() intentionally reuses an already-playing native song.
+    if (scene != current_scene || boss != previous_boss || kikuri_boss)
         music_stop();
     boss_render_hide();
     stage_entrance_prepare();
@@ -297,6 +322,11 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         else load_background(scene);
     }
     palette_apply_round();
+    if(kikuri_boss) {
+        // Source clear_vram_page_0: title/banner over a black field. Keep the
+        // approved disc hidden until KAMI's music-clock shroud reveals it.
+        dmaFillHalfWords(0,BG_BMP_RAM(4),128*1024);BG_PALETTE[0]=0;
+    }
 
     if (boss) {
         static const uint8_t empty[STAGE_ROWS][STAGE_COLS] = {};
@@ -314,6 +344,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     player_initialize();
     shots_initialize();
     popup_clear();
+    if(kikuri_boss) kikuri.reset(true,true,true);
     if (stage_has_singyoku(scene,stage)) {
         singyoku_init();
         // Preserve the approved boss palette/frame cache beneath its title.
@@ -358,6 +389,14 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         mima.reset(true); // both approved blocks; no practice resource presets
         render_frame();
         check_music();return; // LEGEND continues, never restart after spread-in
+    }
+    if(kikuri_boss) {
+        // The title is unbuffered. Asset loading afterward still sees only
+        // the source black field; start the song only once the view is ready.
+        check_kikuri(kikuri_view.begin(),"combat");
+        check_kikuri(music_play_track(NATIVE_KAMI),"music");
+        check_kikuri(kikuri_entrance_play(kikuri_view),"entrance");
+        render_frame();check_music();return;
     }
     if(regular_handoff && (REG_VCOUNT<192 || REG_VCOUNT>=200))
         do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
@@ -415,6 +454,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     const bool boss=stage_has_boss(current_scene,current_stage);
     const bool final_boss=stage_has_konngara(current_scene,current_stage);
     const bool mima_boss=stage_has_mima(current_scene,current_stage);
+    const bool kikuri_boss=stage_has_kikuri(current_scene,current_stage);
     const bool entrance=stage_has_singyoku(current_scene,current_stage) && singyoku_state().phase==SG_ENTRANCE;
     if(entrance) singyoku_update();
     else player_update(keys_held,keys_down);
@@ -462,6 +502,30 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 return;
             }
             mima.update_lasers();
+        } else if(kikuri_boss) {
+            kikuri.update(bomb_damage);
+            if(kikuri.state().checkpoint) {
+                player_is_hit=false;player_bomb_cancel();video_bomb_reset();
+                kikuri.clear_defeat_projectiles();Pellets.reset_nonclouds();
+                if(stage_score>hiscore) hiscore=stage_score;
+                render_hud();hud_radar_render();
+                check_kikuri(kikuri_view.defeat(kikuri.state()),"defeat");
+                const u16 normal_master=kikuri_view.normal_brightness();
+                do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
+                kikuri_view.end(true); // release both leases before results borrow VRAM D
+                // Display capture can precede MASTER_BRIGHT on real hardware.
+                // Supply a truly black composed input, without recoloring OBJ.
+                for(int slot=0;slot<128;++slot) oamSetHidden(&oamMain,slot,true);
+                oamUpdate(&oamMain);bgHide(0);bgHide(g_bg_id_tiles);
+                dmaFillHalfWords(0,BG_BMP_RAM(4),128*1024);BG_PALETTE[0]=0;
+                const StageBonus bonus=roundbonus_compute(15,lives);
+                stage_score+=bonus.total;if(stage_score>hiscore) hiscore=stage_score;
+                round_results_run(bonus,15,normal_master);
+                bgShow(0);bgShow(g_bg_id_tiles); // results exit still holds both screens black
+                stage_load(6,0,false,true);
+                return;
+            }
+            kikuri.update_lasers();
         } else if(stage_has_singyoku(current_scene,current_stage)) {
             singyoku_update(bomb_damage);
             if(singyoku_state().phase==SG_DEFEATED) {
@@ -513,7 +577,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
             pellet_speed=pellet_speed>0 ? 0 : pellet_speed-2;
             if(pellet_speed<-15) pellet_speed=-15;
             stage_reset(); // reset obstacle/portal clocks, not cards, HP or orb
-            if(!final_boss && !mima_boss) swiWaitForVBlank(); // buffered bosses already held it
+            if(!final_boss && !mima_boss && !kikuri_boss) swiWaitForVBlank(); // buffered bosses already held it
         }
     }
     if(!boss && stage_is_cleared()) {
@@ -542,6 +606,21 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     }
     if(stage_score>hiscore) hiscore=stage_score;
     camera.follow(player_center_x());render_frame();
+}
+
+static bool stage_navigate(uint16_t held,uint16_t down)
+{
+    if(!(held&KEY_SELECT)) return false;
+    if(down&KEY_LEFT) {
+        const int stage=current_stage ? current_stage-1 : scene_stage_count(current_scene)-1;
+        stage_load(current_scene,stage);return true;
+    }
+    if(down&KEY_RIGHT) {stage_load(current_scene,(current_stage+1)%scene_stage_count(current_scene));return true;}
+    if(down&(KEY_UP|KEY_DOWN)) {
+        const int scene=(current_scene+SCENES+((down&KEY_UP) ? -1 : 1))%SCENES;
+        stage_load(scene,current_stage<scene_stage_count(scene) ? current_stage : scene_stage_count(scene)-1);return true;
+    }
+    return false;
 }
 
 #ifndef HRTP_GAME_FLOW_TEST
@@ -596,30 +675,7 @@ int main(int argc, char **argv)
         uint16_t keys_held = keysHeld();
         uint16_t keys_down = keysDown();
 
-        // Dev stage navigator (SELECT + d-pad).
-        if (keys_held & KEY_SELECT) {
-            if (keys_down & KEY_LEFT) {
-                int s = current_stage - 1;
-                if (s < 0)
-                    s = scene_stage_count(current_scene) - 1;
-                stage_load(current_scene, s);
-                continue;
-            }
-            if (keys_down & KEY_RIGHT) {
-                stage_load(current_scene, (current_stage + 1) % scene_stage_count(current_scene));
-                continue;
-            }
-            if (keys_down & KEY_UP) {
-                const int scene = (current_scene + SCENES - 1) % SCENES;
-                stage_load(scene, current_stage < scene_stage_count(scene) ? current_stage : scene_stage_count(scene) - 1);
-                continue;
-            }
-            if (keys_down & KEY_DOWN) {
-                const int scene = (current_scene + 1) % SCENES;
-                stage_load(scene, current_stage < scene_stage_count(scene) ? current_stage : scene_stage_count(scene) - 1);
-                continue;
-            }
-        }
+        if(stage_navigate(keys_held,keys_down)) continue;
 
         // START = Esc (pause). QUIT restarts at the first stage -- there is
         // deliberately no exit from the game loop (project head's call);

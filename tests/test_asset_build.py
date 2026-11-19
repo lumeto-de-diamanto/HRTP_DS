@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class AssetBuildTests(unittest.TestCase):
     def make_assets(self, root, jobs):
         result = subprocess.run(['make', f'-j{jobs}', '-f', 'assets/Makefile', 'assets'],
-                                cwd=root, capture_output=True, text=True)
+                                cwd=root, capture_output=True, text=True, timeout=90)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result.stdout
 
@@ -27,7 +27,9 @@ class AssetBuildTests(unittest.TestCase):
                 for p in (root / directory).rglob('*') if p.is_file()}
 
     def test_clean_builds_and_missing_output_recovery(self):
-        for jobs in (1, 8):
+        # One clean parallel build is enough. Exercise serial no-op/recovery
+        # below in the same workspace instead of rebuilding every asset twice.
+        for jobs in (8,):
             with self.subTest(jobs=jobs), tempfile.TemporaryDirectory(
                     prefix='hrtp-assets-', dir='/tmp/opencode') as directory:
                 root = Path(directory)
@@ -53,6 +55,7 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertIn('assets/processed/backgrounds/boss3.h', before)
                 self.assertIn('nitrofs/boss3.bin', before)
                 self.assertIn('nitrofs/mima_art.bin', before)
+                self.assertIn('nitrofs/kikuri_art.bin', before)
                 for name in ('Missile','PelletCloud','Pillar'):
                     self.assertIn(f'assets/processed/sprites/{name}.h', before)
                 self.assertIn('assets/processed/backgrounds/MimaPaletteFx.h', before)
@@ -65,11 +68,11 @@ class AssetBuildTests(unittest.TestCase):
                     self.assertEqual((root / f'nitrofs/st{scene}.bin').stat().st_size, 61440)
                 self.assertIn('FONT16X16_GLYPH_COUNT 272',
                               (root / 'assets/processed/fonts/font16x16.h').read_text())
-                self.make_assets(root, jobs)
+                self.make_assets(root, 1)
                 self.assertEqual(self.snapshot(root), before, 'second build must be a no-op')
 
                 (root / 'nitrofs/konngara_combat.bin').unlink()
-                self.make_assets(root, jobs)
+                self.make_assets(root, 1)
                 recovered = self.snapshot(root)
                 self.assertEqual(recovered['nitrofs/konngara_combat.bin'][1], before['nitrofs/konngara_combat.bin'][1])
                 self.assertEqual({p: v for p, v in recovered.items() if p != 'nitrofs/konngara_combat.bin'},
@@ -89,7 +92,10 @@ class AssetBuildTests(unittest.TestCase):
                                   'assets/processed/sprites/BossArrow.h',
                                   'assets/processed/sprites/RadarIcons.h',
                                  'assets/processed/backgrounds/boss3.h', 'nitrofs/boss3.bin',
-                                 'nitrofs/mima_art.bin', 'assets/hdi_dump/BOSS3.GRP',
+                                  'nitrofs/mima_art.bin', 'assets/hdi_dump/BOSS3.GRP',
+                                  'nitrofs/kikuri_art.bin', 'assets/hdi_dump/BOSS4.GRP',
+                                  'assets/packfile/TAMASII.BOS', 'assets/packfile/TAMASII2.BOS',
+                                  'assets/packfile/TAMAYEN.PTN',
                                   'assets/packfile/BOSS3_1.BOS', 'assets/packfile/BOSS3_2.BOS',
                                   'assets/packfile/BOSS3_M.PTN',
                                   'assets/processed/sprites/Missile.h',

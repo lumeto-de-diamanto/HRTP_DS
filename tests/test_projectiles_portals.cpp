@@ -203,6 +203,67 @@ static void ofuda_contacts()
     std::puts("Ofuda: immediate pellet erase, stationary impact cels/lifetime, single SFX/contact, hit priority and slot reuse passed");
 }
 
+static void spinning_pellets()
+{
+    orb_set_position(10000,10000);shots_initialize();invincible=true;
+    for(int difficulty=0;difficulty<4;++difficulty) for(int knob:{-15,0,20})
+    for(int aim:{0,32,64,96,128,192,255}) {
+        rank=rank_t(difficulty);pellet_speed=knob;Pellets.init();
+        for(int i=0;i<8;++i) {
+            const int x=316+((16*Cos8(i*32))>>8),y=224+((16*Sin8(i*32))>>8);
+            Pellets.add_single(x,y,aim,48,PM_SPIN,32,312,224);
+        }
+        assert(Pellets.alive_count()==8);
+        int tuned=48+(difficulty==0 ? 0 : difficulty*6);tuned+=(knob*tuned)/40;
+        for(int i=0;i<8;++i) {
+            const auto &p=Pellets.at(i);
+            assert(p.velocity.x.v==((tuned*Cos8(aim))>>8) && p.velocity.y.v==((tuned*Sin8(aim))>>8));
+            assert(p.spin_velocity.x.v==((32*Cos8(aim))>>8) && p.spin_velocity.y.v==((32*Sin8(aim))>>8));
+        }
+        for(int f=0;f<64;++f) {
+            assert(!Pellets.update());
+            for(int i=0;i<8;++i) {
+                const auto &p=Pellets.at(i);
+                const int start=iatan2((16*Sin8(i*32))>>8,4+((16*Cos8(i*32))>>8));
+                const int a=(start+f*4)&255;
+                assert(p.moving && p.cur_left.v==312*16+f*((32*Cos8(aim))>>8)+Cos8(a));
+                assert(p.cur_top.v==224*16+f*((32*Sin8(aim))>>8)+Sin8(a));
+                assert(p.spin_center.x.v==312*16+(f+1)*((32*Cos8(aim))>>8));
+                assert(p.spin_center.y.v==224*16+(f+1)*((32*Sin8(aim))>>8));
+                assert(!p.velocity.x.v && !p.velocity.y.v && p.angle==start+(f+1)*4);
+            }
+        }
+    }
+    // Decay keeps PM_SPIN automation; bomb/orb velocity changes do not alter
+    // the independent center drift, and the shatter still expires normally.
+    rank=RANK_EASY;pellet_speed=0;Pellets.init();
+    Pellets.add_single(332,224,64,48,PM_SPIN,32,312,224);Pellets.decay();
+    for(int f=0;f<21;++f) {
+        Pellets.update();const auto &p=Pellets.at(0);
+        assert(p.spin_center.y.v==224*16+(f+1)*32 && p.cur_top.v==224*16+f*32+Sin8(f*4));
+        assert(p.moving==(f<20));
+    }
+    // A reused slot must initialize a fresh center/angle, not retain old spin.
+    Pellets.add_single(200,200,128,48,PM_SPIN,32,184,200);
+    assert(Pellets.at(0).angle==0 && Pellets.at(0).spin_center.x.v==184*16);
+    Pellets.update();assert(Pellets.at(0).cur_left.v==200*16 && Pellets.at(0).spin_center.x.v==182*16);
+    Pellets.init();
+    for(int i=0;i<101;++i) Pellets.add_single(332,224,64,48,PM_SPIN,32,312,224);
+    assert(Pellets.alive_count()==100);Pellets.init();
+    const auto old_player=player;player.x_position=320;player.y_position=224;invincible=false;
+    // Spin position is resolved BEFORE ordinary shot/orb/player hit tests.
+    orb_set_position(328,224);shots_initialize();shots_add(328,224);stage_score=0;
+    Pellets.add_single(332,224,64,48,PM_SPIN,32,312,224);
+    assert(!Pellets.update() && !Pellets.at(0).moving && stage_score==0);
+    shots_initialize();Pellets.init();Pellets.add_single(332,224,64,48,PM_SPIN,32,312,224);
+    assert(!Pellets.update() && Pellets.at(0).decay_frame==1 && stage_score==10);
+    Pellets.update();assert(Pellets.at(0).decay_frame==2 && stage_score==10 && Pellets.at(0).spin_center.y.v==228*16);
+    orb_set_position(10000,10000);Pellets.init();Pellets.add_single(332,224,64,48,PM_SPIN,32,312,224);
+    assert(Pellets.update()); // a spinning ring is damaging, not decoration
+    player=old_player;invincible=true;Pellets.init();
+    std::puts("Spin pellets: all ranks/speed offsets/aim octants, exact Q4 radius/offset-angle/old-center-before-drift order through64 frames, rank-independent2px center speed, decay automation/lifetime, shot/orb/player hit ordering, slot reuse and100-slot capacity passed");
+}
+
 static int expected_portal_cel(int frame, bool entered, bool destination)
 {
     if (entered && frame < 10) return 0;
@@ -294,6 +355,7 @@ int main(int argc, char **argv)
     if (argc == 1 || std::strcmp(argv[1], "orb") == 0) orb_ceiling_bounces();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) delay_clouds();
+    if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) spinning_pellets();
     if (argc == 1 || std::strcmp(argv[1], "ofuda") == 0) ofuda_contacts();
     if (argc == 1 || std::strcmp(argv[1], "portals") == 0) portals();
 }

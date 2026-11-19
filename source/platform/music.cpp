@@ -102,6 +102,14 @@ void music_play_scene(int scene)
     music_play_track(scene_tracks[scene]);
 }
 
+bool music_playback_tick(unsigned &tick)
+{
+    if(!initialized || !playing || paused) return false;
+    NsStatus status{};
+    if(!player.readStatus(status) || !status.native || status.paused) return false;
+    tick=status.tick;return true;
+}
+
 void music_pause()
 {
     if (initialized && playing && !paused) {
