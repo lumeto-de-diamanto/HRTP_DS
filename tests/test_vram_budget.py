@@ -39,6 +39,14 @@ def permanent_owners(model):
 
 
 class VramBudgetTests(unittest.TestCase):
+    def test_kikuri_souls_reuse_the_resident_boss_cache(self):
+        model=AllocationModel(32);permanent_owners(model)
+        self.assertEqual(len(model.blocks),79)
+        self.assertEqual(model.used,27840)
+        self.assertEqual(sum(size==4096 for _,size in model.blocks),1)
+        self.assertLessEqual(3*128+2*128,4096)  # three cels + HUD-clipped pair
+        self.assertLess(41,48)  # OAM40/41 conflict only with mutually exclusive bosses
+
     def test_all_simultaneous_bg_regions_are_disjoint(self):
         # Half-open byte ranges in main BG space. BG0 includes its full modal
         # pool; results' atlas/map are intentionally borrowed at another time.

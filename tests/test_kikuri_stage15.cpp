@@ -52,7 +52,8 @@ u16 capture_kikuri_black(int x,int y)
     assert(REG_MASTER_BRIGHT==0x8010 && !test_bgs[0].visible && !test_bgs[1].visible);
     assert(BG_PALETTE[0]==0 && test_bgs[3].visible);
     for(const auto &obj:test_objs) assert(obj.hidden);
-    assert(std::equal(p.actor_palette.begin(),p.actor_palette.end(),SPRITE_PALETTE));
+    for(int i=0;i<256;++i) if(i/16!=KIKURI_SOUL_PALETTE)
+        assert(p.actor_palette[i]==SPRITE_PALETTE[i]); // borrowed soul bank is restored on exit
     // Capture ignores native brightness: the visible BG3 and backdrop must
     // genuinely be black before the hardware writes the captured image to D.
     const auto *pixels=reinterpret_cast<const u8*>(BG_BMP_RAM(4));

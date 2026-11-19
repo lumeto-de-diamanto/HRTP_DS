@@ -13,6 +13,7 @@
 #include "canvas.hpp"
 #include "camera.hpp"
 #include "video.hpp"
+#include "boss_render.hpp"
 #include "sound_effects.hpp"
 #include "main/player/player.hpp"
 #include "main/player/orb.hpp"
@@ -21,6 +22,7 @@
 #include "main/stage/stageobj.hpp"
 #include "main/stage/item.hpp"
 #include "main/stage/timer.hpp"
+#include "main/boss/singyoku.hpp"
 
 namespace {
 u16 actor_palette[16]{};
@@ -34,6 +36,27 @@ int component(const std::vector<u8> &source,int index,int channel,bool flash,int
     value=std::clamp(value,0,15);
     if(flash && (index==2 || index==6 || index==8 || index==11)) value=15;
     return value*17;
+}
+int obj_pixel(const TestObj &obj,int x,int y) {
+    const auto *bytes=reinterpret_cast<const u8*>(obj.gfx);
+    const int address=((y/8)*2+x/8)*32+(y%8)*4+(x%8)/2;
+    return (bytes[address]>>((x%2)*4))&15;
+}
+std::vector<u16> composed_souls() {
+    std::vector<u16> pixels(256*192,0);
+    // Low OAM index wins; draw slot41 first, then40, then the BG2 layer.
+    for(int slot=BOSS_OAM_SLOT+1;slot>=BOSS_OAM_SLOT;--slot) {
+        const auto &obj=test_objs[slot];if(obj.hidden) continue;
+        assert(obj.size==SpriteSize_16x16 && obj.format==SpriteColorFormat_16Color);
+        assert(obj.palette==KIKURI_SOUL_PALETTE && obj.priority==OAM_PRIORITY_GAMEPLAY);
+        for(int y=0;y<16;++y) for(int x=0;x<16;++x) {
+            const int px=obj.x+x,py=obj.y+y,ink=obj_pixel(obj,x,y);
+            if(px>=0 && px<256 && py>=0 && py<192 && ink)
+                pixels[py*256+px]=0x8000|SPRITE_PALETTE[obj.palette*16+ink];
+        }
+    }
+    for(int i=0;i<256*192;++i) if(BG_BMP_RAM(16)[i]) pixels[i]=BG_BMP_RAM(16)[i];
+    return pixels;
 }
 void match(const std::vector<u8> &source,const KikuriPhase1State &state,bool indigo=false) {
     const auto *bg=reinterpret_cast<const u8*>(BG_BMP_RAM(4));
@@ -176,6 +199,8 @@ void effects_pixels(KikuriView &view,const std::vector<u8> &source,const std::ve
 
 void test_kikuri_render()
 {
+    singyoku_init();boss_render_frame(); // prime the shared owner's cache key
+    const std::vector<u16> singyoku_tiles(boss_gfx(),boss_gfx()+1024);
     const auto source=read("kikuri-source.bin"),sprites=read("kikuri-sprites.bin");
     const auto heap=test_heap_count,bytes=test_heap_bytes,objects=test_obj_attempts;
     const std::vector<u16> bg(BG_BMP_RAM(4),BG_BMP_RAM(4)+65536),palette(BG_PALETTE,BG_PALETTE+256);
@@ -214,17 +239,62 @@ void test_kikuri_render()
                     component(source,raw,1,flash,5)>>3,component(source,raw,2,flash,5)>>3);
             }
         }
-        assert(std::equal(expected.begin(),expected.end(),g_canvas_target));
+        assert(std::all_of(g_canvas_target,g_canvas_target+256*192,[](u16 p){return !p;}));
         canvas_playfield_clip(false);canvas_buffer_prepare();assert(view.present_combat());
-        assert(std::equal(expected.begin(),expected.end(),BG_BMP_RAM(16)));match(source,state);
+        assert(composed_souls()==expected);match(source,state);
+        for(int i=0;i<2;++i) {
+            const auto &obj=test_objs[BOSS_OAM_SLOT+1-i];const auto &soul=state.souls[i];
+            assert(obj.x==(soul.left/8)*4-cam && obj.y==top/2-8);
+            assert(obj.hidden==!view_visible(obj.x,obj.y,16,16));
+        }
     }
+    // All normal cels stay resident: animation/camera/flash must not rewrite
+    // their384 bytes, allocate, touch actor palettes or draw souls on BG2.
+    const std::vector<u16> tiles(boss_gfx(),boss_gfx()+192);
+    for(int cel=0;cel<3;++cel) {
+        state.souls[0]={112,94,0,cel,0,true};state.souls[1]=state.souls[0];
+        state.souls[1].shown_image=(cel+1)%3;
+        camera.left=32;state.flash=cel%2;state.lightball_step=5;
+        view.prepare_combat(state);canvas_begin_frame();canvas_playfield_clip(true);
+        // Earlier tear/sparkle-like ink must remain behind the souls, but
+        // later lasers/pellets must still cover them.
+        canvas_fill_rect(24,39,16,16,RGB15(0,31,0));view.draw_combat(state);
+        canvas_hline(24,44,16,RGB15(0,0,31));canvas_playfield_clip(false);canvas_buffer_prepare();
+        REG_VCOUNT=191;assert(!view.present_combat());
+        assert(std::equal(tiles.begin(),tiles.end(),boss_gfx()));
+        REG_VCOUNT=192;assert(view.present_combat());
+        const auto composed=composed_souls();
+        for(int y=0;y<16;++y) for(int x=0;x<16;++x) {
+            int p=sprites[cel*256+y*16+x];const int upper=sprites[((cel+1)%3)*256+y*16+x];
+            if(upper) p=upper;
+            const int raw=(p+15)&15;
+            const u16 ink=y==5 ? RGB15(0,0,31) : p ? RGB15(component(source,raw,0,state.flash,5)>>3,
+                component(source,raw,1,state.flash,5)>>3,component(source,raw,2,state.flash,5)>>3) : RGB15(0,31,0);
+            assert(composed[(39+y)*256+24+x]==(0x8000|ink));
+        }
+        assert(test_objs[0].priority==2 && test_objs[10].priority==2 && test_objs[24].priority==2);
+        assert(std::equal(tiles.begin(),tiles.end(),boss_gfx()));
+    }
+    // Bomb inversion uses the exact software-cel RGB transform in bank3 only.
+    video_bomb_prepare(true,58,200);view.prepare_combat(state);canvas_begin_frame();view.draw_combat(state);
+    canvas_buffer_prepare();assert(view.present_combat());
+    for(int i=1;i<16;++i) {
+        const int raw=(i+15)&15;const u16 normal=RGB15(component(source,raw,0,state.flash,5)>>3,
+            component(source,raw,1,state.flash,5)>>3,component(source,raw,2,state.flash,5)>>3);
+        assert(SPRITE_PALETTE[KIKURI_SOUL_PALETTE*16+i]==video_bomb_indigo(normal));
+    }
+    assert(std::equal(actor_palette,actor_palette+16,SPRITE_PALETTE));video_bomb_reset();
     state.souls[0].visible=state.souls[1].visible=false;
     view.prepare_combat(state);canvas_begin_frame();view.draw_combat(state);canvas_buffer_prepare();assert(view.present_combat());
     assert(std::all_of(BG_BMP_RAM(16),BG_BMP_RAM(16)+256*192,[](u16 p) {return p==0;}));
+    assert(test_objs[40].hidden && test_objs[41].hidden && test_objs[0].priority==OAM_PRIORITY_GAMEPLAY);
     assert(test_heap_attempts==allocations);effects_pixels(view,source,sprites);view.end();
     assert(test_heap_count==heap && test_heap_bytes==bytes && test_obj_attempts==objects && !g_canvas_target);
     assert(std::equal(bg.begin(),bg.end(),BG_BMP_RAM(4)) && std::equal(palette.begin(),palette.end(),BG_PALETTE));
     assert(std::equal(obj_palette.begin(),obj_palette.end(),SPRITE_PALETTE));
+    assert(test_objs[40].hidden && test_objs[41].hidden);
+    boss_render_frame(); // same original SinGyoku frame must be re-uploaded
+    assert(std::equal(singyoku_tiles.begin(),singyoku_tiles.end(),boss_gfx()));boss_render_hide();
     camera.snap_center();
-    std::puts("Kikuri renderer: background/cel palettes, Reimu/orb red bow, all camera/flash/lightball states, sparse uploads and retained soul/tear/ripple/laser pixels passed");
+    std::puts("Kikuri renderer: hardware16x16/4bpp souls/all cels/clip/camera/overlap, unchanged tear/laser layering and actor palettes, resident384-byte animation/no new OBJ allocations, flash/bomb palette3, cache handoff and retained tear/ripple/laser pixels passed");
 }

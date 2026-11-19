@@ -53,6 +53,7 @@ bool KikuriView::defeat(const KikuriPhase1State &s)
             // Canvas flush must be consumed before an optional BG asset flush.
             if(!canvas_buffer_present(true)) return false;
             install_background();
+            present_souls(); // reset prior shake and freeze hardware souls beneath the white rows
         } else if(first_black) {
             if(!canvas_buffer_present(true)) return false;
         } else if(count) {

@@ -233,8 +233,9 @@ void test_kikuri_art()
         assert(BG_PALETTE[i]==RGB15(rgb4[0]*17>>3,rgb4[1]*17>>3,rgb4[2]*17>>3));
     }
     view.prepare_still();assert(view.still());
-    assert(!view.sprite(-1,0,0,0) && !view.sprite(0,3,0,0) && !view.sprite(2,4,0,0));
-    for(int group=0;group<3;++group) for(int cel=0;cel<(group==2?4:3);++cel) {
+    assert(!view.sprite(-1,0,0,0) && !view.sprite(0,0,0,0) && !view.sprite(2,4,0,0));
+    // Souls are tested as hardware objects by the combat pixel oracle.
+    for(int group=1;group<3;++group) for(int cel=0;cel<(group==2?4:3);++cel) {
         canvas_clear();camera.snap_center();assert(view.sprite(group,cel,288,280));
         int w=group==0?16:8,offset=(group==0?0:group==1?768:960)+cel*w*w;
         for(int y=0;y<w;++y) for(int x=0;x<w;++x) {

@@ -92,6 +92,14 @@ void observe()
     assert(REG_WININ==0x1d1d && test_bgs[0].priority==1);
     assert(test_bgs[3].x==probe.cam && test_bgs[3].y==0 && test_bgs[2].y==0);
     assert(test_objs[OAM_SLOT_BOSS_ARROW].hidden && test_objs[OAM_SLOT_ORB_ARROW].hidden);
+    if(!fading) for(int i=0;i<2;++i) {
+        const auto &soul=probe.state.souls[i];const auto &obj=test_objs[BOSS_OAM_SLOT+1-i];
+        assert(obj.x==((soul.left/8)*4)-probe.cam && obj.y==Camera::y(soul.top));
+        // The upcoming black frame hides shadow OAM before its VBlank; the
+        // hardware keeps the old visible OAM until that frame commits.
+        assert(obj.hidden==(!view_visible(obj.x,obj.y,16,16) || tick==probe.lines-1));
+        assert(obj.size==SpriteSize_16x16 && obj.palette==KIKURI_SOUL_PALETTE && obj.priority==1);
+    }
     const int origin=probe.center/2-8;
     for(int y=0;y<192;++y) for(int x=0;x<256;++x) {
         const int distance=std::abs(y-origin);
