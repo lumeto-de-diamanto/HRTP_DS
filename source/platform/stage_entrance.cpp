@@ -14,7 +14,7 @@ void stage_entrance_prepare()
     canvas_clear();
 }
 
-void stage_entrance_animate(int stage_num, bool show_title)
+void stage_entrance_animate(int stage_num, bool show_title, bool black_banner)
 {
     // A boss may have prepared its frame/palette since prepare(). Keep that
     // shadow OAM hidden too, without resetting the boss's image/palette cache.
@@ -30,5 +30,5 @@ void stage_entrance_animate(int stage_num, bool show_title)
         for (int frame = 0; stage_render_entrance_frame(frame); ++frame)
             swiWaitForVBlank();
     }
-    stage_num_animate(stage_num, show_title);
+    stage_num_animate(stage_num, show_title, black_banner);
 }

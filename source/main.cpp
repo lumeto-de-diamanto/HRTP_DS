@@ -322,11 +322,6 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         else load_background(scene);
     }
     palette_apply_round();
-    if(kikuri_boss) {
-        // Source clear_vram_page_0: title/banner over a black field. Keep the
-        // approved disc hidden until KAMI's music-clock shroud reveals it.
-        dmaFillHalfWords(0,BG_BMP_RAM(4),128*1024);BG_PALETTE[0]=0;
-    }
 
     if (boss) {
         static const uint8_t empty[STAGE_ROWS][STAGE_COLS] = {};
@@ -380,7 +375,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     if(regular_handoff && (REG_VCOUNT<192 || REG_VCOUNT>=200))
         do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
     video_apply_camera();
-    stage_entrance_animate(global_stage_num(), current_stage == 0 || boss);
+    stage_entrance_animate(global_stage_num(), current_stage == 0 || boss, kikuri_boss);
     wait_for_shot = !boss;
     if(mima_boss) {
         check_mima(mima_view.begin(true),"combat");
@@ -391,8 +386,10 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         check_music();return; // LEGEND continues, never restart after spread-in
     }
     if(kikuri_boss) {
-        // The title is unbuffered. Asset loading afterward still sees only
-        // the source black field; start the song only once the view is ready.
+        // The kanji revealed the stage scenery, then the banner hid BG3.
+        // Clear its now-invisible storage before the view saves the source
+        // black field; only KAMI's music-clock shroud may reveal Kikuri's disc.
+        dmaFillHalfWords(0,BG_BMP_RAM(4),128*1024);BG_PALETTE[0]=0;
         check_kikuri(kikuri_view.begin(),"combat");
         check_kikuri(music_play_track(NATIVE_KAMI),"music");
         check_kikuri(kikuri_entrance_play(kikuri_view),"entrance");

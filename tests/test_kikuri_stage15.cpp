@@ -5,14 +5,34 @@ namespace {
 struct KikuriGameProbe {
     int score=0,bonus=0,old_starts=0,old_fades=0,old_stops=0;
     int fade=0,title=0,intro=0,defeat=0,results=0,exit_fade=0,black=0;
+    int kanji=0,banner=0;
     bool first_mask=false;
     unsigned game_frame=0,timer=0;
     int bombs=0,remaining_lives=0;
     size_t blocks=0,bytes=0,objects=0,allocations=0;
     OrbState orb{};
     KikuriPhase1 frozen;
-    std::vector<u16> actor_palette;
+    std::vector<u16> actor_palette,scenery,scene_palette;
 } kikuri_game;
+
+void check_kikuri_title_mask(int index)
+{
+    assert(test_bgs[2].sx==32 && test_bgs[2].sy==32);
+    assert(test_bgs[2].x==(index%2)*32 && test_bgs[2].y==CANVAS_H);
+    const u16 *glyph=font16x16_find(JIS_TOUHOU_REIIDEN[index]);assert(glyph);
+    for(int y=0;y<24;++y) for(int x=0;x<32;++x) {
+        const bool ink=x>=8 && x<24 && y>=4 && y<20 && (glyph[y-4]&(0x8000>>(x-8)));
+        assert(*canvas_at(test_bgs[2].x+x,CANVAS_H+y)==(ink ? 0 : 0x8000));
+    }
+    // Use the selected font and real scenery, not fixed-copy glyph pixels.
+    // A transparent glyph must actually expose nonblack bitmap colors.
+    const auto *pixels=reinterpret_cast<const u8*>(BG_BMP_RAM(4));
+    bool visible=false;
+    for(int y=0;y<192;++y) for(int x=0;x<256;++x)
+        if(!*canvas_at(test_bgs[2].x+x/8,CANVAS_H+y/8))
+            visible|=BG_PALETTE[pixels[y*512+x+test_bgs[3].x]]!=0;
+    assert(visible);
+}
 
 void observe_kikuri_entry()
 {
@@ -31,15 +51,33 @@ void observe_kikuri_entry()
     if(!g_canvas_target) {
         ++p.title;assert(test_kikuri_music_starts==p.old_starts);
         assert(REG_MASTER_BRIGHT==(p.title==1 ? 0x8010 : 0)); // first complete mask is still held black
-        assert(BG_PALETTE[0]==0);
-        const auto *pixels=reinterpret_cast<const u8*>(BG_BMP_RAM(4));
-        assert(std::all_of(pixels,pixels+128*1024,[](u8 pixel){return !pixel;}));
+        assert(std::equal(p.scenery.begin(),p.scenery.end(),BG_BMP_RAM(4)));
+        const bool kanji=p.title<=49; // black-held first mask, then six8-frame glyphs
+        assert(test_bgs[3].visible==kanji);
+        if(kanji) {
+            assert(test_bgs[3].x==32 && test_bgs[3].y==0);
+            assert(std::equal(p.scene_palette.begin(),p.scene_palette.end(),BG_PALETTE));
+            check_kikuri_title_mask(p.title==1 ? 0 : (p.title-2)/8);
+            if(p.title>1) ++p.kanji;
+        } else {
+            assert(++p.banner<=70 && BG_PALETTE[0]==0);
+            assert(test_bgs[2].sx==256 && test_bgs[2].sy==256);
+            assert(!test_bgs[2].x && !test_bgs[2].y);
+            assert(std::equal(p.scene_palette.begin()+1,p.scene_palette.end(),BG_PALETTE+1));
+        }
         for(int slot=0;slot<=41;++slot) assert(test_objs[slot].hidden);
     } else {
         assert(++p.intro<1100);
-        assert(p.title==119); // black-held first mask +48 kanji +70 banner frames
+        assert(p.title==119 && p.kanji==48 && p.banner==70);
         assert(test_kikuri_music_starts==p.old_starts+1);
         assert(test_heap_count==p.blocks+2 && test_obj_attempts==p.objects);
+        if(p.intro==1) {
+            // Loading the view happens behind the hidden bitmap. Its retained
+            // snapshot must still be the old source-black field, not scenery.
+            assert(!test_bgs[3].visible && BG_PALETTE[0]==0);
+            const auto *pixels=reinterpret_cast<const u8*>(BG_BMP_RAM(4));
+            assert(std::all_of(pixels,pixels+128*1024,[](u8 pixel){return !pixel;}));
+        } else assert(test_bgs[3].visible);
     }
 }
 
@@ -142,6 +180,8 @@ void test_kikuri_stage15()
     kikuri_game={};auto &p=kikuri_game;
     p.score=stage_score+stagebonus_compute(14,lives).total;p.game_frame=frame;
     p.old_starts=test_kikuri_music_starts;p.blocks=blocks;p.bytes=bytes;p.objects=objects;
+    p.scenery.assign(BG_BMP_RAM(4),BG_BMP_RAM(4)+65536);
+    p.scene_palette.assign(BG_PALETTE,BG_PALETTE+208);
     test_vblank_hook=observe_kikuri_entry;gameplay_tick(0,0);test_vblank_hook=nullptr;test_keys_down=0;
     assert(current_scene==4 && current_stage==4 && global_stage_num()==15 && !wait_for_shot);
     assert(p.fade==16 && p.title==119 && p.intro>950 && g_canvas_target);
@@ -246,5 +286,5 @@ void test_kikuri_stage15()
     }
     invincible=old_invincible;start_new_game();camera.snap_center();
     assert(test_heap_count==blocks && test_heap_bytes==bytes && test_obj_count==79);
-    std::puts("Stage15: real14->15/title/KAMI, preserved run/RNG, combat boundary wiring, live-effect pause/99-frame miss/bomb/fatal retry/new-game, lethal priority/one defeat, black capture/one tally/15->16 restored brightness and level-select cleanup passed");
+    std::puts("Stage15: real14->15/scenery-filled six kanji/black70-frame banner/KAMI reveal, preserved run/RNG, combat boundary wiring, live-effect pause/99-frame miss/bomb/fatal retry/new-game, lethal priority/one defeat, black capture/one tally/15->16 restored brightness and level-select cleanup passed");
 }

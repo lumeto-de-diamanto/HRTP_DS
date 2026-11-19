@@ -282,15 +282,9 @@ static void touhou_reiiden_animate()
         for (int frame = 0; frame < 8; frame++)
             swiWaitForVBlank();
     }
-    // Clear normal effects while they are still offscreen, then restore the
-    // usual 1:1 canvas before STAGE text. Scenery/camera/HUD layers never move.
-    canvas_clear();
-    bgSetScale(g_bg_id_canvas, 256, 256);
-    bgSetScroll(g_bg_id_canvas, 0, 0);
-    bgUpdate();
 }
 
-void stage_num_animate(int stage_num, bool show_title)
+void stage_num_animate(int stage_num, bool show_title, bool black_banner)
 {
     CanvasForegroundScope foreground;
     canvas_playfield_clip(false);
@@ -303,6 +297,21 @@ void stage_num_animate(int stage_num, bool show_title)
         for (int slot = 0; slot <= 40; ++slot) oamSetHidden(&oamMain, slot, true);
         oamUpdate(&oamMain);
         touhou_reiiden_animate();
+    }
+    if(black_banner) {
+        // The last glyph is still masking BG3, and its final wait ended in
+        // VBlank. Hide scenery BEFORE clearing/resetting that mask so no full
+        // bitmap frame can flash between the kanji and the black STAGE field.
+        bgHide(g_bg_id_background);
+        BG_PALETTE[0]=0;
+    }
+    if(show_title) {
+        // Clear normal effects while they are still offscreen, then restore
+        // the usual 1:1 canvas before STAGE text. Camera/HUD layers never move.
+        canvas_clear();
+        bgSetScale(g_bg_id_canvas, 256, 256);
+        bgSetScroll(g_bg_id_canvas, 0, 0);
+        bgUpdate();
     }
     char digits[3];
     digits[0] = '0' + ((stage_num / 10) % 10);

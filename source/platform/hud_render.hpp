@@ -22,4 +22,6 @@ void harryup_animate();
 
 // Giant "STAGE NN" at stage start (ReC98 stage_num_animate).
 // `show_title` adds ReC98's 東方★靈異伝 flourish on scene-opening stages.
-void stage_num_animate(int stage_num, bool show_title);
+// `black_banner` hides BG3 AFTER the kanji, before STAGE/NN; the caller owns
+// the subsequent background reveal. Other entrances keep their scenery.
+void stage_num_animate(int stage_num, bool show_title, bool black_banner=false);
