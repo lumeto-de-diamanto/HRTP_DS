@@ -102,6 +102,14 @@ PlayerMode mode;
 Submode submode;
 SpecialSubmode special_submode;
 
+static void player_set_idle_sprite() {
+	// Sheet-local attack indices are not regular-player cels. Publish the
+	// matching idle cel with the sheet, including early combo handoffs, without
+	// changing the retained facing direction or any attack/movement state.
+	player.spritesheet = PLAYER;
+	player.sprite_number = (facing_dir == FACE_LEFT) ? SPRITE_IDLE_LEFT : SPRITE_IDLE_RIGHT;
+}
+
 void inline increment_mode() {
 	if (mode == M_SPECIAL_FIRST) mode = M_SPECIAL_SECOND;
 	if (mode == M_SPECIAL_SECOND) mode = M_SPECIAL_THIRD;
@@ -295,7 +303,7 @@ static void player_update_controls(uint16_t keys_held, uint16_t keys_down) {
 				if(mode_timer >= SWING_FRAMES) {
 					mode = M_REGULAR;
 					submode = STATIONARY;
-					player.spritesheet = PLAYER;
+					player_set_idle_sprite();
 					mode_timer = 0;
 					a_down = false;
 					invincible_to_orb = false;
@@ -312,7 +320,7 @@ static void player_update_controls(uint16_t keys_held, uint16_t keys_down) {
 			if(mode_timer >= SLIDE_FRAMES) {
 				mode = M_REGULAR;
 				submode = STATIONARY;
-				player.spritesheet = PLAYER;
+				player_set_idle_sprite();
 				mode_timer = 0;
 				sliding = false;
 				// TODO: Understand and implement the combo
@@ -350,7 +358,7 @@ static void player_update_controls(uint16_t keys_held, uint16_t keys_down) {
 			if(mode_timer >= SLIDE_FRAMES) {
 				mode = M_REGULAR;
 				submode = STATIONARY;
-				player.spritesheet = PLAYER;
+				player_set_idle_sprite();
 				mode_timer = 0;
 				sliding = false;
 				// TODO: Understand and implement the combo
@@ -515,8 +523,7 @@ static void player_update_controls(uint16_t keys_held, uint16_t keys_down) {
 				invincible_to_orb = false;
 				mode = M_REGULAR;
 				submode = STATIONARY;
-				player.spritesheet = PLAYER;
-				player.sprite_number = SPRITE_IDLE_LEFT;
+				player_set_idle_sprite();
 
 			} else {
 				// Orb hit tests go here

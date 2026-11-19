@@ -1287,6 +1287,8 @@ static void check_boss_indicator()
     std::puts("Boss indicator: independent red/purple notched pixels, cache handoff/restoration, every camera/odd-coordinate edge, partial visibility, height clamps, all forms, unchanged orb, portal/shake/foreground/entrance/defeat cleanup, frozen state/RNG and zero new heap/OBJ allocations or per-frame uploads passed");
 }
 
+#include "test_player_transitions.cpp"
+
 int main()
 {
     static_assert(PLAYFIELD_W == 640 && PLAYFIELD_H == 336);
@@ -1657,6 +1659,7 @@ int main()
         {"Kikuri art",test_kikuri_art},{"Kikuri defeat",test_kikuri_defeat},
         {"Kikuri renderer",test_kikuri_render},{"Stage15",test_kikuri_stage15},
         {"score extends",test_score_extends_flow},
+        {"Reimu transitions",check_player_transitions},
     };
     for(const auto &test:cases) {
         test_begin_case(test.name,test.run==test_kikuri_stage15 ? 10000 : 100000);
