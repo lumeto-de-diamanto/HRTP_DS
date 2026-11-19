@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Shared host, sanitizer and packaged-release entry points (run via Make)."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import importlib
@@ -81,11 +82,26 @@ class HostBuilder:
                 and previous.get('output') == digest(binary)):
             print(f'  cached host: {name}', flush=True)
             return binary
-        print(f'  build host: {name}', flush=True)
+        jobs = min(4, len(sources), os.cpu_count() or 1)
+        print(f'  build host: {name} ({jobs} compile jobs)', flush=True)
         started = time.monotonic()
         with tempfile.TemporaryDirectory(prefix=name + '-', dir=self.directory) as directory:
             temporary = Path(directory) / name
-            subprocess.run([*self.cxx, *flags, *sources, *link, '-o', str(temporary)], check=True, timeout=120)
+            deadline = started + 120
+            objects = [str(Path(directory) / f'{i}.o') for i in range(len(sources))]
+
+            def compile_source(item):
+                i, source = item
+                subprocess.run([*self.cxx, *flags, '-c', source, '-o', objects[i]],
+                               check=True, timeout=max(1, deadline-time.monotonic()))
+
+            # Compilation is independent; fixture mutation and execution remain
+            # serialized. This makes a cold run bounded without hiding tests or
+            # lowering sanitizer/optimization coverage to meet the time budget.
+            with ThreadPoolExecutor(max_workers=jobs) as pool:
+                list(pool.map(compile_source, enumerate(sources)))
+            subprocess.run([*self.cxx, *flags, *objects, *link, '-o', str(temporary)],
+                           check=True, timeout=max(1, deadline-time.monotonic()))
             temporary.replace(binary)
         save_stamp(stamp, dict(signature=signature, output=digest(binary)))
         print(f'  built: {name} in {time.monotonic()-started:.2f}s', flush=True)
@@ -149,7 +165,7 @@ def host_tests(args):
             names += ['test_font16x16', 'test_boss_assets',
                       'test_radar_assets', 'test_vram_budget',
                       'test_viewport_assets', 'test_konngara_assets', 'test_konngara_art_assets',
-                      'test_kikuri_assets']
+                      'test_kikuri_assets', 'test_yuugenmagan_assets']
         if selected('audio'):
             names += ['test_native_build_cache', 'test_native_audio', 'test_native_sfx', 'test_opna_rhythm',
                       'test_recording_comparison']
@@ -200,7 +216,10 @@ def host_tests(args):
         viewport = ['tests/test_viewport.cpp', 'tests/heap_probe.cpp',
                     'tests/test_stage_entrance.cpp', 'tests/test_konngara_review.cpp',
                     'tests/test_mima_review.cpp','tests/test_mima_phase1_review.cpp',
-                    'tests/test_kikuri_art.cpp','tests/test_kikuri_render.cpp','tests/test_kikuri_defeat.cpp']
+                    'tests/test_kikuri_art.cpp','tests/test_kikuri_render.cpp','tests/test_kikuri_defeat.cpp',
+                    'tests/test_yuugenmagan.cpp','tests/test_yuugenmagan_phase1.cpp','tests/test_yuugenmagan_combat.cpp',
+                    'tests/test_yuugenmagan_patterns.cpp','tests/test_yuugenmagan_pentagram.cpp',
+                    'tests/test_yuugenmagan_phase13.cpp','tests/test_yuugenmagan_defeat.cpp']
         for pattern in ('main/player/*.cpp', 'main/boss/*.cpp', 'main/bullet/*.cpp',
                         'main/math/*.cpp'):
             viewport += sorted(str(p) for p in Path('source/engine').glob(pattern))
@@ -212,7 +231,8 @@ def host_tests(args):
             'palette_fx text_layer stage_entrance boss_gfx konngara_art_render '
             'konngara_combat_render konngara_combat_review konngara_defeat_render '
             'konngara_intro_render menu_render bomb_render round_results mima_render mima_review '
-            'mima_combat_render mima_phase1_review mima_defeat_render kikuri_render kikuri_entrance kikuri_defeat_render').split()]
+            'mima_combat_render mima_phase1_review mima_defeat_render kikuri_render kikuri_entrance kikuri_defeat_render '
+            'yuugenmagan_render yuugenmagan_combat_render yuugenmagan_defeat_render').split()]
         intro = ['tests/test_konngara.cpp', 'tests/heap_probe.cpp',
                  *eng('main/boss/konngara_intro', 'main/math/trig')]
         intro += [platform + p + '.cpp' for p in

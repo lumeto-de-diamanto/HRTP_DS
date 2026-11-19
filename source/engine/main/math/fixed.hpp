@@ -36,7 +36,9 @@ class fixed {
         return from_raw(static_cast<int32>(tmp >> 16));
     }
     constexpr fixed operator/(fixed o) const {
-        int64 tmp = (static_cast<int64>(raw) << 16);
+        // Multiplication preserves the Q16 numerator for negative forces too;
+        // left-shifting a negative signed value is undefined in C++.
+        int64 tmp = static_cast<int64>(raw) * 65536;
         tmp = tmp / o.raw;
         return from_raw(static_cast<int32>(tmp));
     }

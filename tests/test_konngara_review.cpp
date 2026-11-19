@@ -666,6 +666,8 @@ struct DeathProbe {
     MimaPhase1 frozen_mima;
     bool kikuri_active=false;
     KikuriPhase1 frozen_kikuri;
+    bool yuugenmagan_active=false;
+    YuugenMaganPhase1 frozen_yuugenmagan;
 } death_probe;
 
 void observe_player_death()
@@ -682,6 +684,8 @@ void observe_player_death()
             if(p.mima_active) p.frozen_mima=mima;
             p.kikuri_active=stage_has_kikuri(current_scene,current_stage);
             if(p.kikuri_active) p.frozen_kikuri=kikuri;
+            p.yuugenmagan_active=stage_has_yuugenmagan(current_scene,current_stage);
+            if(p.yuugenmagan_active) p.frozen_yuugenmagan=yuugenmagan;
             p.pellet_x=Pellets.at(0).cur_left.v;p.pellet_y=Pellets.at(0).cur_top.v;
             p.pellet_vx=Pellets.at(0).velocity.x.v;p.pellet_vy=Pellets.at(0).velocity.y.v;
         }
@@ -691,6 +695,7 @@ void observe_player_death()
         assert(player_get_state().x_position==p.player_x);
         if(p.mima_active) assert(!std::memcmp(&p.frozen_mima,&mima,sizeof(mima)));
         if(p.kikuri_active) assert(!std::memcmp(&p.frozen_kikuri,&kikuri,sizeof(kikuri)));
+        if(p.yuugenmagan_active) assert(!std::memcmp(&p.frozen_yuugenmagan,&yuugenmagan,sizeof(yuugenmagan)));
         assert((stage_has_konngara(current_scene,current_stage) ? konngara.state().frame :
             stage_has_mima(current_scene,current_stage) ? mima.state().frame : singyoku_state().frame)==p.boss_frame);
         assert(Pellets.at(0).cur_left.v==p.pellet_x && Pellets.at(0).cur_top.v==p.pellet_y);
@@ -1407,3 +1412,4 @@ void test_mima_stage10()
 
 #include "test_kikuri_stage15.cpp"
 #include "test_score_extends_flow.cpp"
+#include "test_yuugenmagan_flow.cpp"

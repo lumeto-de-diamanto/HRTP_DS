@@ -56,6 +56,7 @@ class AssetBuildTests(unittest.TestCase):
                 self.assertIn('nitrofs/boss3.bin', before)
                 self.assertIn('nitrofs/mima_art.bin', before)
                 self.assertIn('nitrofs/kikuri_art.bin', before)
+                self.assertIn('nitrofs/yuugenmagan_art.bin', before)
                 for name in ('Missile','PelletCloud','Pillar'):
                     self.assertIn(f'assets/processed/sprites/{name}.h', before)
                 self.assertIn('assets/processed/backgrounds/MimaPaletteFx.h', before)
@@ -95,7 +96,9 @@ class AssetBuildTests(unittest.TestCase):
                                   'nitrofs/mima_art.bin', 'assets/hdi_dump/BOSS3.GRP',
                                   'nitrofs/kikuri_art.bin', 'assets/hdi_dump/BOSS4.GRP',
                                   'assets/packfile/TAMASII.BOS', 'assets/packfile/TAMASII2.BOS',
-                                  'assets/packfile/TAMAYEN.PTN',
+                                   'assets/packfile/TAMAYEN.PTN',
+                                   'nitrofs/yuugenmagan_art.bin', 'assets/hdi_dump/BOSS2.GRP',
+                                   'assets/packfile/BOSS2.BOS',
                                   'assets/packfile/BOSS3_1.BOS', 'assets/packfile/BOSS3_2.BOS',
                                   'assets/packfile/BOSS3_M.PTN',
                                   'assets/processed/sprites/Missile.h',

@@ -20,6 +20,7 @@
 static bool boss_background;
 
 int background_scroll_x() { return camera.background_x(boss_background); }
+void background_set_boss_scroll() { boss_background=true; }
 
 static const unsigned short *const scene_palettes[7] = {
     st0_palette, st1_palette, st2_palette, st3_palette,

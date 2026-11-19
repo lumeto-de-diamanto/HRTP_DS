@@ -83,7 +83,7 @@ namespace {
 struct RadarMark { int16_t x,y;u8 w,h,shape,color; };
 static_assert(sizeof(RadarMark)==8,"radar snapshots must stay compact");
 constexpr int item_first=STAGE_MAX_CELLS*2,boss_slot=item_first+ITEM_BOMB_COUNT+ITEM_POINT_COUNT;
-constexpr int player_slot=boss_slot+1,orb_slot=boss_slot+2,mark_count=orb_slot+1;
+constexpr int player_slot=boss_slot+HUD_RADAR_MAX_BOSSES,orb_slot=player_slot+1,mark_count=orb_slot+1;
 RadarMark previous_marks[mark_count],marks[mark_count];
 u32 radar_dirty[(HUD_RADAR_H+7)/8];
 
@@ -120,6 +120,11 @@ HudRadarBoss hud_radar_boss(const BossEntity &entity,bool visible)
 
 void hud_radar_render(const HudRadarBoss &boss)
 {
+    hud_radar_render(&boss,1);
+}
+
+void hud_radar_render(const HudRadarBoss *bosses,unsigned count)
+{
     std::memset(marks,0,sizeof(marks));
     for(int i=0;i<stage_card_total && i<STAGE_MAX_CELLS;++i) {
         const auto &c=stage_cards[i];
@@ -145,7 +150,8 @@ void hud_radar_render(const HudRadarBoss &boss)
         marks[item_first+i]=marker(Items.bomb[i].left+16,Items.bomb[i].top+16,RadarIcon_Item,SUB_COL_RADAR_ITEM);
     for(int i=0;i<ITEM_POINT_COUNT;++i) if(CItems::is_visible(Items.point[i]))
         marks[item_first+ITEM_BOMB_COUNT+i]=marker(Items.point[i].left+16,Items.point[i].top+16,RadarIcon_Item,SUB_COL_RADAR_ITEM);
-    if(boss.visible) marks[boss_slot]=marker(boss.x,boss.y,RadarIcon_Boss,SUB_COL_RADAR_BOSS);
+    if(bosses) for(unsigned i=0;i<count && i<HUD_RADAR_MAX_BOSSES;++i)
+        if(bosses[i].visible) marks[boss_slot+i]=marker(bosses[i].x,bosses[i].y,RadarIcon_Boss,SUB_COL_RADAR_BOSS);
     const auto &player=player_get_state();const auto &orb=orb_get_state();
     marks[player_slot]=marker(player.x_position+PLAYER_W/2,player.y_position+PLAYER_H/2,RadarIcon_Player,SUB_COL_RADAR_PLAYER);
     marks[orb_slot]=marker(orb.x_position+ORB_W/2,orb.y_position+ORB_H/2,RadarIcon_Orb,SUB_COL_RADAR_ORB);
@@ -294,7 +300,7 @@ void stage_num_animate(int stage_num, bool show_title, bool black_banner)
         // reveal the layers underneath; later stage banners intentionally
         // retain the player, matching the original's alternate path.
         // Hide gameplay only, not the fixed HUD icons/HP OAM at slots48+.
-        for (int slot = 0; slot <= 40; ++slot) oamSetHidden(&oamMain, slot, true);
+        for (int slot = 0; slot < 48; ++slot) oamSetHidden(&oamMain, slot, true);
         oamUpdate(&oamMain);
         touhou_reiiden_animate();
     }

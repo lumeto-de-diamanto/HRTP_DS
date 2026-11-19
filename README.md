@@ -47,7 +47,6 @@ For focused host runs, append `TEST_SUITE=gameplay`, `graphics` or `audio` to
 `make test` or `make sanitize` (the default is `all`). `HOST_CXX` selects the host
 compiler. Unchanged host executables and graphics fixtures are content-cached
 under `build/`; assertions still run every time. `make clean` clears the cache.
-Feature cases stay in small modules, with packaging assertions in one place.
 
 ## Current status
 
@@ -74,7 +73,7 @@ Feature cases stay in small modules, with packaging assertions in one place.
   * [x] SFX
 * [ ] Bosses
   * [x] SinGyoku
-  * [ ] YuugenMagan
+  * [x] YuugenMagan
   * [x] Mima
   * [ ] Elis
   * [x] Kikuri
@@ -117,7 +116,8 @@ Current controls:
 * **X**, or **A + B twice** — bomb.
 * **START** — pause/resume.
 * **SELECT + d-pad** — dev stage navigator (←/→: stage, ↑/↓: scene;
-  Shrine and all Jigoku scenes have five stages, Makai scenes four)
+  Shrine, Makai 6–10 and all Jigoku scenes have five stages;
+  Makai 11–15 and 16–20 still have four)
 
 ## AI disclaimer
 

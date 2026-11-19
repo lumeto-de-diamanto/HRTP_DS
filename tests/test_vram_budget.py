@@ -39,6 +39,14 @@ def permanent_owners(model):
 
 
 class VramBudgetTests(unittest.TestCase):
+    def test_yuugenmagan_five_eyes_share_seven_resident_cels(self):
+        model=AllocationModel(32);permanent_owners(model)
+        self.assertEqual(len(model.blocks),79)
+        self.assertEqual(model.used,27840)
+        self.assertEqual(7*32*32//2,3584)
+        self.assertLessEqual(3584,4096)
+        self.assertTrue(set(range(40,45)).isdisjoint(range(48,75)))
+
     def test_kikuri_souls_reuse_the_resident_boss_cache(self):
         model=AllocationModel(32);permanent_owners(model)
         self.assertEqual(len(model.blocks),79)

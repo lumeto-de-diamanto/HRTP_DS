@@ -62,6 +62,14 @@ void test_mima_review();
 void test_kikuri_art();
 void test_kikuri_render();
 void test_kikuri_stage15();
+void test_yuugenmagan();
+void test_yuugenmagan_phase1();
+void test_yuugenmagan_combat();
+void test_yuugenmagan_patterns();
+void test_yuugenmagan_pentagram();
+void test_yuugenmagan_phase13();
+void test_yuugenmagan_defeat();
+void test_yuugenmagan_stage10();
 void test_kikuri_defeat();
 void test_mima_phase1_review();
 extern PlayerState player;
@@ -299,6 +307,8 @@ static void check_bottom_hud() {
     camera.snap_center();hud_invalidate();
     std::puts("Bottom HUD: editable PNG marker/color pixels,7x7 Reimu/orb, shared native16x16 boss glyph independent of hitbox height, all turret types, edge/removal/overlap restoration, unchanged HUD/pattern, camera-independent zero-write idle and read-only/RNG/heap checks passed");
 }
+
+#include "test_yuugenmagan_radar.cpp"
 
 static int ink_count() {
     const u16 *px = canvas_at(0, 0);
@@ -1660,9 +1670,20 @@ int main()
         {"Kikuri renderer",test_kikuri_render},{"Stage15",test_kikuri_stage15},
         {"score extends",test_score_extends_flow},
         {"Reimu transitions",check_player_transitions},
+        {"YuugenMagan art",test_yuugenmagan},
+        {"YuugenMagan controller",test_yuugenmagan_phase1},
+        {"YuugenMagan combat",test_yuugenmagan_combat},
+        {"YuugenMagan patterns",test_yuugenmagan_patterns},
+        {"YuugenMagan radar",test_yuugenmagan_radar},
+        {"YuugenMagan pentagram",test_yuugenmagan_pentagram},
+        {"YuugenMagan phase13",test_yuugenmagan_phase13},
+        {"YuugenMagan defeat",test_yuugenmagan_defeat},
+        {"Makai Stage10",test_yuugenmagan_stage10},
     };
     for(const auto &test:cases) {
-        test_begin_case(test.name,test.run==test_kikuri_stage15 ? 10000 : 100000);
+        // Stage10 covers three complete entry/defeat/results runs plus both
+        // fatal-menu choices and cross-boss cache handoffs under one watchdog.
+        test_begin_case(test.name,test.run==test_yuugenmagan_stage10 ? 20000 : test.run==test_kikuri_stage15 ? 10000 : 100000);
         test.run();
     }
     assert(test_vram.before == 0xDEADBEEF && test_vram.after == 0xDEADBEEF);

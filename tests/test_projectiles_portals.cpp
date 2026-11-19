@@ -64,6 +64,17 @@ static void card_presence_and_hp()
 
 static void orb_ceiling_bounces()
 {
+    // The longer YuugenMagan practice reaches a negative numerator in fixed
+    // division. Check exact raw results, not rounded pixel conversions.
+    constexpr auto quotient=fixed::from_raw(-293600)/fixed(2.5);
+    constexpr auto expected=fixed::from_raw(-117440);
+    static_assert(!(quotient<expected) && !(quotient>expected));
+    for(int32 numerator:{-2147483647,-293600,-1,0,1,293600,2147483647})
+        for(int32 denominator:{-163840,-65536,65536,163840}) {
+            const auto result=fixed::from_raw(numerator)/fixed::from_raw(denominator);
+            const auto exact=fixed::from_raw(int32(int64(numerator)*65536/denominator));
+            assert(!(result<exact) && !(result>exact));
+        }
     // ReC98 orb_velocity_y_update() returns pixel_t (int), so truncate each
     // displacement BEFORE adding it to the integer position. The fixed class's
     // ordinary int conversion intentionally still rounds to nearest.

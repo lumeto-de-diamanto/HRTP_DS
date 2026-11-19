@@ -12,6 +12,10 @@ struct BossEntity;
 HudRadarBoss hud_radar_boss(const BossEntity &entity,bool visible=true);
 // Read-only world overview: no projectiles, camera outline or cosmetic RNG.
 void hud_radar_render(const HudRadarBoss &boss = {});
+// Distributed bosses share the same icon/cache and player/orb draw priority.
+// Entries retain their identity when hidden; at most five are rendered.
+constexpr unsigned HUD_RADAR_MAX_BOSSES=5;
+void hud_radar_render(const HudRadarBoss *bosses,unsigned count);
 
 // Blocking two-phase banner over the playfield canvas (ReC98's TRAM
 // 16x-scaled letters). Used by HURRY UP and the stage-start number.

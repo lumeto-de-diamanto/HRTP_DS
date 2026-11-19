@@ -49,21 +49,26 @@ class ViewportAssets(unittest.TestCase):
         self.assertLess(load.index('stage_entrance_prepare()'), load.index('load_boss_background()'))
         self.assertLess(load.index('player_initialize()'), load.index('stage_entrance_animate('))
         presentations = list(re.finditer(r'(?<!\w)render_frame\(\);', load))
-        self.assertEqual(len(presentations), 4)  # Konngara, Mima, Kikuri, ordinary entrances
+        self.assertEqual(len(presentations), 5)  # Konngara, YuugenMagan, Mima, Kikuri, ordinary entrances
         self.assertLess(load.index('konngara_intro_play()'), load.index('konngara_view.begin()'))
         self.assertLess(load.index('konngara_view.begin()'), presentations[0].start())
         self.assertLess(load.index('stage_entrance_animate('), presentations[1].start())
+        self.assertLess(load.index('camera.snap_center()'),load.index('yuugenmagan_view.prepare_entrance()'))
+        self.assertLess(load.index('yuugenmagan_view.prepare_entrance()'),load.index('stage_entrance_animate('))
+        self.assertLess(load.index('stage_entrance_animate('),load.index('yuugenmagan_view.begin()'))
+        self.assertLess(load.index('yuugenmagan_view.begin()'),presentations[1].start())
+        self.assertLess(presentations[1].start(),load.index('check_yuugenmagan(music_play_track(NATIVE_LEGEND)'))
         self.assertLess(load.index('load_mima_background()'), load.index('stage_entrance_animate('))
         self.assertLess(load.index('stage_entrance_animate('), load.index('mima_view.begin(true)'))
-        self.assertLess(load.index('mima_view.begin(true)'), load.index('music_play_track(NATIVE_LEGEND)'))
-        self.assertLess(load.index('music_play_track(NATIVE_LEGEND)'), load.index('mima_entrance_play('))
+        self.assertLess(load.index('mima_view.begin(true)'), load.index('check_mima(music_play_track(NATIVE_LEGEND)'))
+        self.assertLess(load.index('check_mima(music_play_track(NATIVE_LEGEND)'), load.index('mima_entrance_play('))
         self.assertLess(load.index('mima_entrance_play('), load.index('mima.reset(true)'))
-        self.assertLess(load.index('mima.reset(true)'), presentations[1].start())
+        self.assertLess(load.index('mima.reset(true)'), presentations[2].start())
         self.assertLess(load.index('stage_entrance_animate('),load.index('kikuri_view.begin()'))
         self.assertLess(load.index('kikuri_view.begin()'),load.index('music_play_track(NATIVE_KAMI)'))
         self.assertLess(load.index('music_play_track(NATIVE_KAMI)'),load.index('kikuri_entrance_play('))
-        self.assertLess(load.index('kikuri_entrance_play('),presentations[2].start())
-        self.assertLess(presentations[3].start(), load.index('music_play_track(NATIVE_POSITIVE)'))
+        self.assertLess(load.index('kikuri_entrance_play('),presentations[3].start())
+        self.assertLess(presentations[4].start(), load.index('music_play_track(NATIVE_POSITIVE)'))
         for path in Path('source/engine').rglob('*'):
             if path.suffix in ('.cpp', '.hpp', '.h'):
                 self.assertNotRegex(path.read_text(), r'#include\s*[<\"][^>\"]*camera\.')
@@ -206,6 +211,8 @@ def run_renderer(binary):
     shutil.copyfile('nitrofs/konngara_intro.bin', destination / 'konngara_intro.bin')
     from test_kikuri_assets import make_fixtures
     make_fixtures(runtime)
+    from test_yuugenmagan_assets import make_fixtures as yuugenmagan_fixtures
+    yuugenmagan_fixtures(runtime)
     if binary is not None:
         subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
 

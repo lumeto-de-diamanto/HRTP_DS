@@ -92,11 +92,12 @@ class KonngaraAssets(unittest.TestCase):
         self.assertEqual(trace[476:489], [(3, y, y, 15, -1, 0) for y in range(400, -1, -32)])
         source = Path('source/main.cpp').read_text()
         navigation=source.split('static bool stage_navigate(',1)[1].split('#ifndef HRTP_GAME_FLOW_TEST',1)[0]
-        # Only SELECT + d-pad level select remains; no boss review launchers.
+        # Implemented bosses keep no review launchers, only d-pad navigation.
         for key in ('A','B','X','Y','L','R'):
             self.assertNotRegex(navigation,rf'\bKEY_{key}\b')
         for shortcut in ('konngara_intro_preview()','konngara_art_preview()','konngara_combat_review(',
-                         'mima_art_review(', 'mima_phase1_review(', 'kikuri_art_review(', 'kikuri_phase1_review('):
+                         'mima_art_review(', 'mima_phase1_review(', 'kikuri_art_review(', 'kikuri_phase1_review(',
+                         'yuugenmagan_art_review(', 'yuugenmagan_phase1_review('):
             self.assertNotIn(shortcut,source)
         self.assertIn('KEY_LEFT',navigation)
         self.assertIn('KEY_DOWN',navigation)
