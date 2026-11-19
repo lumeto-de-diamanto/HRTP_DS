@@ -51,7 +51,7 @@ Feature cases stay in small modules, with packaging assertions in one place.
 
 ## Current status
 
-* [ ] Display
+* [x] Display
   * [x] Bullets
   * [x] Lasers, thin and thick
   * [x] Missiles
@@ -92,6 +92,9 @@ Feature cases stay in small modules, with packaging assertions in one place.
     * [x] Between two regular stages
     * [x] From a regular stage to a boss stage
     * [x] From boss defeat results to regular stage
+    * [ ] From game over screen to regular stage
+    * [ ] From game over screen to boss stage
+    * [ ] From main menu to game
 
 ## Layout
 
