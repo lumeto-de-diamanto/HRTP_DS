@@ -75,6 +75,43 @@ void missiles()
         assert(pairs==175 && boss.state().phase==phase+1 && irand()==random);
     }
 }
+void transition_flash()
+{
+    rank=RANK_NORMAL;
+    for(int phase:{2,4,6,8,10,12}) for(bool repeat:{false,true}) {
+        if(repeat && phase!=10) continue;
+        YuugenMaganPhase1 boss;yuugenmagan_enter(boss,phase);
+        auto &s=const_cast<YuugenMaganPhase1State&>(boss.state());
+        s.health.invincible=s.health.flashing=true;s.pentagram.repeat=repeat;
+        const int hp=s.health.hp,score=stage_score;
+        for(int tick=1;tick<=70;++tick) {
+            // Probe upload and skipped-upload frames independently; completion
+            // uploads the normal palette even though frame70 skips recoloring.
+            if(tick==1 || tick==10 || tick==11 || tick==70) s.flash=true;
+            boss.update(true);
+            assert(s.flash==(tick==10));
+            assert(s.health.hp==hp && s.health.invincible && s.health.flashing && stage_score==score);
+            assert(tick<70 ? s.phase==phase && s.frame==tick : s.phase==phase+1 && !s.frame);
+        }
+    }
+    // Real orb damage two updates before the fifth missile cycle times out.
+    YuugenMaganPhase1 boss;yuugenmagan_enter(boss,3);
+    for(int tick=0;boss.state().iterations!=4 || boss.state().frame!=366;++tick) {
+        assert(tick<2000);Pellets.init();boss.update();
+    }
+    orb_set_position(208,176);boss.update();orb_set_position(10000,10000);
+    assert(boss.state().health.hp==14 && boss.state().health.invincible);
+    boss.update();boss.update();
+    assert(boss.state().phase==4 && boss.state().flash);
+    const int score=stage_score;
+    for(int tick=1;tick<=70;++tick) {
+        boss.update();const auto &s=boss.state();
+        assert(!s.flash && s.health.hp==14 && s.health.invincible && stage_score==score);
+    }
+    assert(boss.state().phase==5 && !boss.state().frame);boss.update();assert(!boss.state().flash);
+    orb_set_position(10000,10000);
+    std::puts("YuugenMagan flash: normal palette on source upload/completion frames in all six eye shifts (including repeated phase10), untouched hit grace and real pre-timeout orb hit passed");
+}
 void spray()
 {
     for(int difficulty=0;difficulty<4;++difficulty) for(int speed:{-4,20}) {
@@ -136,7 +173,7 @@ void lasers()
 void test_yuugenmagan_patterns()
 {
     const auto difficulty=rank;const bool inv=invincible;const int score=stage_score,speed=pellet_speed;
-    pellet_speed=-4;transitions();missiles();spray();lasers();
+    pellet_speed=-4;transitions();transition_flash();missiles();spray();lasers();
     rank=difficulty;stage_score=score;pellet_speed=speed;player_initialize();orb_initialize();shots_initialize();Pellets.init();invincible=inv;player_is_hit=false;
     std::puts("YuugenMagan patterns: palette/hitbox shifts, both five-cycle missile variants/PLUS-offset aim/RNG, signed spray counter/speed tuning,491-update endpoint-only laser sequence and rank bursts passed");
 }

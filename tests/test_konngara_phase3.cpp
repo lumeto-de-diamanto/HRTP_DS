@@ -10,6 +10,7 @@
 #include "main/player/orb.hpp"
 #include "main/player/shot.hpp"
 #include "main/math/vector.hpp"
+#include "sound_effects.hpp"
 
 rank_t rank = RANK_NORMAL;
 int stage_score;
@@ -259,4 +260,31 @@ static void snake_collision()
     std::puts("Konngara phase3 snakes: independent four-snake motion/target-lock/pre-move pixels and actual updated-head collisions, including slide/invincibility, passed");
 }
 
-int main() { transitions(); patterns(); boundaries(); snake_collision(); }
+static void zero_hp_shot_contact()
+{
+    KonngaraCombat boss;boss.reset(1);roll=1;stage_score=0;shots_initialize();
+    for(int frame=1;frame<=121;++frame) {
+        orb=frame==1 || frame==43 ? OrbState{300,130,0} : OrbState{10000,10000,0};
+        boss.update();
+    }
+    assert(boss.state().phase==3 && boss.state().health.hp==13);
+    orb={10000,10000,0};
+    for(int frame=1;frame<=121;++frame) boss.update();
+    assert(boss.state().pattern==1 && boss.state().frame==1);
+    for(int frame=2;frame<=546;++frame) {
+        orb=frame==42 || frame==294 || frame==546 ? OrbState{300,130,0} : OrbState{10000,10000,0};
+        boss.update(frame<=500 && frame%50==0);
+        assert(boss.state().health.hp==(frame<546 ? 13-std::min(frame/50,10)-(frame>=42)-(frame>=294) : 0));
+    }
+    assert(boss.state().phase==3 && !boss.state().complete);
+    const int score=stage_score;orb={10000,10000,0};shots_add(300,130);sounds.clear();boss.update();
+    assert(boss.state().frame==547 && boss.state().health.hp==0 && !boss.state().complete);
+    assert(shots_get_state().alive[0] && shots_get_state().sprite_number[0]==1);
+    assert(stage_score==score && sounds==std::vector<int>{SFX_SHOT_HIT});
+    for(int frame=548;frame<=700;++frame) {shots_update();boss.update();}
+    assert(boss.state().phase==4 && !boss.state().complete && !boss.state().health.invincible);
+    assert(stage_score==score && !shots_get_state().alive[0] && sounds.size()==1);
+    std::puts("Konngara phase3: natural zero-HP spray still consumes ofuda once, expires grace and enters phase4 without duplicate damage/score or early defeat passed");
+}
+
+int main() { transitions(); patterns(); boundaries(); snake_collision(); zero_hp_shot_contact(); }

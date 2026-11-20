@@ -14,8 +14,8 @@ int for_rank(int easy,int normal,int hard,int lunatic)
 }
 void source_group(int x,int y,pellet_group_t group,int speed)
 {
-    // Native CPellets::add_group spawn bounds. Keep this final-block adapter
-    // local: do not retune the already approved earlier boss patterns.
+    // Native CPellets::add_group spawn bounds. Keep this adapter local; the
+    // earlier circle applies the same check without retuning other patterns.
     if(x>=640 || x< -8 || y<56 || y>400) return;
     Pellets.add_group(x,y,group,speed);
 }

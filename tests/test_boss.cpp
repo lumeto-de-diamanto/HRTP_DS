@@ -55,6 +55,23 @@ int main()
         assert(!boss_hit_update(health, entity, 3000, 100, 100, 96, 96, true));
         assert(health.invincible==(i<=40) && health.hp==0 && stage_score==zero_score && effects.size()==zero_sounds);
     }
+    // Zero HP only gates damage/score, not ordinary ofuda contact. Test both
+    // sides of grace expiry, strict shot bounds, and one-time contact sound.
+    for(bool grace:{false,true}) {
+        health.reset(0);health.invincible=grace;health.invincibility_frame=grace ? 40 : 0;
+        shots_initialize();shots_add(99,110);shots_add(110,110);effects.clear();
+        orb_set_position(120,120);const auto velocity=orb_get_velocity_x();
+        assert(!boss_hit_update(health,entity,3000,100,100,96,96,true));
+        const auto &shots=shots_get_state();
+        assert(shots.alive[0] && shots.sprite_number[0]==0 && shots.sprite_number[1]==1);
+        assert(health.hp==0 && !health.invincible && !health.invincibility_frame);
+        assert(stage_score==zero_score && orb_get_velocity_x()==velocity && effects==std::vector<int>{SFX_SHOT_HIT});
+        assert(!boss_hit_update(health,entity,3000,100,100,96,96,true));
+        assert(stage_score==zero_score && effects.size()==1 && !shots_hit_boss(100,100,96,96));
+        for(int i=0;i<7;++i) shots_update();
+        assert(!shots.alive[1]);
+    }
+    shots_initialize();outside_orb();
     for (int i = 0; i < 200; ++i) {
         assert(boss_bomb_damage_allowed(true, 0, i) == (i % 50 == 0));
         assert(!boss_bomb_damage_allowed(true, 1, i));
@@ -172,5 +189,5 @@ int main()
     assert(stage_has_singyoku(0, 4) && !stage_has_singyoku(1, 4));
     assert(stage_number(0, 4) == 5 && stage_number(1, 0) == 6 && stage_number(2, 0) == 6);
     assert(route_first_scene(ROUTE_MAKAI) == 1 && route_first_scene(ROUTE_JIGOKU) == 2);
-    std::puts("Boss tests: hitboxes, HP/zero-HP grace, shot/bomb policy, chase/sling/top-fall motion, SinGyoku phases/patterns/defeat and route indexing passed");
+    std::puts("Boss tests: hitboxes, HP/zero-HP grace and ofuda contact without damage/score, shot/bomb policy, chase/sling/top-fall motion, SinGyoku phases/patterns/defeat and route indexing passed");
 }

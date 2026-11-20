@@ -71,15 +71,55 @@ void patterns()
         for(int f=1;f<=161;++f) {boss.update();assert(!Pellets.alive_count());}
         assert(boss.state().circle==ElisPhase1State::Full && boss.state().circle_color==4);
         boss.update();assert(boss.state().frame==0 && boss.state().pattern==0 && boss.state().circle==ElisPhase1State::None);
-        const int counts[]={32,32,96,100},stride=r==2 ? 3 : r==3 ? 5 : 1;
+        const int counts[]={23,23,69,100},stride=r==2 ? 3 : r==3 ? 5 : 1;
         assert(Pellets.alive_count()==counts[r]);
-        for(int i=0;i<counts[r];i+=stride) {
-            const auto &p=Pellets.at(i);const int angle=(i/stride)*8;
-            assert(p.cur_left.to_pixel()==polar_x_fast(316,128,angle)); //eye X, not center320
-            assert(p.cur_top.to_pixel()==polar_y_fast(144,128,angle));
+        int slot=0;
+        for(int angle=0;angle<256 && slot<counts[r];angle+=8) {
+            const int x=polar_x_fast(316,128,angle),y=polar_y_fast(144,128,angle);
+            if(x>=640 || x< -8 || y<56 || y>400) continue;
+            for(int member=0;member<stride && slot<counts[r];++member,++slot) {
+                const auto &p=Pellets.at(slot);
+                assert(p.cur_left.to_pixel()==x && p.cur_top.to_pixel()==y); //eye X, not center320
+            }
         }
+        assert(slot==counts[r]);
     }
     rank=RANK_NORMAL;Pellets.init();
+}
+void circle_allocation()
+{
+    const int saved_speed=pellet_speed;
+    player_initialize();orb_set_position(10000,10000);shots_initialize();pellet_speed=0;
+    const pellet_group_t groups[]={PG_1_AIMED,PG_1_RANDOM_NARROW_AIMED,PG_3_SPREAD_WIDE_AIMED,PG_5_SPREAD_NARROW_AIMED};
+    for(int difficulty=0;difficulty<4;++difficulty) for(auto position:{ElisPoint{19,197},ElisPoint{0,199},ElisPoint{511,64}})
+        for(int occupied:{0,97,100}) {
+            rank=rank_t(difficulty);ElisPhase1 boss;boss.reset();auto &s=state(boss);
+            s.pattern=3;s.entity.left=position.x;s.entity.top=position.y;
+            Pellets.init();for(int tick=1;tick<=161;++tick) boss.update();
+            for(int i=0;i<occupied;++i) Pellets.add_group(320,300,PG_1,16);
+            CPellets expected=Pellets;
+            initialize_irand(713);const auto before=irand_state();
+            for(int angle=0;angle<256;angle+=8) {
+                const int x=polar_x_fast(position.x+60,128,angle),y=polar_y_fast(position.y+48,128,angle);
+                if(x< -8 || x>=640 || y<56 || y>400) continue;
+                expected.add_group(x,y,groups[difficulty],4);
+            }
+            const auto rng=irand_state();irand_restore(before);boss.update();const auto actual_rng=irand_state();
+            assert(!std::memcmp(&rng,&actual_rng,sizeof(rng)) && Pellets.alive_count()==expected.alive_count());
+            for(int i=0;i<expected.alive_count();++i) {
+                const auto &a=Pellets.at(i),&b=expected.at(i);
+                assert(a.moving && a.cur_left.v==b.cur_left.v && a.cur_top.v==b.cur_top.v);
+                assert(a.velocity.x.v==b.velocity.x.v && a.velocity.y.v==b.velocity.y.v && a.angle==b.angle && a.from_group==b.from_group);
+            }
+        }
+    // No forged position or pattern: first sweep -> seeded teleport -> circle.
+    rank=RANK_LUNATIC;initialize_irand(516);ElisPhase1 boss;boss.reset();Pellets.init();
+    for(int tick=0;tick<252;++tick) {boss.update();boss.update_lasers();}
+    assert(boss.state().pattern==3 && boss.state().entity.left==19 && boss.state().entity.top==197);
+    for(int tick=0;tick<161;++tick) {boss.update();boss.update_lasers();}
+    assert(Pellets.alive_count()==100);Pellets.update(true);assert(Pellets.alive_count()==100);
+    rank=RANK_NORMAL;pellet_speed=saved_speed;Pellets.init();
+    std::puts("Elis circle allocation: source-filtered angular ordering/velocities/RNG on all ranks and edges, partial/full100-slot pools and natural seed516 volley survive first movement passed");
 }
 void teleport_and_hit()
 {
@@ -282,6 +322,6 @@ void combat_pixels()
 }
 void test_elis_phase1()
 {
-    patterns();teleport_and_hit();combat_pixels();player_initialize();orb_initialize();shots_initialize();Pellets.init();
+    patterns();circle_allocation();teleport_and_hit();combat_pixels();player_initialize();orb_initialize();shots_initialize();Pellets.init();
     std::puts("Elis phase1: all3 rank-aware source attacks,11 sweep lasers/37 missiles/100-slot ring cap, teleport RNG/cels/skip,14HP fill/orb-shot/grace gate, native combat cels/flash/presentation and lease passed");
 }

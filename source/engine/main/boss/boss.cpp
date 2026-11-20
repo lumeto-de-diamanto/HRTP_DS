@@ -34,7 +34,9 @@ bool boss_hit_update(BossHealth &health, const BossEntity &entity,
 {
     if (health.invincible)
         ++health.invincibility_frame;
-    if (health.hp > 0) shots_hit_boss(shot_left, shot_top, shot_width, shot_height);
+    // Source shot contact is independent of HP, including Konngara's ongoing
+    // pre-final phases at zero. Only the damage/score path below is HP-gated.
+    shots_hit_boss(shot_left, shot_top, shot_width, shot_height);
     const auto &orb = orb_get_state();
     // Konngara can reach zero before phase7. Keep expiring hit grace so the
     // preceding transitions cannot deadlock, but never subtract/score again.

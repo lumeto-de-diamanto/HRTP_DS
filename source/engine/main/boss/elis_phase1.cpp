@@ -101,8 +101,11 @@ void ElisPhase1::circle()
     } else if(circle_frame_) {
         s.circle=ElisPhase1State::None;s.angle=0;
         for(int i=0;i<32;++i) {
-            Pellets.add_group(polar_x_fast(s.entity.left+60,128,i*8),polar_y_fast(s.entity.top+48,128,i*8),
-                              static_cast<pellet_group_t>(parameter_),4);
+            const int x=polar_x_fast(s.entity.left+60,128,i*8),y=polar_y_fast(s.entity.top+48,128,i*8);
+            // Native add_group rejects origins BEFORE allocation. Otherwise
+            // clipped groups exhaust the100 slots and suppress later valid arcs.
+            if(x>=640 || x< -8 || y<56 || y>400) continue;
+            Pellets.add_group(x,y,static_cast<pellet_group_t>(parameter_),4);
         }
         s.frame=0;s.pattern=0;circle_frame_=0;
     }

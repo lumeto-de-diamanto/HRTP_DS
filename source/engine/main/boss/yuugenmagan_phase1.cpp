@@ -40,6 +40,9 @@ void YuugenMaganPhase1::toggle_eyes(unsigned closing,unsigned opening,int &frame
     for(int i=0;i<YUUGENMAGAN_EYES;++i) if((closing|opening)&(1u<<i)) eye_blit(i);
     ++frame;
     if(frame%10) {
+        // The source uploads ALL of stage_palette here, restoring damage-flash
+        // colors too. This visual restore does not end hit invincibility.
+        s.flash=false;
         if(dec<3 && s.visual.color15[dec]>0) --s.visual.color15[dec];
         if(inc<3) {
             const int value=s.visual.color15[inc]+1;
@@ -77,6 +80,7 @@ void YuugenMaganPhase1::transition()
         pentagram_put();
     }
     if(s.frame>=70) {
+        s.flash=false; // completion uploads the normal palette even on frame70
         ++s.phase;s.frame=0;hit_clock_=s.health.invincibility_frame=0;
         // Retain the rank-selected but UNUSED source field. Firing is every8
         // updates on ALL ranks; do not substitute this interval into the pattern.
