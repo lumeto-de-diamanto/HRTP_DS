@@ -99,6 +99,13 @@ class RomPackagingTests(unittest.TestCase):
         self.assertTrue(0<count<=192)
         self.assertEqual(len(art),61520+count*2+3584)
 
+    def test_elis_art_is_packaged(self):
+        art=nitro_files(self.rom)['elis_art.bin']
+        self.assertEqual(art,Path('nitrofs/elis_art.bin').read_bytes())
+        self.assertEqual(struct.unpack_from('<4s5H',art),(b'ELS4',128,96,8,5,256))
+        count=struct.unpack_from('<H',art,14)[0]
+        self.assertEqual(len(art),61520+count*2+27024)
+
     def test_complete_font_is_linked_into_arm9(self):
         text = Path('assets/processed/fonts/font16x16.h').read_text()
         self.assertIn('FONT16X16_GLYPH_COUNT 272', text)

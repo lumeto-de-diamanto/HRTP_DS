@@ -6,6 +6,9 @@
 static uint32 x[5];
 static uint32 counter;
 
+IrandState irand_state() {return {{x[0],x[1],x[2],x[3],x[4]},counter};}
+void irand_restore(const IrandState &state) {for(int i=0;i<5;++i) x[i]=state.x[i];counter=state.counter;}
+
 void initialize_irand(uint32 seed) {
     x[0] = seed;
     // Can't have all of them be zero!

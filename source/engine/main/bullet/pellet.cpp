@@ -183,8 +183,10 @@ void CPellets::add_group(int left, int top, pellet_group_t group,
         pel.moving = !spawn_with_cloud;
         pel.cloud_frame=spawn_with_cloud ? 1 : 0;pel.cloud_released=false;
         pel.motion_type = PM_REGULAR;
-        pel.cur_left.set(left);
-        pel.cur_top.set(top);
+        // Groups may legally start up to8px left of the arena (Elis's final
+        // ring). Multiplication retains Q4 bits without shifting a negative int.
+        pel.cur_left.v=left*SUBPIXEL_FACTOR;
+        pel.cur_top.v=top*SUBPIXEL_FACTOR;
         pel.prev_left = pel.cur_left;
         pel.prev_top = pel.cur_top;
         pel.from_group = group;

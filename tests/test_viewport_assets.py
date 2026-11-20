@@ -49,7 +49,7 @@ class ViewportAssets(unittest.TestCase):
         self.assertLess(load.index('stage_entrance_prepare()'), load.index('load_boss_background()'))
         self.assertLess(load.index('player_initialize()'), load.index('stage_entrance_animate('))
         presentations = list(re.finditer(r'(?<!\w)render_frame\(\);', load))
-        self.assertEqual(len(presentations), 5)  # Konngara, YuugenMagan, Mima, Kikuri, ordinary entrances
+        self.assertEqual(len(presentations), 6)  # Konngara, YuugenMagan, Mima, Kikuri, Elis, ordinary entrances
         self.assertLess(load.index('konngara_intro_play()'), load.index('konngara_view.begin()'))
         self.assertLess(load.index('konngara_view.begin()'), presentations[0].start())
         self.assertLess(load.index('stage_entrance_animate('), presentations[1].start())
@@ -68,7 +68,13 @@ class ViewportAssets(unittest.TestCase):
         self.assertLess(load.index('kikuri_view.begin()'),load.index('music_play_track(NATIVE_KAMI)'))
         self.assertLess(load.index('music_play_track(NATIVE_KAMI)'),load.index('kikuri_entrance_play('))
         self.assertLess(load.index('kikuri_entrance_play('),presentations[3].start())
-        self.assertLess(presentations[4].start(), load.index('music_play_track(NATIVE_POSITIVE)'))
+        self.assertLess(load.index('camera.snap_center()'),load.index('elis_view.prepare_entrance()'))
+        self.assertLess(load.index('elis_view.prepare_entrance()'),load.index('stage_entrance_animate('))
+        self.assertLess(load.index('stage_entrance_animate('),load.index('elis_view.begin()'))
+        self.assertLess(load.index('elis_view.begin()'),load.index('music_play_track(NATIVE_KAMI2)'))
+        self.assertLess(load.index('music_play_track(NATIVE_KAMI2)'),load.index('elis_entrance_play('))
+        self.assertLess(load.index('elis_entrance_play('),presentations[4].start())
+        self.assertLess(presentations[5].start(), load.index('music_play_track(NATIVE_POSITIVE)'))
         for path in Path('source/engine').rglob('*'):
             if path.suffix in ('.cpp', '.hpp', '.h'):
                 self.assertNotRegex(path.read_text(), r'#include\s*[<\"][^>\"]*camera\.')
@@ -213,6 +219,8 @@ def run_renderer(binary):
     make_fixtures(runtime)
     from test_yuugenmagan_assets import make_fixtures as yuugenmagan_fixtures
     yuugenmagan_fixtures(runtime)
+    from test_elis_assets import make_fixtures as elis_fixtures
+    elis_fixtures(runtime)
     if binary is not None:
         subprocess.run([str(Path(binary).resolve())], cwd=runtime, check=True)
 

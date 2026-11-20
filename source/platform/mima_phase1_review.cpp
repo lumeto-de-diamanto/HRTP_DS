@@ -62,7 +62,7 @@ bool mima_entrance_play(MimaCombatView &view)
     while(timeline.next(entrance)) {
         canvas_begin_frame();still.image=entrance.asset_frame;
         if(!view.compose(still,empty)) return false;
-        player_render_frame();orb_render_frame();
+        player_render_frame();orb_render_frame();orb_indicator_render(true);
         canvas_buffer_prepare();do { swiWaitForVBlank(); } while(!view.present());
     }
     return true;

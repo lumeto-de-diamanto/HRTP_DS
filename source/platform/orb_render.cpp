@@ -63,10 +63,10 @@ void orb_render_hide()
     oamSetHidden(&oamMain, OAM_SLOT_ORB_ARROW, true);
 }
 
-void orb_indicator_render()
+void orb_indicator_render(bool hidden)
 {
     const auto &s = orb_get_state();
-    offscreen_indicator_render(OAM_SLOT_ORB_ARROW,s.x_position,s.y_position,ORB_W,ORB_H,arrow_gfx,orb_get_in_portal());
+    offscreen_indicator_render(OAM_SLOT_ORB_ARROW,s.x_position,s.y_position,ORB_W,ORB_H,arrow_gfx,hidden || orb_get_in_portal());
 }
 
 void offscreen_indicator_render(int slot,int left,int top,int width,int height,u16 *gfx,bool hidden)

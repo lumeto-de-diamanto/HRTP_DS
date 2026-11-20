@@ -165,7 +165,7 @@ def host_tests(args):
             names += ['test_font16x16', 'test_boss_assets',
                       'test_radar_assets', 'test_vram_budget',
                       'test_viewport_assets', 'test_konngara_assets', 'test_konngara_art_assets',
-                      'test_kikuri_assets', 'test_yuugenmagan_assets']
+                      'test_kikuri_assets', 'test_yuugenmagan_assets', 'test_elis_assets']
         if selected('audio'):
             names += ['test_native_build_cache', 'test_native_audio', 'test_native_sfx', 'test_opna_rhythm',
                       'test_recording_comparison']
@@ -219,7 +219,7 @@ def host_tests(args):
                     'tests/test_kikuri_art.cpp','tests/test_kikuri_render.cpp','tests/test_kikuri_defeat.cpp',
                     'tests/test_yuugenmagan.cpp','tests/test_yuugenmagan_phase1.cpp','tests/test_yuugenmagan_combat.cpp',
                     'tests/test_yuugenmagan_patterns.cpp','tests/test_yuugenmagan_pentagram.cpp',
-                    'tests/test_yuugenmagan_phase13.cpp','tests/test_yuugenmagan_defeat.cpp']
+                    'tests/test_yuugenmagan_phase13.cpp','tests/test_yuugenmagan_defeat.cpp','tests/test_elis_entrance.cpp','tests/test_elis_phase1.cpp','tests/test_elis_phase3.cpp','tests/test_elis_phase5.cpp','tests/test_elis_defeat.cpp']
         for pattern in ('main/player/*.cpp', 'main/boss/*.cpp', 'main/bullet/*.cpp',
                         'main/math/*.cpp'):
             viewport += sorted(str(p) for p in Path('source/engine').glob(pattern))
@@ -232,7 +232,7 @@ def host_tests(args):
             'konngara_combat_render konngara_combat_review konngara_defeat_render '
             'konngara_intro_render menu_render bomb_render round_results mima_render mima_review '
             'mima_combat_render mima_phase1_review mima_defeat_render kikuri_render kikuri_entrance kikuri_defeat_render '
-            'yuugenmagan_render yuugenmagan_combat_render yuugenmagan_defeat_render').split()]
+            'yuugenmagan_render yuugenmagan_combat_render yuugenmagan_defeat_render elis_render elis_entrance elis_defeat_render').split()]
         intro = ['tests/test_konngara.cpp', 'tests/heap_probe.cpp',
                  *eng('main/boss/konngara_intro', 'main/math/trig')]
         intro += [platform + p + '.cpp' for p in

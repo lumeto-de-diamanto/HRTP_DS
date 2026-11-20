@@ -238,7 +238,6 @@ void test_yuugenmagan_stage10()
 
     test_case_name="Makai Stage10: navigation/retry/new game";
     stage_load(1,3);
-    assert(!stage_navigate(KEY_SELECT,KEY_Y) && !stage_navigate(KEY_SELECT|KEY_L,KEY_Y));
     assert(current_scene==1 && current_stage==3 && !g_canvas_target);
     assert(stage_navigate(KEY_SELECT,KEY_RIGHT));assert(current_stage==4 && g_canvas_target);
     assert(!stage_navigate(KEY_SELECT,KEY_Y) && !stage_navigate(KEY_SELECT|KEY_L,KEY_Y));
@@ -261,7 +260,7 @@ void test_yuugenmagan_stage10()
         assert(test_obj_count==(scene==6 ? 80 : 79));
         stage_load(0,0);assert(test_heap_count==blocks && test_heap_bytes==bytes);
     }
-    assert(scene_stage_count(1)==5 && scene_stage_count(3)==4 && scene_stage_count(5)==4);
+    assert(scene_stage_count(1)==5 && scene_stage_count(3)==5 && scene_stage_count(5)==4);
     rank=old_rank;invincible=old_invincible;start_new_game();camera.snap_center();
     assert(test_heap_count==blocks && test_heap_bytes==bytes && test_obj_count==79);
     std::puts("Makai Stage10: real9->10/scenery-backed title/interactive opening/one LEGEND start, all13 phases, five-eye radar and normal run resources, pause/99-frame miss/last-life bomb/fatal retry/new game, phase11/13 lethal priority/frozen defeat/default-pose capture, exact gameplay-vs-bonus extends/one tally/black-held10->11, no YuugenMagan shortcuts and leak-free navigation/cache handoffs passed");

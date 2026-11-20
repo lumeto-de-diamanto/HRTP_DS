@@ -159,13 +159,15 @@ int main()
     assert(scene_stage_count(6)==5 && stage_number(6,4)==20 && stage_has_konngara(6,4));
     assert(scene_stage_count(2)==5 && stage_number(2,4)==10 && stage_has_mima(2,4));
     assert(scene_stage_count(4)==5 && stage_number(4,4)==15 && stage_has_kikuri(4,4));
+    assert(scene_stage_count(3)==5 && stage_number(3,4)==15 && stage_has_elis(3,4));
     for(int scene=0;scene<7;++scene) for(int stage=0;stage<5;++stage) {
         assert(stage_has_konngara(scene,stage)==(scene==6 && stage==4));
         assert(stage_has_mima(scene,stage)==(scene==2 && stage==4));
         assert(stage_has_kikuri(scene,stage)==(scene==4 && stage==4));
         assert(stage_has_yuugenmagan(scene,stage)==(scene==1 && stage==4));
-        assert(stage_has_boss(scene,stage)==((scene==0 || scene==1 || scene==2 || scene==4 || scene==6) && stage==4));
-        assert(scene_stage_count(scene)==((scene==0 || scene==1 || scene==2 || scene==4 || scene==6)?5:4));
+        assert(stage_has_elis(scene,stage)==(scene==3 && stage==4));
+        assert(stage_has_boss(scene,stage)==(scene!=5 && stage==4));
+        assert(scene_stage_count(scene)==(scene!=5 ? 5 : 4));
     }
     assert(stage_has_singyoku(0, 4) && !stage_has_singyoku(1, 4));
     assert(stage_number(0, 4) == 5 && stage_number(1, 0) == 6 && stage_number(2, 0) == 6);

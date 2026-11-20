@@ -14,7 +14,7 @@ bool kikuri_entrance_play(KikuriView &view)
         if(!timeline.next(frame,tick) || !view.entrance(timeline,frame)) return false;
         do {swiWaitForVBlank();} while(REG_VCOUNT<192 || REG_VCOUNT>=200);
         if(!view.present_entrance()) return false;
-        player_render_default();orb_render_frame();orb_indicator_render();
+        player_render_default();orb_render_frame();orb_indicator_render(true);
         hud_radar_render({320,180,true});oamUpdate(&oamMain);video_stage_reveal(true);
         if(frame.phase==KikuriEntranceFrame::Complete) return true;
     }

@@ -124,6 +124,7 @@ bool test_kikuri_native_running=false;
 unsigned test_kikuri_music_tick=0;
 bool test_kikuri_tick_available=true;
 bool test_kikuri_manual_ticks=false;
+int test_elis_music_starts=0;
 bool music_playback_tick(unsigned &tick) {
     if(!test_kikuri_tick_available) return false;
     tick=test_kikuri_music_tick;
@@ -140,6 +141,7 @@ bool music_play_track(NativeTrackId id)
         test_kikuri_native_running=test_kikuri_music_allowed;return test_kikuri_music_allowed;
     }
     test_kikuri_native_running=false;
+    if(id==NATIVE_KAMI2) {++test_elis_music_starts;test_kikuri_music_tick=0;return true;}
     if(id==NATIVE_LEGEND) { ++test_mima_music_starts;return test_mima_music_allowed; }
     if(id==NATIVE_POSITIVE) { ++starts;return allow_music; }
     assert(id == NATIVE_ALICE);
@@ -668,6 +670,8 @@ struct DeathProbe {
     KikuriPhase1 frozen_kikuri;
     bool yuugenmagan_active=false;
     YuugenMaganPhase1 frozen_yuugenmagan;
+    bool elis_active=false;
+    ElisPhase1 frozen_elis;
 } death_probe;
 
 void observe_player_death()
@@ -686,6 +690,8 @@ void observe_player_death()
             if(p.kikuri_active) p.frozen_kikuri=kikuri;
             p.yuugenmagan_active=stage_has_yuugenmagan(current_scene,current_stage);
             if(p.yuugenmagan_active) p.frozen_yuugenmagan=yuugenmagan;
+            p.elis_active=stage_has_elis(current_scene,current_stage);
+            if(p.elis_active) p.frozen_elis=elis;
             p.pellet_x=Pellets.at(0).cur_left.v;p.pellet_y=Pellets.at(0).cur_top.v;
             p.pellet_vx=Pellets.at(0).velocity.x.v;p.pellet_vy=Pellets.at(0).velocity.y.v;
         }
@@ -696,6 +702,7 @@ void observe_player_death()
         if(p.mima_active) assert(!std::memcmp(&p.frozen_mima,&mima,sizeof(mima)));
         if(p.kikuri_active) assert(!std::memcmp(&p.frozen_kikuri,&kikuri,sizeof(kikuri)));
         if(p.yuugenmagan_active) assert(!std::memcmp(&p.frozen_yuugenmagan,&yuugenmagan,sizeof(yuugenmagan)));
+        if(p.elis_active) assert(!std::memcmp(&p.frozen_elis,&elis,sizeof(elis)));
         assert((stage_has_konngara(current_scene,current_stage) ? konngara.state().frame :
             stage_has_mima(current_scene,current_stage) ? mima.state().frame : singyoku_state().frame)==p.boss_frame);
         assert(Pellets.at(0).cur_left.v==p.pellet_x && Pellets.at(0).cur_top.v==p.pellet_y);
@@ -1413,3 +1420,4 @@ void test_mima_stage10()
 #include "test_kikuri_stage15.cpp"
 #include "test_score_extends_flow.cpp"
 #include "test_yuugenmagan_flow.cpp"
+#include "test_elis_stage15.cpp"

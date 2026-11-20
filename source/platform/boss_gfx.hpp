@@ -9,6 +9,7 @@
 // Kikuri uses640 bytes: three16x16/4bpp soul cels plus two HUD-clipped variants.
 // YuugenMagan uses3584 bytes: all seven padded32x32/4bpp eye cels, shared
 // simultaneously by five OAM entries40..44; the final512 bytes stay untouched.
+// Elis draws its body on BG2 and reuses only the64-byte marker at offset3072.
 constexpr int BOSS_OAM_SLOT = 40;
 bool boss_gfx_init();
 u16 *boss_gfx();

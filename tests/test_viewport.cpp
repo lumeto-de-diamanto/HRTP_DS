@@ -70,6 +70,7 @@ void test_yuugenmagan_pentagram();
 void test_yuugenmagan_phase13();
 void test_yuugenmagan_defeat();
 void test_yuugenmagan_stage10();
+void test_elis_entrance();
 void test_kikuri_defeat();
 void test_mima_phase1_review();
 extern PlayerState player;
@@ -1426,6 +1427,8 @@ int main()
     canvas_clear(); canvas_playfield_clip(true); orb_indicator_render();
     assert(ink_count() == 0 && !test_objs[OAM_SLOT_ORB_ARROW].hidden);
     assert(test_objs[OAM_SLOT_ORB_ARROW].priority == 0 && test_objs[OAM_SLOT_ORB_ARROW].size == SpriteSize_8x16);
+    orb_indicator_render(true);assert(test_objs[OAM_SLOT_ORB_ARROW].hidden);
+    orb_indicator_render();assert(!test_objs[OAM_SLOT_ORB_ARROW].hidden); // suppression never leaks into gameplay
     auto marker = orb_indicator(camera, 600, 280, 32, 32);
     assert(marker.direction == 1 && marker.x == 253 && marker.y == 140);
     orb_set_position(0, 64); marker = orb_indicator(camera, 0, 64, 32, 32);
@@ -1679,6 +1682,7 @@ int main()
         {"YuugenMagan phase13",test_yuugenmagan_phase13},
         {"YuugenMagan defeat",test_yuugenmagan_defeat},
         {"Makai Stage10",test_yuugenmagan_stage10},
+        {"Elis entrance",test_elis_entrance},
     };
     for(const auto &test:cases) {
         // Stage10 covers three complete entry/defeat/results runs plus both

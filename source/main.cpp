@@ -53,6 +53,7 @@
 #include "mima_combat_render.hpp"
 #include "kikuri_render.hpp"
 #include "yuugenmagan_combat_render.hpp"
+#include "elis_render.hpp"
 #include "backgrounds/MimaPaletteFx.h"
 
 #include "stagedat/stagedat0.h"
@@ -85,6 +86,8 @@ static KikuriPhase1 kikuri;
 static KikuriView kikuri_view;
 static YuugenMaganPhase1 yuugenmagan;
 static YuugenMaganCombatView yuugenmagan_view;
+static ElisPhase1 elis;
+static ElisView elis_view;
 static bool jigoku_cleared;
 static const PlayerDeathFrame *player_death_frame;
 alignas(4) static u16 regular_bomb_canvas[256*256];
@@ -159,6 +162,14 @@ static void check_yuugenmagan(bool okay,const char *part)
     while(true) swiWaitForVBlank();
 }
 
+static void check_elis(bool okay,const char *part)
+{
+    if(okay) return;
+    elis_view.end();music_stop();video_stage_reveal();consoleDemoInit();
+    printf("Elis %s asset/audio error\n%s",part,music_error());
+    while(true) swiWaitForVBlank();
+}
+
 // The game's own 1-based stage number (Shrine = 1-5, then route stages
 // 6-20). Makai and Jigoku are *parallel* routes: scenes 1/2 are both
 // stages 6-10, 3/4 are 11-15, 5/6 are 16-20.
@@ -191,6 +202,10 @@ static void render_hud()
     } else if(stage_has_yuugenmagan(current_scene,current_stage)) {
         const auto &s=yuugenmagan.state();
         upper_hud_boss(s.health.hp,s.hp_displayed,8,12);
+    } else if(stage_has_elis(current_scene,current_stage)) {
+        const auto &s=elis.state();const auto &active=s.bat_form ? s.bat : s.entity;
+        upper_hud_boss(s.health.hp,s.hp_displayed,6,10);
+        radar_boss=hud_radar_boss(active,!s.checkpoint && active.orb_active);
     } else upper_hud_boss_hide();
     hud_render(lives, global_stage_num());
     if(stage_has_yuugenmagan(current_scene,current_stage) && !yuugenmagan.state().checkpoint)
@@ -205,10 +220,11 @@ static void render_frame()
     const bool mima_boss=stage_has_mima(current_scene,current_stage);
     const bool kikuri_boss=stage_has_kikuri(current_scene,current_stage);
     const bool yuugenmagan_boss=stage_has_yuugenmagan(current_scene,current_stage);
+    const bool elis_boss=stage_has_elis(current_scene,current_stage);
     video_bomb_prepare(!player_death_frame && player_bomb().active(),player_bomb().frame(),frame);
     if(!final_boss && (player_bomb().active() || video_bomb_effect_active()) && !g_canvas_target)
         regular_bomb_canvas_owned=canvas_buffer_begin(regular_bomb_canvas);
-    if(!final_boss && !mima_boss && !kikuri_boss && !yuugenmagan_boss && !player_death_frame && !g_canvas_target) video_apply_camera();
+    if(!final_boss && !mima_boss && !kikuri_boss && !yuugenmagan_boss && !elis_boss && !player_death_frame && !g_canvas_target) video_apply_camera();
     if(kikuri_boss) kikuri_view.prepare_combat(kikuri.state());
     stage_render_frame();
     // Erase only previous effects; the background scrolls in hardware and
@@ -220,24 +236,27 @@ static void render_frame()
     if(mima_boss) check_mima(mima_view.compose(mima.state(),mima.missiles()),"frame");
     if(kikuri_boss) kikuri_view.draw_combat(kikuri.state());
     if(yuugenmagan_boss) check_yuugenmagan(yuugenmagan_view.compose(yuugenmagan.state(),&yuugenmagan.missiles()),"frame");
+    if(elis_boss) check_elis(elis_view.compose(elis.state(),elis.missiles()),"frame");
     if(!player_death_frame) player_render_frame();
     shots_render_frame();
     orb_render_frame();
     if(mima_boss) {
         const auto &s=mima.state();
         pellet_render_colored(Mima_palette_fx[s.darkness/4][s.flash ? 1+s.flash_darkness/4 : 0][7]);
-    } else pellet_render_frame();
+    } else if(elis_boss) pellet_render_colored(elis_view.pellet_color());
+    else pellet_render_frame();
     item_render_frame();
     item_rings_frame();
     if(!player_death_frame) popup_render_frame(); // rendering normally ages these
-    orb_indicator_render();
+    orb_indicator_render((boss && singyoku_state().phase==SG_ENTRANCE) ||
+        (yuugenmagan_boss && yuugenmagan.state().phase==0));
     if (boss) boss_render_frame();
     if(!player_death_frame) bomb_render_frame();
     if(player_death_frame) player_render_death(*player_death_frame);
     canvas_playfield_clip(false);
     if(!player_death_frame) render_hud(); // source updates lost-life resources after recovery
     // Buffered boss presenters own early-VBlank palette, camera and shake commits.
-    if(!mima_boss && !kikuri_boss && !yuugenmagan_boss) {
+    if(!mima_boss && !kikuri_boss && !yuugenmagan_boss && !elis_boss) {
         if(player_death_frame) video_apply_death_shake(player_death_frame->shake_y,final_boss);
         else {
             bgSetScroll(g_bg_id_canvas,0,0);
@@ -259,6 +278,9 @@ static void render_frame()
     } else if(final_boss) {
         canvas_buffer_prepare(); // after lasers, pellets and all other effects
         do { swiWaitForVBlank(); } while(!konngara_view.present());
+    } else if(elis_boss) {
+        canvas_buffer_prepare();
+        do { swiWaitForVBlank(); } while(!elis_view.present(player_death_frame ? player_death_frame->shake_y : -1));
     } else if(g_canvas_target) {
         canvas_buffer_prepare();
         do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
@@ -307,8 +329,9 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     const bool mima_boss=stage_has_mima(scene,stage);
     const bool kikuri_boss=stage_has_kikuri(scene,stage);
     const bool yuugenmagan_boss=stage_has_yuugenmagan(scene,stage);
+    const bool elis_boss=stage_has_elis(scene,stage);
     const bool previous_boss = stage_has_boss(current_scene, current_stage);
-    if(yuugenmagan_boss || stage_has_yuugenmagan(current_scene,current_stage)) {
+    if(yuugenmagan_boss || elis_boss || stage_has_yuugenmagan(current_scene,current_stage) || stage_has_elis(current_scene,current_stage)) {
         video_bomb_reset();video_stage_fade_out(); // protect shared cache/canvas cleanup on retries/navigation too
     }
     const bool regular_handoff=preserve_score && !boss && !previous_boss &&
@@ -331,6 +354,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     mima_view.end();
     kikuri_view.end();
     yuugenmagan_view.end();
+    elis_view.end();
     video_bomb_reset();
     jigoku_cleared=false;
     upper_hud_invalidate();
@@ -341,7 +365,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     // scene before its entrance rather than letting it bleed into missing BGM.
     // A same-stage Kikuri/YuugenMagan retry must restart the music clock too;
     // music_play_track() intentionally reuses an already-playing native song.
-    if (scene != current_scene || boss != previous_boss || kikuri_boss || yuugenmagan_boss)
+    if (scene != current_scene || boss != previous_boss || kikuri_boss || yuugenmagan_boss || elis_boss)
         music_stop();
     boss_render_hide();
     stage_entrance_prepare();
@@ -363,7 +387,9 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
             check_yuugenmagan(yuugenmagan_view.prepare_entrance(),"background");
             background_set_boss_scroll();
         }
-        else load_background(scene);
+        else if(elis_boss) {
+            check_elis(elis_view.prepare_entrance(),"background");background_set_boss_scroll();
+        } else load_background(scene);
     }
     palette_apply_round();
 
@@ -386,6 +412,7 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
     popup_clear();
     if(kikuri_boss) kikuri.reset(true,true,true);
     if(yuugenmagan_boss) yuugenmagan.reset(true,true,true,true,true);
+    if(elis_boss) elis.reset(true,true);
     if (stage_has_singyoku(scene,stage)) {
         singyoku_init();
         // Preserve the approved boss palette/frame cache beneath its title.
@@ -447,6 +474,12 @@ static void stage_load(int scene, int stage, bool preserve_sfx = false, bool pre
         check_kikuri(kikuri_entrance_play(kikuri_view),"entrance");
         render_frame();check_music();return;
     }
+    if(elis_boss) {
+        check_elis(elis_view.begin(),"combat");
+        check_elis(music_play_track(NATIVE_KAMI2),"music");
+        check_elis(elis_entrance_play(elis_view),"entrance");
+        render_frame();check_music();return; // KAMI2 continues from the approved entrance
+    }
     if(regular_handoff && (REG_VCOUNT<192 || REG_VCOUNT>=200))
         do { swiWaitForVBlank(); } while(REG_VCOUNT<192 || REG_VCOUNT>=200);
     render_frame(); // source life-loop handoff: player/orb appear before BGM
@@ -507,6 +540,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     const bool mima_boss=stage_has_mima(current_scene,current_stage);
     const bool kikuri_boss=stage_has_kikuri(current_scene,current_stage);
     const bool yuugenmagan_boss=stage_has_yuugenmagan(current_scene,current_stage);
+    const bool elis_boss=stage_has_elis(current_scene,current_stage);
     const bool entrance=stage_has_singyoku(current_scene,current_stage) && singyoku_state().phase==SG_ENTRANCE;
     if(entrance) singyoku_update();
     else player_update(keys_held,keys_down);
@@ -603,6 +637,32 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
                 stage_load(3,0,false,true);
                 return;
             }
+        } else if(elis_boss) {
+            elis.update(bomb_damage);
+            for(int wait=0;wait<elis.state().hit_pause;++wait) swiWaitForVBlank();
+            if(elis.state().checkpoint) {
+                // Source blocks on lethal contact before all global passes/misses.
+                player_is_hit=false;player_bomb_cancel();video_bomb_reset();
+                elis.clear_defeat_projectiles();Pellets.reset_nonclouds();
+                if(stage_score>hiscore) hiscore=stage_score;
+                render_hud();hud_radar_render();
+                check_elis(elis_view.defeat(elis.state(),elis.missiles()),"defeat");
+                score_extend_update(); // gameplay award precedes resource-bonus accounting
+                const u16 normal_master=elis_view.normal_brightness();
+                do {swiWaitForVBlank();} while(REG_VCOUNT<192 || REG_VCOUNT>=200);
+                elis_view.end(); // release both leases before hardware results capture borrows VRAM D
+                // Capture may precede MASTER_BRIGHT: supply genuinely black pixels.
+                for(int slot=0;slot<128;++slot) oamSetHidden(&oamMain,slot,true);
+                oamUpdate(&oamMain);bgHide(0);bgHide(g_bg_id_tiles);
+                dmaFillHalfWords(0,BG_BMP_RAM(4),128*1024);BG_PALETTE[0]=0;
+                const StageBonus bonus=roundbonus_compute(15,lives);
+                stage_score+=bonus.total;if(stage_score>hiscore) hiscore=stage_score;
+                score_extend_update();
+                round_results_run(bonus,15,normal_master);
+                bgShow(0);bgShow(g_bg_id_tiles);
+                stage_load(5,0,false,true);return;
+            }
+            elis.update_lasers();
         } else if(stage_has_singyoku(current_scene,current_stage)) {
             singyoku_update(bomb_damage);
             if(singyoku_state().phase==SG_DEFEATED) {
@@ -659,7 +719,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
             pellet_speed=pellet_speed>0 ? 0 : pellet_speed-2;
             if(pellet_speed<-15) pellet_speed=-15;
             stage_reset(); // reset obstacle/portal clocks, not cards, HP or orb
-            if(!final_boss && !mima_boss && !kikuri_boss && !yuugenmagan_boss) swiWaitForVBlank(); // buffered bosses already held it
+            if(!final_boss && !mima_boss && !kikuri_boss && !yuugenmagan_boss && !elis_boss) swiWaitForVBlank(); // buffered bosses already held it
         }
     }
     if(!boss && stage_is_cleared()) {

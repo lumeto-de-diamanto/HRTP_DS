@@ -75,7 +75,7 @@ under `build/`; assertions still run every time. `make clean` clears the cache.
   * [x] SinGyoku
   * [x] YuugenMagan
   * [x] Mima
-  * [ ] Elis
+  * [x] Elis
   * [x] Kikuri
   * [ ] Sariel
   * [x] Konngara
@@ -116,8 +116,8 @@ Current controls:
 * **X**, or **A + B twice** — bomb.
 * **START** — pause/resume.
 * **SELECT + d-pad** — dev stage navigator (←/→: stage, ↑/↓: scene;
-  Shrine, Makai 6–10 and all Jigoku scenes have five stages;
-  Makai 11–15 and 16–20 still have four)
+  Shrine, Makai 6–15 and all Jigoku scenes have five stages;
+  Makai 16–20 still has four while Sariel is unimplemented)
 
 ## AI disclaimer
 

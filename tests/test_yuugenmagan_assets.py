@@ -46,7 +46,7 @@ class YuugenMaganAssets(unittest.TestCase):
         self.assertIn('scene == 1 && stage == 4',progression)
         main=Path('source/main.cpp').read_text()
         navigator=main.split('static bool stage_navigate(',1)[1].split('#ifndef HRTP_GAME_FLOW_TEST',1)[0]
-        self.assertNotIn('KEY_Y',navigator)
+        self.assertNotIn('yuugenmagan',navigator)
         self.assertNotIn('yuugenmagan_art_review',main)
         self.assertNotIn('yuugenmagan_phase1_review',main)
         self.assertIn('yuugenmagan.reset(true,true,true,true,true)',main)
