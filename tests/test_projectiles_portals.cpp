@@ -19,7 +19,8 @@ static PlayerState player{PLAYER_LEFT_START, player_top, PLAYER, 0};
 const PlayerState &player_get_state() { return player; }
 static bool invincible = true;
 bool player_is_invincible() { return invincible; }
-bool player_is_deflecting() { return false; }
+static bool deflecting;
+bool player_is_deflecting() { return deflecting; }
 bool player_is_sliding() { return false; }
 static std::vector<int> effects;
 void mdrv2_se_play(int id) { effects.push_back(id); }
@@ -341,6 +342,8 @@ static int expected_portal_cel(int frame, bool entered, bool destination)
     return -1;
 }
 
+#include "test_pellet_deflection.cpp"
+
 static void barrier_resets()
 {
     for(int type:{int(OT_BAR_LEFT),int(OT_BAR_RIGHT)}) for(bool fast:{false,true}) {
@@ -473,6 +476,7 @@ int main(int argc, char **argv)
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) delay_clouds();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) spinning_pellets();
+    if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_deflection_regressions();
     if (argc == 1 || std::strcmp(argv[1], "ofuda") == 0) ofuda_contacts();
     if (argc == 1) barrier_resets();
     if (argc == 1 || std::strcmp(argv[1], "portals") == 0) portals();

@@ -77,14 +77,16 @@ bool konngara_combat_review(int start_set)
         }
         boss.update_lasers();
         shots_update(); orb_update();
-        if (Pellets.update()) player_is_hit = true;
+        if (Pellets.update(true)) player_is_hit = true;
         if (!player_is_hit && orb_hits_player(player_get_state().x_position, player_top,
             OR_NONE, player_is_invincible(), player_is_invincible_to_orb())) player_is_hit = true;
         if (player_is_hit) {
             --lives;
             if (lives >= 0) {
                 mdrv2_se_play(SFX_MISS);
+                const bool field=Pellets.interlace_field;
                 player_miss(); shots_initialize(); Pellets.init(); // boss miss preserves the orb
+                Pellets.interlace_field=field; // clearing a practice miss must not restart defensive parity
             }
             player_is_hit = false;
         }

@@ -56,6 +56,7 @@ void test_konngara_stage20();
 void test_mima_stage10();
 void test_stage_bonus_awards();
 void test_score_extends_flow();
+void test_pellet_flow();
 void test_player_death();
 void test_bombs();
 void test_mima_review();
@@ -1672,6 +1673,7 @@ int main()
         {"Kikuri art",test_kikuri_art},{"Kikuri defeat",test_kikuri_defeat},
         {"Kikuri renderer",test_kikuri_render},{"Stage15",test_kikuri_stage15},
         {"score extends",test_score_extends_flow},
+        {"pellet defenses",test_pellet_flow},
         {"Reimu transitions",check_player_transitions},
         {"YuugenMagan art",test_yuugenmagan},
         {"YuugenMagan controller",test_yuugenmagan_phase1},

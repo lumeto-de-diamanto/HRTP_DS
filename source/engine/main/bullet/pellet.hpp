@@ -90,6 +90,7 @@ struct Pellet {
 struct CPellets {
     Pellet p[PELLET_COUNT];
     bool spawn_with_cloud=false;
+    bool interlace_field=false; // source toggles once per active update, odd slots first
 
     void init();
     // Source defeat clear: moving pellets only; pending delay clouds survive.
@@ -105,8 +106,10 @@ struct CPellets {
                     int spin_center_x,int spin_center_y);
 
     // Per-frame: motion, clipping, and hit tests (orb, player, shots).
+    // Elis/Kikuri/Konngara alternate orb/deflection checks by slot parity.
+    // Movement, shots, player damage, decay and rendering remain full-rate.
     // Returns true if the player was hit.
-    bool update();
+    bool update(bool interlaced=false);
 
     int alive_count() const;
 

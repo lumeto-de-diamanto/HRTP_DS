@@ -1421,3 +1421,4 @@ void test_mima_stage10()
 #include "test_score_extends_flow.cpp"
 #include "test_yuugenmagan_flow.cpp"
 #include "test_elis_stage15.cpp"
+#include "test_pellet_flow.cpp"

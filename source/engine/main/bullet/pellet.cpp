@@ -168,6 +168,7 @@ static bool group_velocity_set(Subpixel &ret_x, Subpixel &ret_y,
 void CPellets::init()
 {
     spawn_with_cloud=false;
+    interlace_field=false;
     for (int i = 0; i < PELLET_COUNT; i++) {
         p[i].moving = false;
         p[i].cloud_frame=0;p[i].cloud_released=false;
@@ -279,8 +280,9 @@ void CPellets::decay()
     }
 }
 
-bool CPellets::update()
+bool CPellets::update(bool interlaced)
 {
+    interlace_field=!interlace_field;
     bool player_hit = false;
     const OrbState &orb = orb_get_state();
 
@@ -379,33 +381,39 @@ bool CPellets::update()
         // Orb: halves the velocity and starts the destruction animation
         // (+10). Decaying pellets ignore all hit tests (ReC98).
         if (pel.decay_frame == 0) {
-            // ReC98 tests integer-pixel pellet 16x8 against the full 32x32
-            // orb, not a small box around its top-left. Keep strict edges
-            // and the source's asymmetric extra 8px pellet width.
-            if (overlap_xywh_xywh_lt_gt(
-                pel.cur_left.to_pixel(), pel.cur_top.to_pixel(),
-                (PELLET_W + 8), PELLET_H,
-                orb.x_position, orb.y_position, ORB_W, ORB_H
-            )) {
-                pel.velocity.x.v >>= 1;
-                pel.velocity.y.v >>= 1;
-                pel.decay_frame = 1;
-                stage_score += 10;
-                continue;
-            }
+            // Only these two defensive contacts are interlaced in the source.
+            // Never skip movement, shots, ordinary player hits or decay above/below.
+            if(!interlaced || interlace_field==bool(i&1)) {
+                // ReC98 tests integer-pixel pellet 16x8 against the full 32x32
+                // orb, not a small box around its top-left. Keep strict edges
+                // and the source's asymmetric extra 8px pellet width.
+                if (overlap_xywh_xywh_lt_gt(
+                    pel.cur_left.to_pixel(), pel.cur_top.to_pixel(),
+                    (PELLET_W + 8), PELLET_H,
+                    orb.x_position, orb.y_position, ORB_W, ORB_H
+                )) {
+                    pel.velocity.x.v >>= 1;
+                    pel.velocity.y.v >>= 1;
+                    pel.decay_frame = 1;
+                    stage_score += 10;
+                    continue;
+                }
 
-            // A deflecting player repels pellets horizontally.
-            if (player_is_deflecting()) {
-                int player_left = player_get_state().x_position;
-                int player_top = player_get_state().y_position;
-                if ((pel.cur_left.v > TO_SP(player_left - PELLET_W)) &&
-                    (pel.cur_left.v < TO_SP(player_left + PLAYER_W + PELLET_W)) &&
-                    (pel.cur_top.v > TO_SP(player_top - 2 * PELLET_H)) &&
-                    (pel.cur_top.v < TO_SP(player_top + PLAYER_H + 2 * PELLET_H))) {
-                    int deflect_angle =
-                        (TO_PIXEL(pel.cur_left.v) < (player_left + 12)) ? 0x80 : 0x00;
-                    vector2(pel.velocity.x.v, pel.velocity.y.v, TO_SP(8),
-                            deflect_angle);
+                // Deflect the full8x8 pellet against the source's expanded box,
+                // after flooring subpixels. A point test loses left/top overlaps.
+                if (player_is_deflecting()) {
+                    const int player_left = player_get_state().x_position;
+                    const int player_top = player_get_state().y_position;
+                    if (overlap_xywh_xywh_lt_gt(
+                        pel.cur_left.to_pixel(), pel.cur_top.to_pixel(), PELLET_W, PELLET_H,
+                        player_left-PELLET_W, player_top-2*PELLET_H,
+                        PLAYER_W+2*PELLET_W, PLAYER_H+2*PELLET_H
+                    )) {
+                        const int deflect_angle =
+                            pel.cur_left.to_pixel() <= player_left+12 ? 0x80 : 0x00;
+                        vector2(pel.velocity.x.v, pel.velocity.y.v, TO_SP(8), deflect_angle);
+                        if(pel.from_group==PG_NONE) pel.motion_type=PM_REGULAR;
+                    }
                 }
             }
 

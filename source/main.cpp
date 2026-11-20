@@ -697,7 +697,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
         Items.update();
         // Only active gameplay advances the shared timer cadence.
         if(timer_update(++frame)==TIMER_EVENT_HARRYUP) harryup_animate();
-        if(Pellets.update()) player_is_hit=true;
+        if(Pellets.update(final_boss || kikuri_boss || elis_boss)) player_is_hit=true;
     }
     if(!entrance && !player_is_hit && orb_hits_player(player_get_state().x_position,
         player_get_state().y_position,OR_NONE,player_is_invincible(),player_is_invincible_to_orb())) player_is_hit=true;

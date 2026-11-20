@@ -18,8 +18,10 @@ typedef int subpixel_t;
 static const subpixel_t SUBPIXEL_FACTOR = 16;
 static const char SUBPIXEL_BITS = 4;
 
+// Multiplication keeps signed coordinates (including left-edge margins) valid
+// in C++17; shifting a negative signed integer is undefined.
 #define TO_SP(v) \
-	((v) << SUBPIXEL_BITS)
+	((v) * SUBPIXEL_FACTOR)
 
 #define TO_PIXEL(v) \
 	((v) >> SUBPIXEL_BITS)
@@ -29,7 +31,7 @@ static const char SUBPIXEL_BITS = 4;
 #define TO_PIXEL_INPLACE(v) \
 	((v) >>= SUBPIXEL_BITS)
 #define TO_SP_INPLACE(v) \
-	((v) <<= SUBPIXEL_BITS)
+	((v) *= SUBPIXEL_FACTOR)
 
 inline subpixel_t to_sp(float pixel_v) {
 	return static_cast<subpixel_t>(pixel_v * SUBPIXEL_FACTOR);
