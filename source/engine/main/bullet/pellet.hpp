@@ -135,3 +135,7 @@ static inline subpixel_t base_speed_for_rank()
 // pixels (premultiplied by 40: [-15, 20]).
 void pellet_speed_raise(float pixels);
 void pellet_speed_lower(float pixels);
+
+// ReC98 main_01.cpp: periodic +0.025 adjustment for newly spawned pellets.
+// Pass the incremented run-wide active-frame count and pre-update resources.
+void pellet_speed_update(unsigned int gameplay_frame, int lives, int bombs);

@@ -13,7 +13,9 @@ class fixed {
     }
 
     constexpr fixed() {}
-    constexpr fixed(const int x) {raw = x << 16;} 
+    // Signed multiplication preserves negative whole-pixel forces without
+    // undefined left shifts; widen the intermediate before Q16 narrowing.
+    constexpr fixed(const int x) {raw = static_cast<int32>(static_cast<int64>(x) * 65536);}
     constexpr fixed(const float x) {raw = int(x * (1 << 16));} 
     constexpr fixed(const double x) {raw = int(x * (1 << 16));}
 
@@ -45,8 +47,8 @@ class fixed {
     constexpr bool operator>(fixed o) const { return raw > o.raw; }
     constexpr bool operator<(fixed o) const { return raw < o.raw; }
 
-    constexpr fixed operator+(int o) const { return from_raw(raw + (o << 16)); }
-    constexpr fixed operator-(int o) const { return from_raw(raw - (o << 16)); }
+    constexpr fixed operator+(int o) const { return *this + fixed(o); }
+    constexpr fixed operator-(int o) const { return *this - fixed(o); }
     constexpr fixed operator/(int o) const {
         return from_raw(raw / o);
     }

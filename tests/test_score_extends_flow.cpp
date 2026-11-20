@@ -60,6 +60,99 @@ void check_boss_bonus_extends()
         assert(std::count(test_effects.begin(),test_effects.end(),SFX_PICKUP)==sounds+1);
     }
 }
+
+void check_card_scoring_flow()
+{
+    const auto saved_rank=rank;
+    const int bases[]={100,200,200,300,300,400,400};
+    for(int scene=0;scene<7;++scene) for(int stage=0;stage<4;++stage) {
+        stage_load(scene,stage);
+        for(int difficulty=0;difficulty<4;++difficulty) {
+            rank=rank_t(difficulty);player_initialize();shots_initialize();Pellets.init();Items.init();
+            stage_obstacle_total=0;stage_card_total=2;stage_cards_removed_count=0;
+            stage_cards[0]={100,128,CARD_ALIVE,0,0};stage_cards[1]={500,128,CARD_ALIVE,0,0};
+            stage_cardcombo_cur=stage_cardcombo_max=2;
+            orb_initialize();orb_set_position(100,128);orb_set_velocity_x(OVX_0);orb_force_new(0.0,OF_IMMEDIATE);
+            const int points=bases[scene]+4*(difficulty==3 ? 35 : 20);
+            stage_score=400000-points;score_extends.reset();lives=3;rem_bombs=2;pellet_speed=-4;
+            frame=pellet_speed_frame=0;wait_for_shot=false;
+            const auto sounds=test_effects.size();
+            gameplay_tick(0,0);
+            assert(stage_score==400000 && lives==4 && score_extends.next_score()==800000 && pellet_speed==-3);
+            assert(stage_cardcombo_cur==3 && stage_cardcombo_max==3 && stage_cards[0].flag==CARD_FLIPPING);
+            assert(stage_cards[1].flag==CARD_ALIVE && current_scene==scene && current_stage==stage);
+            assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_CARD)==1);
+            assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_PICKUP)==1);
+            check_extend_hud();
+        }
+    }
+    rank=saved_rank;start_new_game();
+    std::puts("Card scoring flow: every regular stage on both routes/all ranks, actual stage-number wiring, single credited flip and exact400k extend/HUD/SFX boundary passed");
+}
+
+void check_periodic_speed_flow()
+{
+    const auto saved_rank=rank;rank=RANK_NORMAL;
+    start_new_game();stage_obstacle_total=0;wait_for_shot=false;
+    const auto tick=[](u16 held=0,u16 down=0) {
+        orb_set_position(10000,200);gameplay_tick(held,down);
+    };
+    lives=3;rem_bombs=2;pellet_speed=-4;pellet_speed_frame=1098;
+    tick();assert(pellet_speed_frame==1099 && pellet_speed==-4);
+    wait_for_shot=true;tick();render_frame();tick();
+    test_vblank_hook=[](){assert(pellet_speed_frame==1099);test_keys_down=KEY_B;};
+    assert(!pause_menu_run());test_vblank_hook=nullptr;test_keys_down=0;
+    assert(pellet_speed_frame==1099 && pellet_speed==-4);
+    stage_load(0,1,false,true);assert(pellet_speed_frame==1099 && pellet_speed==-4);
+    tick(KEY_B,KEY_B);assert(pellet_speed_frame==1100 && pellet_speed==-3);
+    tick();assert(pellet_speed_frame==1101 && pellet_speed==-3);
+
+    // The source interval uses resources BEFORE a bomb's frame0 consumes one.
+    player_initialize();pellet_speed=0;pellet_speed_frame=1098;
+    tick(KEY_X,KEY_X);assert(player_bomb().pending() && pellet_speed==1 && rem_bombs==2);
+    tick();assert(player_bomb().frame()==0 && rem_bombs==1 && pellet_speed_frame==1100 && pellet_speed==2);
+    stage_load(0,0);wait_for_shot=false;
+    lives=3;rem_bombs=2;pellet_speed=0;pellet_speed_frame=1099;
+    stage_score=400000;score_extends.reset();
+    tick();assert(lives==4 && pellet_speed_frame==1100 && pellet_speed==2); // periodic + extend
+
+    // A boundary-frame turret must see the new multiplier; existing pellets
+    // retain their original velocity. This tests placement in the real tick.
+    stage_load(0,0);wait_for_shot=false;
+    lives=3;rem_bombs=2;pellet_speed=0;pellet_speed_frame=1099;
+    stage_obstacle_total=1;stage_obstacles[0]={100,100,OT_TURRET_SLOW_1_AIMED,0,199,TF_FIRE};
+    Pellets.add_group(200,100,PG_1,56);
+    tick();assert(pellet_speed==1 && Pellets.alive_count()==2);
+    assert(Pellets.at(0).speed.v==62 && Pellets.at(0).velocity.y.v==62 && Pellets.at(1).speed.v==63);
+
+    // Miss animation, the retry prompt and reloading consume no active ticks.
+    stage_load(0,0);stage_obstacle_total=0;wait_for_shot=false;
+    lives=1;rem_bombs=2;pellet_speed=0;pellet_speed_frame=500;player_is_hit=true;
+    test_vblank_hook=[](){assert(pellet_speed_frame==501);};
+    tick();test_vblank_hook=nullptr;
+    assert(lives==0 && pellet_speed_frame==501);
+    death_probe={};death_probe.fatal=true;death_probe.allocations=test_heap_attempts;death_probe.objects=test_obj_attempts;
+    test_vblank_hook=[](){assert(pellet_speed_frame==502);observe_player_death();};
+    player_is_hit=true;tick();test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+    assert(lives==START_LIVES && frame==0 && pellet_speed_frame==502 && wait_for_shot);
+    stage_load(0,4);
+    for(int i=0;i<3;++i) {tick();assert(pellet_speed_frame==502);} // non-gameplay SinGyoku entrance
+
+    // Lethal boss ticks count ONCE even though the existing timer/bomb frame
+    // intentionally freezes at defeat; results and the next title stay frozen.
+    stage_load(2,4);lives=3;rem_bombs=2;stage_score=0;stage_timer=0;
+    frame=77;pellet_speed_frame=1099;pellet_speed=0;
+    auto &boss=const_cast<MimaPhase1State&>(mima.state());boss.phase=3;boss.health.hp=0;boss.checkpoint=true;
+    test_vblank_hook=[](){assert(pellet_speed_frame==1100);test_keys_down=KEY_B;test_keys_held=0;};
+    tick();test_vblank_hook=nullptr;test_keys_down=test_keys_held=0;
+    assert(current_scene==4 && current_stage==0 && frame==77 && pellet_speed_frame==1100 && pellet_speed==1);
+    tick();assert(pellet_speed_frame==1100 && pellet_speed==1); // awaiting serve
+    tick(KEY_B,KEY_B);assert(pellet_speed_frame==1101 && pellet_speed==1);
+    pellet_speed_frame=~0u;pellet_speed=0;lives=3;rem_bombs=2;tick();
+    assert(pellet_speed_frame==0 && pellet_speed==1);
+    rank=saved_rank;start_new_game();assert(pellet_speed_frame==0 && pellet_speed==-4);
+    std::puts("Pellet-speed flow: active-only run clock, serve/pause/stage/miss/retry/result freezes, pre-bomb/extend resource order, same-tick turret tuning, lethal-tick continuity, unsigned wrap and new-run reset passed");
+}
 }
 
 void test_score_extends_flow()
@@ -162,6 +255,8 @@ void test_score_extends_flow()
     assert(jigoku_cleared && lives==3 && score_extends.next_score()==800000 && pellet_speed==-3);
     assert(std::count(test_effects.begin(),test_effects.end(),SFX_PICKUP)==final_sounds+1);
     gameplay_tick(0,0);assert(lives==3 && score_extends.next_score()==800000);
+    check_card_scoring_flow();
+    check_periodic_speed_flow();
     invincible=saved_invincible;start_new_game();camera.snap_center();
     std::puts("Score extend flow: raw+1/clamp/SFX15, real pickup/HUD, pure render/pause/serve, score-preserving handoff, one-shot stage/boss bonuses, pre-bonus resource accounting, last-life rescue/miss/continue/new-game reset, black Kikuri capture and final-boss terminal check passed");
 }

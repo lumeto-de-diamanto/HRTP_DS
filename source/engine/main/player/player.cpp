@@ -112,7 +112,7 @@ static void player_set_idle_sprite() {
 
 void inline increment_mode() {
 	if (mode == M_SPECIAL_FIRST) mode = M_SPECIAL_SECOND;
-	if (mode == M_SPECIAL_SECOND) mode = M_SPECIAL_THIRD;
+	else if (mode == M_SPECIAL_SECOND) mode = M_SPECIAL_THIRD;
 }
 
 void player_initialize() {

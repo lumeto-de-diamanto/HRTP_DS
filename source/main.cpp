@@ -77,6 +77,9 @@ static int current_stage;
 static int lives;
 static ScoreExtends score_extends;
 static unsigned int frame;
+// Source frame_rand cadence, independent of timer/bomb presentation counters.
+// Preserve across stage loads, misses and continues; reset for a new run only.
+static unsigned int pellet_speed_frame;
 static bool wait_for_shot; // ReC98 stage_wait_for_shot_to_begin
 static KonngaraCombat konngara;
 static KonngaraCombatView konngara_view;
@@ -499,6 +502,7 @@ static void start_new_game()
     lives=START_LIVES;rem_bombs=2;point_value=0;
     pellet_speed=-4; // ReC98 to_pellet_speed(-0.1)
     frame=0;
+    pellet_speed_frame=0;
     stage_load(0,0);
 }
 
@@ -542,11 +546,16 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
     const bool yuugenmagan_boss=stage_has_yuugenmagan(current_scene,current_stage);
     const bool elis_boss=stage_has_elis(current_scene,current_stage);
     const bool entrance=stage_has_singyoku(current_scene,current_stage) && singyoku_state().phase==SG_ENTRANCE;
+    const int speed_lives=lives,speed_bombs=rem_bombs;
     if(entrance) singyoku_update();
     else player_update(keys_held,keys_down);
     if(!entrance && (player_bomb().pending() || player_bomb().active())) wait_for_shot=serving=false;
     const bool bomb_damage=boss_bomb_damage_allowed(player_bomb().damaging(),lives,frame+1);
     if(!serving && !entrance) {
+        // ReC98 checks before bombs consume resources or score grants lives.
+        // Count lethal boss ticks too, without advancing the frozen timer/bomb
+        // frame used by the existing defeat/results presentation.
+        pellet_speed_update(++pellet_speed_frame,speed_lives,speed_bombs);
         // Boss collision uses the previous orb point, before orb movement.
         if(final_boss) {
             konngara.update(bomb_damage);
@@ -684,7 +693,7 @@ static void gameplay_tick(uint16_t keys_held,uint16_t keys_down)
             }
         }
         shots_update();orb_update();
-        if(!boss) { cards_hittest(player_bomb().damaging(),player_bomb().card_frame());stage_obstacles_update();cards_update(); }
+        if(!boss) { cards_hittest(global_stage_num()-1,player_bomb().damaging(),player_bomb().card_frame());stage_obstacles_update();cards_update(); }
         Items.update();
         // Only active gameplay advances the shared timer cadence.
         if(timer_update(++frame)==TIMER_EVENT_HARRYUP) harryup_animate();

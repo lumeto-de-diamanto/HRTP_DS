@@ -9,11 +9,13 @@
 #include "main/stage/card.hpp"
 #include "main/stage/item.hpp"
 #include "sound_effects.hpp"
+#include "rank.h"
 
 static std::vector<int> requests;
 static OrbState orb{100, 100, 0};
 static PlayerState player{100, player_top, PLAYER, 0};
 static bool orbHit;
+rank_t rank=RANK_NORMAL;
 StageCard stage_cards[STAGE_MAX_CELLS]{};
 int stage_card_total, stage_cards_removed_count, stage_score, stage_cardcombo_cur, stage_cardcombo_max;
 void mdrv2_se_play(int id) { requests.push_back(id); }
@@ -39,14 +41,14 @@ int main() {
     requests.clear(); Items.init();
     stage_card_total = 1;
     stage_cards[0] = StageCard{100, 100, CARD_ALIVE, 0, 1};
-    cards_hittest(); cards_hittest();
+    cards_hittest(0); cards_hittest(0);
     assert(requests == std::vector<int>{SFX_CARD});
     for (int i = 0; i < CARD_CELS * CARD_FRAMES_PER_CEL; ++i) cards_update();
     assert(requests.size() == 1 && stage_cards[0].flag == CARD_ALIVE);
-    cards_hittest();
+    cards_hittest(0);
     assert(requests == (std::vector<int>{SFX_CARD, SFX_CARD})); // nonfinal flips also sound
     for (int i = 0; i < CARD_CELS * CARD_FRAMES_PER_CEL; ++i) cards_update();
-    cards_hittest();
+    cards_hittest(0);
     assert(requests.size() == 2 && stage_cards[0].flag == CARD_REMOVED);
 
     for (int mode = 0; mode < 3; ++mode) {

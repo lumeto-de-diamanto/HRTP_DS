@@ -32,6 +32,15 @@ void pellet_speed_lower(float pixels)
         pellet_speed = -15;
 }
 
+void pellet_speed_update(unsigned int gameplay_frame, int lives, int bombs)
+{
+    const int cycle = 1800 - lives * 200 - bombs * 50;
+    // Normal resources (0..6 lives, 0..5 bombs) always give a positive cycle.
+    // Invalid debug counts must not turn this into a modulo-by-zero crash.
+    if (cycle > 0 && gameplay_frame % unsigned(cycle) == 0)
+        pellet_speed_raise(0.025f);
+}
+
 // ReC98 speed_set(): rank base, then the global pellet_speed offset.
 static subpixel_t speed_set(subpixel_t speed)
 {

@@ -146,6 +146,52 @@ void transition_combos()
         assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_SHOT)==(kind==3 ? 7 : 0));
     }
 }
+
+void transition_combo_chains()
+{
+    // Continue via actual held inputs, not private controller state. Check
+    // second/third special attacks and refuse a fourth after the third kick.
+    for(bool right:{false,true}) for(int finish:{2,3}) for(int kind=0;kind<4;++kind) {
+        transition_reset();
+        const int direction=right ? KEY_RIGHT : KEY_LEFT,opposite=right ? KEY_LEFT : KEY_RIGHT;
+        const auto sounds=test_effects.size();
+        player_update(direction|KEY_A,KEY_A);
+        for(int tick=1;tick<=12;++tick) player_update(0,0);
+        player_update(KEY_A,0);
+        int x=PLAYER_LEFT_START+(right ? 1 : -1)*(4+13*6);
+        for(int special=1;special<=finish;++special) {
+            const int current_kind=special==finish ? kind : 0;
+            const int duration=current_kind<2 ? 29 : current_kind==2 ? 14 : 20;
+            for(int tick=1;tick<=duration;++tick) {
+                const bool chaining=tick==duration && special<finish;
+                const int next_kind=special+1==finish ? kind : 0;
+                const int held=chaining ? (next_kind==3 ? KEY_B :
+                    KEY_A|(next_kind==1 ? opposite : next_kind==2 ? direction : 0)) :
+                    (finish==3 && tick==duration && current_kind<2 ? KEY_A : 0);
+                player_update(held,0);
+                x=transition_step(x,(right ? 1 : -1)*(current_kind==0 ? 2 : current_kind==2 ? 6 : 0));
+                assert(player.x_position==x && !player_is_sliding());
+                assert(player_is_invincible_to_orb()==(tick<duration || chaining));
+                assert(player_is_deflecting()==(chaining ? next_kind!=2 :
+                    tick==duration ? false : current_kind<2 ? tick<=20 : current_kind==3 ? tick<=4 : false));
+                if(tick==duration && !chaining) transition_pose(PLAYER,transition_idle(right));
+                else if(current_kind<2) transition_pose(PLAYER_48,(right ? SPRITE_FLIPKICK_RIGHT0 : SPRITE_FLIPKICK_LEFT0)+
+                    (tick<=10 ? 0 : (tick-7)/4));
+                else if(current_kind==2) transition_pose(PLAYER_32,right ? SPRITE_SLIDEKICK_RIGHT : SPRITE_SLIDEKICK_LEFT);
+                else transition_pose(PLAYER_48,(right ? SPRITE_SHOTCOMBO_RIGHT0 : SPRITE_SHOTCOMBO_LEFT0)+(tick-1)/6);
+            }
+        }
+        assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_SLIDE)==finish+1);
+        assert(std::count(test_effects.begin()+sounds,test_effects.end(),SFX_SHOT)==(kind==3 ? 7 : 0));
+        const int offsets[]={-8,8,0,-16,0,16,0};
+        const auto &shots=shots_get_state();
+        for(int i=0;i<SHOT_COUNT;++i) {
+            assert(shots.alive[i]==(kind==3 && i<7));
+            if(shots.alive[i]) assert(shots.x_position[i]==x+PLAYER_W/4+offsets[i] && shots.y_position[i]==player_top);
+        }
+        player_update(0,0);transition_pose(PLAYER,transition_idle(right));
+    }
+}
 }
 
 static void check_player_transitions()
@@ -163,6 +209,7 @@ static void check_player_transitions()
         transition_plain_slides();
         transition_swings_and_grace(difficulty==RANK_EASY ? 15 : difficulty==RANK_NORMAL ? 12 : difficulty==RANK_HARD ? 10 : 8);
         transition_combos();
+        transition_combo_chains();
     }
     assert(irand()==random && stage_timer==timer && stage_score==score && pellet_speed==speed);
     assert(test_heap_attempts==heap && test_obj_attempts==objects);
@@ -170,5 +217,5 @@ static void check_player_transitions()
     assert(std::equal(tiles.begin(),tiles.end(),test_obj_vram));
     rank=saved_rank;rem_bombs=saved_bombs;
     player_initialize();orb_initialize();shots_initialize();camera.snap_center();player_render_frame();
-    std::puts("Reimu transitions: both slide directions/walls/held or reversed input, all-rank swing and combo exits, preserved grace-period facing, exact movement/deflection/repel/shot timing, correct sheet/OAM pixels and pure redraws with unchanged RNG/palettes/tiles/allocations passed");
+    std::puts("Reimu transitions: both slide directions/walls/held or reversed input, all-rank swing and combo exits, full three-special chains/all finishing attacks/fourth refusal, preserved grace-period facing, exact movement/deflection/repel/shot timing, correct sheet/OAM pixels and pure redraws with unchanged RNG/palettes/tiles/allocations passed");
 }

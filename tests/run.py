@@ -190,6 +190,7 @@ def host_tests(args):
 
     if selected('gameplay'):
         run('timer', ['tests/test_timer.cpp', *eng('main/stage/timer')])
+        run('card_scoring', ['tests/test_card_scoring.cpp', *eng('main/stage/card')])
         projectiles = eng('main/player/orb', 'main/player/shot', 'main/bullet/pellet',
                           'main/math/vector', 'main/math/trig')
         run('projectiles', ['tests/test_projectiles_portals.cpp',

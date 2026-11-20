@@ -28,6 +28,9 @@ static int entered_portal_slot;
 static int entered_portal_dst;
 static bool portals_blocked;
 
+// Shared across vertical bars; reset alongside their per-obstacle cooldowns.
+static bool vertical_bars_blocked;
+
 void stage_init(const uint8_t obstacle[STAGE_ROWS][STAGE_COLS],
                 const uint8_t card[STAGE_ROWS][STAGE_COLS])
 {
@@ -87,6 +90,7 @@ void stage_reset()
     entered_portal_slot = 0;
     entered_portal_dst = 0;
     portals_blocked = false;
+    vertical_bars_blocked = false;
     orb_set_in_portal(false);
 }
 
@@ -211,8 +215,6 @@ bool stage_turret_firing(int i)
 
 void stage_obstacles_update()
 {
-    static bool vertical_bars_blocked = false;
-
     const OrbState &orb = orb_get_state();
 
     for (int i = 0; i < stage_obstacle_total; i++) {

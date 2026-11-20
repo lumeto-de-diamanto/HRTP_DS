@@ -1,5 +1,6 @@
 // Real projectile, portal and orb code; only player/audio/RNG services are fake.
 #include <cassert>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
@@ -64,6 +65,31 @@ static void card_presence_and_hp()
 
 static void orb_ceiling_bounces()
 {
+    // Whole-pixel Q16.16 conversion, including negative swing forces and both
+    // representable endpoints. Compare exact fixed values, not rounded pixels.
+    for(int value:{-32768,-32767,-100,-13,-1,0,1,13,100,32767}) {
+        const fixed converted(value),exact=fixed::from_raw(value*65536);
+        assert(!(converted<exact) && !(converted>exact));
+        assert(converted.trunc_to_int()==value);
+    }
+    for(int value:{-100,-13,-1,0,1,13,100}) {
+        const auto fraction=fixed::from_raw(32768);
+        const auto sum=fraction+value,difference=fraction-value;
+        const auto expected_sum=fixed::from_raw(32768+value*65536);
+        const auto expected_difference=fixed::from_raw(32768-value*65536);
+        assert(!(sum<expected_sum) && !(sum>expected_sum));
+        assert(!(difference<expected_difference) && !(difference>expected_difference));
+    }
+    // Exercise the real repel path that implicitly constructs fixed(-13).
+    // Nonzero horizontal separation avoids the unrelated centered-orb RNG.
+    for(int friction=1;friction<=OR_MAX;++friction) for(int side:{-1,1}) {
+        orb_initialize();orb_set_position(player.x_position+side*8,player.y_position);
+        assert(!orb_hits_player(player.x_position,player.y_position,friction,false,false));
+        const auto force=fixed::from_raw((friction/2-13)*65536);
+        assert(!(orb_force<force) && !(orb_force>force));
+        assert(orb_get_velocity_x()==(side<0 ? OVX_4_LEFT : OVX_4_RIGHT));
+        assert(orb_get_state().x_position==player.x_position+side*8 && orb_get_state().y_position==player.y_position);
+    }
     // The longer YuugenMagan practice reaches a negative numerator in fixed
     // division. Check exact raw results, not rounded pixel conversions.
     constexpr auto quotient=fixed::from_raw(-293600)/fixed(2.5);
@@ -111,7 +137,7 @@ static void orb_ceiling_bounces()
         }
         if (initial == -17.5) assert(ceiling_contacts == 1 && first_floor == 49);
     }
-    std::puts("Orb: source truncation/unclamped movement, unchanged fixed rounding, ceiling/floor trajectories and no self-sustaining -17.5 loop passed");
+    std::puts("Orb: exact signed fixed conversion/offsets and real repel forces, source truncation/unclamped movement, unchanged fixed rounding, ceiling/floor trajectories and no self-sustaining -17.5 loop passed");
 }
 
 static void pellet_orb_contacts()
@@ -162,6 +188,37 @@ static void pellet_orb_contacts()
         assert(p.moving == (frame <= PELLET_DECAY_FRAMES));
     }
     std::puts("Projectiles: source overlap boundaries/subpixels/all ranks, signed half-speed, single scoring and decay passed");
+}
+
+static void periodic_pellet_speed()
+{
+    const int old_speed=pellet_speed;const auto old_rank=rank;
+    for(int lives=0;lives<=6;++lives) for(int bombs=0;bombs<=5;++bombs)
+        for(int initial:{-15,-4,0,19,20}) {
+            const unsigned cycle=1800-lives*200-bombs*50;
+            pellet_speed=initial;int expected=initial;
+            for(unsigned tick=1;tick<=cycle*3;++tick) {
+                if(tick%cycle==0) expected=std::min(expected+1,20);
+                pellet_speed_update(tick,lives,bombs);
+                assert(pellet_speed==expected);
+            }
+        }
+    // Re-evaluate the interval against the global phase, not a countdown reset
+    // by resource changes. At1100, a newly changed1200-frame cycle must not fire.
+    pellet_speed=0;pellet_speed_update(1100,3,0);assert(pellet_speed==0);
+    pellet_speed_update(1200,3,0);assert(pellet_speed==1);
+    pellet_speed_update(1400,2,0);assert(pellet_speed==2);
+    pellet_speed_update(0,3,2);assert(pellet_speed==3); // unsigned frame-counter wrap
+    pellet_speed_update(100,9,0);assert(pellet_speed==3); // invalid debug zero cycle
+    // Only new volleys use the changed multiplier; live pellets never accelerate.
+    rank=RANK_EASY;pellet_speed=0;Pellets.init();Pellets.add_group(100,100,PG_1,64);
+    const auto live=Pellets.at(0);
+    pellet_speed_update(1100,3,2);assert(pellet_speed==1);
+    assert(!std::memcmp(&live,&Pellets.at(0),sizeof(live)));
+    Pellets.add_group(200,100,PG_1,64);
+    assert(Pellets.at(0).velocity.y.v==64 && Pellets.at(1).velocity.y.v==65);
+    Pellets.init();rank=old_rank;pellet_speed=old_speed;
+    std::puts("Pellet-speed creep: every normal life/bomb interval, three cycles/all speed limits, live resource-phase changes, unsigned wrap and new-volley-only tuning passed");
 }
 
 static void ofuda_contacts()
@@ -284,6 +341,51 @@ static int expected_portal_cel(int frame, bool entered, bool destination)
     return -1;
 }
 
+static void barrier_resets()
+{
+    for(int type:{int(OT_BAR_LEFT),int(OT_BAR_RIGHT)}) for(bool fast:{false,true}) {
+        const auto incoming=type==OT_BAR_LEFT ? (fast ? OVX_8_RIGHT : OVX_4_RIGHT) :
+            (fast ? OVX_8_LEFT : OVX_4_LEFT);
+        const auto reflected=type==OT_BAR_LEFT ? (fast ? OVX_8_LEFT : OVX_4_LEFT) :
+            (fast ? OVX_8_RIGHT : OVX_4_RIGHT);
+        uint8_t obstacles[STAGE_ROWS][STAGE_COLS]={};
+        const uint8_t cards[STAGE_ROWS][STAGE_COLS]={};
+        obstacles[2][6]=obstacles[2][10]=type;
+        const auto aim_at=[&](int slot) {
+            const auto &bar=stage_obstacle(slot);
+            orb_set_position(bar.left+(type==OT_BAR_LEFT ? -8 : 8),bar.top);
+            orb_set_velocity_x(incoming);
+        };
+        for(bool reload:{false,true}) for(int elapsed=0;elapsed<6;++elapsed) {
+            stage_init(obstacles,cards);stage_reset();orb_initialize();aim_at(0);
+            stage_obstacles_update();
+            assert(orb_get_velocity_x()==reflected && stage_obstacle(0).since_collision==2);
+            for(int tick=0;tick<elapsed;++tick) {
+                aim_at(1);stage_obstacles_update();
+                assert(orb_get_velocity_x()==incoming && !stage_obstacle(1).since_collision);
+            }
+            assert(stage_obstacle(0).since_collision==2+elapsed);
+            // Misses reset in place; retries/stage changes rebuild first. Both
+            // must clear the shared lock along with the per-bar cooldowns.
+            if(reload) stage_init(obstacles,cards);
+            stage_reset();
+            assert(!stage_obstacle(0).since_collision && !stage_obstacle(1).since_collision);
+            aim_at(1);stage_obstacles_update();
+            assert(orb_get_velocity_x()==reflected && stage_obstacle(1).since_collision==2);
+        }
+        // Ordinary updates must still retain the cross-bar lock until the
+        // original eight-count cooldown releases it, not clear it every frame.
+        stage_init(obstacles,cards);stage_reset();orb_initialize();aim_at(0);stage_obstacles_update();
+        for(int tick=1;tick<=6;++tick) {
+            aim_at(1);stage_obstacles_update();
+            assert(orb_get_velocity_x()==(tick<6 ? incoming : reflected));
+            assert(stage_obstacle(1).since_collision==(tick<6 ? 0 : 2));
+        }
+        assert(!stage_obstacle(0).since_collision);
+    }
+    std::puts("Vertical barriers: both sides/speeds, all active cooldown reset phases, miss/reload lock recovery and unchanged cross-bar cooldown expiry passed");
+}
+
 static void portals()
 {
     for (int count : {1, 2}) for (int entry = 0; entry < count; ++entry) {
@@ -367,9 +469,11 @@ int main(int argc, char **argv)
     if (argc == 1) score_extends_rules();
     if (argc == 1) card_presence_and_hp();
     if (argc == 1 || std::strcmp(argv[1], "orb") == 0) orb_ceiling_bounces();
+    if (argc == 1) periodic_pellet_speed();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) pellet_orb_contacts();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) delay_clouds();
     if (argc == 1 || std::strcmp(argv[1], "pellets") == 0) spinning_pellets();
     if (argc == 1 || std::strcmp(argv[1], "ofuda") == 0) ofuda_contacts();
+    if (argc == 1) barrier_resets();
     if (argc == 1 || std::strcmp(argv[1], "portals") == 0) portals();
 }

@@ -1,6 +1,6 @@
 // Port of ReC98 th01/main/stage/card.cpp: the orb flips cards it passes
 // near; flipping all of them clears the stage. Scoring follows ReC98's
-// formula minus the difficulty multiplier (M3 adds rank handling).
+// stage-dependent base, Lunatic combo factor and per-flip cap.
 
 #include <stdlib.h>
 
@@ -9,10 +9,11 @@
 #include "popup.hpp"
 #include "sound_effects.hpp"
 #include "main/random.hpp"
+#include "rank.h"
 
 static int card_flip_cycle;
 
-void cards_hittest(bool bomb_damaging, unsigned bomb_frame)
+void cards_hittest(int stage_id, bool bomb_damaging, unsigned bomb_frame)
 {
     const OrbState &orb = orb_get_state();
 
@@ -28,9 +29,10 @@ void cards_hittest(bool bomb_damaging, unsigned bomb_frame)
             c.flip_frame = 0;
 
             // ReC98 card.cpp: score = base + combo^2 * factor, capped.
-            int score_value = 100 + (stage_cardcombo_cur * stage_cardcombo_cur) * 20;
-            if (score_value > CARD_SCORE_CAP)
-                score_value = CARD_SCORE_CAP;
+            const int base = (stage_id / 5) * 100 + 100;
+            const int factor = rank == RANK_LUNATIC ? 35 : 20;
+            const int64_t uncapped = base + int64_t(stage_cardcombo_cur) * stage_cardcombo_cur * factor;
+            const int score_value = uncapped > CARD_SCORE_CAP ? CARD_SCORE_CAP : int(uncapped);
             stage_score += score_value;
             stage_cardcombo_cur++;
             if (stage_cardcombo_max < stage_cardcombo_cur)
